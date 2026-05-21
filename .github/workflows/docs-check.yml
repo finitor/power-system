@@ -1,0 +1,15 @@
+name: Docs Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  markdown-links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: List tracked docs
+        run: find docs hardware software config scripts tests -maxdepth 3 -type f | sort
+

@@ -1,0 +1,9 @@
+category,item,manufacturer,model,quantity,voltage_or_rating,interface,vendor_url,notes
+controller,Raspberry Pi,TBD,TBD,1,5 V,GPIO/USB/Ethernet,,Controller and logger
+storage,Battery bank,TBD,TBD,1,TBD,TBD,,Add chemistry capacity and BMS details
+charging,Charge controller,TBD,TBD,1,TBD,TBD,,Solar charge controller
+conversion,Inverter,TBD,TBD,1,TBD,TBD,,AC output
+monitoring,Battery monitor,TBD,TBD,1,TBD,TBD,,Voltage current SOC
+monitoring,Temperature sensor,TBD,TBD,TBD,TBD,TBD,,Battery or enclosure temperature
+control,Relay or contactor,TBD,TBD,TBD,TBD,TBD,,Controlled output
+
