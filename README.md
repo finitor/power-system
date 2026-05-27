@@ -22,6 +22,7 @@ Update this section as the system moves through bench testing, installation, com
 - [docs/hardware-inventory.md](docs/hardware-inventory.md): component table.
 - [docs/wiring.md](docs/wiring.md): wiring notes, pinouts, fuse ratings, cable gauges, and labels.
 - [docs/commissioning.md](docs/commissioning.md): first power-up and acceptance checklist.
+- [docs/runbooks/](docs/runbooks/): action-oriented procedures for installation, changeovers, maintenance, and recovery.
 - [docs/maintenance.md](docs/maintenance.md): backup, restore, inspection, and recovery routines.
 - [docs/troubleshooting.md](docs/troubleshooting.md): symptoms, likely causes, and checks.
 - [docs/safety.md](docs/safety.md): electrical and operational safety notes.

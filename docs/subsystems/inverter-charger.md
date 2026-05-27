@@ -31,6 +31,8 @@ The inverter/charger owns AC inversion and charging behavior. The Raspberry Pi m
 
 The charger side must be treated as legacy lead-acid-oriented equipment until its exact charge profile behavior is verified. If AC input or generator charging is enabled, the supervisor needs to prevent sustained high-voltage float from becoming the normal LiFePO4 resting state. Equalization must be disabled for normal operation.
 
+Use [MagnaSine Charger LiFePO4 Changeover](../runbooks/magnasine-charger-lifepo4-changeover.md) before enabling generator/AC-input charging after the Cubix battery swap.
+
 Possible future supervisory actions:
 
 - Alert on inverter fault or overload.
@@ -67,7 +69,7 @@ The ME-RC50 provides local human access to:
 - Inverter/charger DC meter values.
 - Charger and inverter setup parameters.
 - System status and fault messages.
-- Optional networked accessory menus, including ME-AGS-N auto-generator-start and ME-BMK battery monitor functions if those accessories are installed.
+- Optional networked accessory menus, including ME-BMK battery monitor functions if installed. No automatic generator start is installed; generator operation is manual.
 
 Document:
 
@@ -97,7 +99,7 @@ Fallback monitoring path:
 
 - What is the exact manufacturer/model marking: Magnum Energy, MagnaSine, MS4448PAE, or another variant?
 - What ME-RC50 revision is installed?
-- Are any Magnum Net accessories installed, such as battery monitor or auto-gen-start modules?
+- Are any Magnum Net accessories installed, such as a battery monitor module?
 - Is there a compatible Magnum data gateway or web/network interface still available?
 - Can telemetry be read locally from the Pi without reverse-engineering the remote protocol?
 - Can an isolated RS485 adapter safely monitor the Magnum network in parallel with the ME-RC50?
