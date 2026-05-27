@@ -5,6 +5,7 @@ monitoring,Battery remote monitor,Eco-Worthy,ESM-100,1,on hand,Battery accessory
 conversion,Inverter/charger,Magnum Energy / MagnaSine,4448,1,on hand,48 V DC / AC rating TBD,TBD,,Confirm exact model label and monitoring interface
 charging,Charge controller,Midnite Solar,Classic 200,1,on hand,48 V battery system / PV input TBD,TBD,,Legacy solar charge controller
 monitoring,Temperature/humidity sensor,ASAIR,AM2302 / DHT22,1,on hand,3.3-5 V,GPIO single-wire,,Utility-room ambient humidity and temperature
+monitoring,Temperature sensor,Generic,DS18B20 stainless waterproof probe,10,on hand,3.3 V,1-Wire GPIO,,Battery/rack enclosure air heater plate and outside ambient temperature
 temperature-control,Heating mat pair,AliExpress,V19 fused silicone heating pad pair,1 set,ordered,48 V / 200 W,Switched 48 V DC,,Pair wired in series for 48 V battery compartment heater candidate
 temperature-control,GPIO optocoupler board,Generic,8-channel PC817 isolation board,1,on hand,3.3-30 V signal / 10 mA output per channel,GPIO isolation,,Signal-level only; do not switch heater load directly
 control,Solenoid/MOSFET driver board,Adafruit,TBD,1,ordered,TBD,MOSFET low-side switch,,Useful for low-voltage accessory loads or relay coils; not preferred for direct Classic AUX2 interface
