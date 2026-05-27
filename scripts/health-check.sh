@@ -2,5 +2,4 @@
 set -eu
 
 echo "Health check placeholder."
-echo "Suggested checks: systemd services, disk space, Pi temperature, MQTT broker, database, latest telemetry."
-
+echo "Suggested checks: systemd services, disk space, Pi temperature, telemetry transport, database, latest telemetry."

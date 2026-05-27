@@ -4,7 +4,7 @@ Raspberry Pi-mediated monitoring, logging, and control for an off-grid power ins
 
 ## Goals
 
-- Track the physical system: batteries, solar input, charge controller, inverter, loads, sensors, relays, wiring, fuses, and enclosures.
+- Track the physical system by major subsystem: battery bank, solar charge controller, inverter/charger, controller, loads, sensors, wiring, fuses, and enclosures.
 - Run reliable local telemetry on a Raspberry Pi.
 - Keep control logic conservative, inspectable, and recoverable.
 - Preserve field observations, photos, diagrams, and configuration in one versioned place.
@@ -18,6 +18,7 @@ Update this section as the system moves through bench testing, installation, com
 ## Repo Map
 
 - [docs/architecture.md](docs/architecture.md): system overview and data/control flow.
+- [docs/subsystems/](docs/subsystems/): telemetry, control, wiring, and open questions for each major hardware subsystem.
 - [docs/hardware-inventory.md](docs/hardware-inventory.md): component table.
 - [docs/wiring.md](docs/wiring.md): wiring notes, pinouts, fuse ratings, cable gauges, and labels.
 - [docs/commissioning.md](docs/commissioning.md): first power-up and acceptance checklist.
@@ -36,6 +37,7 @@ Update this section as the system moves through bench testing, installation, com
 - Every controlled output should have a documented manual override or recovery path.
 - Every physical wiring change should be reflected in documentation and photos.
 - Secrets do not go in Git. Use `.env` files locally and keep `.env.example` in the repo.
+- Subsystem docs are the source of truth for what should be measured, what may be controlled, and what still needs research.
 
 ## Quick Start
 
