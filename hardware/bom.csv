@@ -1,5 +1,6 @@
 category,item,manufacturer,model,quantity,voltage_or_rating,interface,vendor_url,notes
 controller,Raspberry Pi,Raspberry Pi,3 Model B v1.2,1,5 V,GPIO/USB/Ethernet/Wi-Fi/Bluetooth,,Controller and logger
+power,12 V DC-DC converter,Victron Energy,Orion-Tr 48/12-9A isolated candidate,1,48 V input / 12 V 9 A output,48 V DC to 12 V control bus,,Primary supply for 12 V control rail; confirm exact Orion model and fuse sizing
 monitoring,USB-to-CAN adapter,DSD TECH,SH-C31G,1,USB powered,USB Type-B/CAN terminal block,https://www.deshide.com/product-details_SH-C31G.html,Preferred battery CAN interface; isolated cabled version based on CANable 2.0; validate Eco-Worthy CAN protocol before relying on it
 monitoring,USB-to-RS485/422 adapter,Waveshare,USB TO RS485/422 Industrial Grade Isolated Converter,1,USB powered,USB/RS485/RS422 screw terminal,https://www.waveshare.com/usb-to-rs485-422.htm,RS485 fallback for battery BMS communication; isolated and jumper-configurable 120R termination
 monitoring,USB-to-RS485 adapter,TBD,TBD isolated USB-RS485 adapter,1,USB powered,USB/RJ11 breakout to Magnum RS485 network,,Dedicated Magnum inverter network pilot adapter; keep separate from battery RS485 bus

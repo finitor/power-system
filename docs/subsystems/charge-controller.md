@@ -36,6 +36,21 @@ The Eco-Worthy ESM-100/BMS should be the first battery SOC/current source for th
 
 Avoid or defer WhizBang Jr unless its benefits clearly outweigh the loss of AUX2. The WhizBang Jr uses Classic AUX2, and AUX2 may be more valuable as a control channel for high-level charge inhibit or other Classic functions in this LiFePO4 retrofit.
 
+## AUX2 Input Functions
+
+AUX2 can be configured as either an output/input port for Classic auxiliary functions or as the WhizBang Jr current-shunt input. These uses are mutually exclusive in normal planning: using AUX2 for WhizBang Jr means it is not available as a simple charge-control input.
+
+Known AUX2 input functions from the Classic documentation:
+
+| AUX2 function | Input behavior | Project relevance |
+|---|---|---|
+| WhizBang Jr | Uses AUX2 for the external shunt accessory | Provides Classic-local net battery current and ending-amps support, but duplicates battery voltage/current/SOC already expected from the Eco-Worthy BMS/ESM-100 path |
+| Force Float | Input above roughly 6 V forces Float | Not ideal as the primary LiFePO4 full-charge behavior because the desired state after absorb is usually Resting/Stop Charge, not continued float |
+| Logic Input 1 | High input forces Resting/Stop Charge; low input allows Charge | Strong candidate for a hardwired charge-inhibit path from the supervisor or battery protection logic |
+| Logic Input 2 | High input forces Charge; low input forces Resting/Stop Charge | Potentially useful, but less fail-safe unless the external circuit is deliberately designed so faults land in the desired conservative state |
+
+For this system, preserve AUX2 for Logic Input 1 research unless testing shows a better control path. The likely control pattern is: use battery/BMS telemetry and Classic charge-stage telemetry to decide when absorb is complete, then assert AUX2 Logic Input 1 so the Classic stops charging instead of maintaining a lead-acid-style float. Release the inhibit only after the battery falls below a documented recharge threshold and temperature permits charging.
+
 Possible future supervisory actions:
 
 - Alert when the controller reports a fault.

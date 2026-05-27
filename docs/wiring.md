@@ -17,6 +17,8 @@ Use this file as the canonical wiring record. Update it whenever a physical conn
 | Eco-Worthy Cubix 100 battery 2 | 48 V DC bus / battery combiner | 48 V nominal | TBD | TBD | Confirm equal-length cabling and per-battery protection |
 | 48 V DC bus | Midnite Solar Classic 200 battery terminals | 48 V nominal | TBD | TBD | Solar charge output to battery bank |
 | 48 V DC bus | MagnaSine 4448 DC input | 48 V nominal | TBD | TBD | High-current inverter feed; document disconnect and overcurrent protection |
+| 48 V DC bus | Victron Orion 48/12 DC-DC converter input | 48 V nominal | TBD | TBD DC fuse/breaker | Supplies 12 V control bus; confirm exact Orion model and input fuse size |
+| Victron Orion 12 V output | 12 V control bus | 12 V nominal | TBD | TBD DC fuse/breaker | Feeds thermostat, relay/driver boards, SSR control, fan/damper, and possible powered USB hub |
 | 48 V DC bus | Battery heater mat pair | 48 V nominal | TBD | 10 A DC breaker / manual disconnect | Through DC SSR and one-shot thermal fuse; heater is about 200 W / 4.2 A |
 
 ## Signal Wiring

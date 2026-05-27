@@ -26,6 +26,7 @@ Update this section as the system moves through bench testing, installation, com
 - [docs/troubleshooting.md](docs/troubleshooting.md): symptoms, likely causes, and checks.
 - [docs/safety.md](docs/safety.md): electrical and operational safety notes.
 - [hardware/bom.csv](hardware/bom.csv): bill of materials.
+- [hardware/on-hand.csv](hardware/on-hand.csv): parts already on hand, ordered, or being considered.
 - [software/](software/): Pi services, telemetry, dashboard, and control code.
 - [config/](config/): deployable service and application configuration templates.
 - [scripts/](scripts/): installation, backup, restore, and health-check helpers.

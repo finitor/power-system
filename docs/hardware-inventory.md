@@ -5,6 +5,7 @@ Track every major physical component here. Prefer exact model numbers and interf
 | Component | Model | Voltage | Interface | Purpose | Notes |
 |---|---|---:|---|---|---|
 | Raspberry Pi | 3 Model B v1.2 | 5 V | GPIO / USB / Ethernet / Wi-Fi / Bluetooth | Controller and logger | 1 GB RAM, 4x USB 2.0, 40-pin GPIO; add power supply |
+| 12 V DC-DC converter | Victron Orion-Tr 48/12-9A isolated candidate | 48 V input, 12 V output | 48 V bus to 12 V control bus | Control power | Primary 12 V rail for thermostat, relay/driver boards, SSR control input, fan/damper, and possible powered USB hub input; confirm exact model |
 | USB-to-CAN adapter | DSD TECH SH-C31G | USB powered | USB Type-B / CAN terminal block | Preferred battery CAN interface | Isolated cabled adapter based on CANable 2.0; Cubix CAN RJ45 pinout is pin 4 CANH1, pin 5 CANL1, pins 3/6 GND |
 | USB-to-RS485 adapter | Waveshare USB TO RS485/422 isolated converter | USB powered | USB / RS485 screw terminal | Fallback battery RS485 interface | Candidate fallback if CAN does not expose required telemetry |
 | USB-to-RS485 adapter | TBD isolated adapter | USB powered | USB / RJ11 breakout | Magnum inverter network pilot | Dedicated adapter for Magnum RS485 experiments; keep separate from battery RS485 |

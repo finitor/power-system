@@ -5,7 +5,8 @@
 | Item | Value |
 |---|---|
 | Controller | Raspberry Pi 3 Model B v1.2 |
-| Power source | TBD DC-DC supply from 48 V system; target 5.1 V, 5 A or better |
+| Power source | 5.1 V supply from 48 V system or from 12 V control bus; target 5.1 V, 5 A or better |
+| 12 V control bus supply | Victron Orion-Tr 48/12-9A isolated candidate |
 | Network | 100BASE-T Ethernet, 2.4 GHz Wi-Fi, Bluetooth/BLE available |
 | Storage | microSD boot plus external logging storage candidate |
 | Enclosure | TBD |
@@ -14,6 +15,10 @@
 | Magnum RS485 interface | Second isolated USB-RS485 adapter, pilot |
 
 ## Power Supply Requirements
+
+The 12 V control bus is supplied from the 48 V battery system by a Victron Orion 48/12 DC-DC converter. The current working candidate is the isolated Orion-Tr 48/12-9A class; confirm the exact model number before final fuse and wire sizing.
+
+The 12 V bus should feed low-voltage control loads such as thermostat/controller power, relay or MOSFET driver boards, DC SSR control inputs, ventilation fan/damper loads, and possibly an industrial powered USB hub. It must not feed the 48 V heater load directly.
 
 The Raspberry Pi 3 Model B normally wants a 5 V / 2.5 A supply before allowing for hats, USB adapters, or a display. For this installation, size the 5 V rail with extra headroom because the Pi may power multiple USB comms adapters, hats, and a small display.
 
@@ -25,6 +30,24 @@ Recommended DC-DC converter class:
 - Consider isolation if noise or ground-loop behavior becomes a problem.
 
 Do not use a converter rated only 10-55 V input as the final Pi supply. A 48 V LiFePO4 battery bank can reach about 58.4 V while charging, which exceeds a 55 V input rating. A 3 A / 15 W output is also marginal once hats and a display are added.
+
+If the Pi is powered from the 12 V bus, use a separate 12 V to 5.1 V converter sized by the 5 V load budget below. If the Pi is powered directly from the 48 V bus, keep the 12 V Orion bus separate for controls.
+
+## 12 V Load Budget
+
+Use this as a preliminary design budget for the Victron Orion output.
+
+| Load | Count | 12 V Current Budget | Notes |
+|---|---:|---:|---|
+| Thermostat / heat-cool controller | 1 | 0.1 A | Typical small controller load |
+| DC SSR control input | 1 | 0.05 A | Depends on final SSR |
+| GPIO optocoupler / driver boards | TBD | 0.1 A | Signal/control electronics only |
+| 8-channel relay board, if used | 1 | 0.8 A | Budget about 80 mA per relay with all channels energized |
+| Ventilation fan / damper | 1-2 | 0.5-2.0 A | Depends on selected fan/actuator |
+| Powered USB hub input, if 12 V hub is used | 1 | TBD | Include downstream USB device load |
+| 12 V to 5.1 V Pi converter input, if used | 1 | 2-5 A | Depends on 5 V rail load and converter efficiency |
+
+The Orion-Tr 48/12-9A class provides about 108 W at 12 V. That is sufficient for the expected control bus, but the budget should be recalculated once fan/damper, hub, and Pi power topology are finalized.
 
 ## 5 V Load Budget
 
