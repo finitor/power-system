@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "offgrid-power"
+version = "0.1.0"
+description = "Raspberry Pi supervisory monitoring for the off-grid power system."
+requires-python = ">=3.10"
+dependencies = [
+  "pymodbus==3.13.0",
+]
+
+[project.scripts]
+offgrid-supervisor = "offgrid_power.cli.supervisor_display:main"
+
+[tool.setuptools]
+package-dir = {"" = "software/pi-controller/src"}
+
+[tool.setuptools.packages.find]
+where = ["software/pi-controller/src"]

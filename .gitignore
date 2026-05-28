@@ -19,6 +19,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+*.egg-info/
 
 # Node/dashboard builds
 node_modules/
@@ -36,4 +37,3 @@ data/local/
 # Generated exports
 *.bak
 *.tmp
-
