@@ -36,7 +36,7 @@ flowchart LR
 | Battery bank | Stores DC energy and exposes battery/BMS state | 2x Eco-Worthy Cubix 100, 48 V, 100 Ah each |
 | Charge controller | Converts solar array output into controlled battery charging | Midnite Solar Classic 200 |
 | Inverter/charger | Converts 48 V DC to AC and charges from AC input when available | MagnaSine 4448 |
-| Battery temperature control | Keeps batteries inside a safe temperature window | 48 V heater mat, insulated/ventilatable enclosure, thermostat, Pi permissive, thermal cutoffs |
+| Battery temperature control | Keeps batteries inside a safe temperature window | 48 V ceramic heater, insulated/ventilatable enclosure, thermostat, Pi permissive, thermal cutoffs |
 | Supervisory controller | Reads telemetry, logs state, displays dashboard, and coordinates non-critical control | Raspberry Pi |
 | Data services | Telemetry transport, database, dashboard, logs | Local-first; MQTT is an option but not yet a committed dependency |
 

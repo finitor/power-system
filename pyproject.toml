@@ -11,6 +11,12 @@ dependencies = [
   "pymodbus==3.13.0",
 ]
 
+[project.optional-dependencies]
+sensors = [
+  "adafruit-blinka>=8,<10",
+  "adafruit-circuitpython-dht>=4,<5",
+]
+
 [project.scripts]
 offgrid-supervisor = "offgrid_power.cli.supervisor_display:main"
 

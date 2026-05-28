@@ -2,19 +2,20 @@ category,item,manufacturer,model_or_description,quantity,status,voltage_or_ratin
 controller,Raspberry Pi,Raspberry Pi,3 Model B v1.2,1,on hand,5 V,GPIO/USB/Ethernet/Wi-Fi/Bluetooth,,Primary controller candidate
 storage,Rack battery,Eco-Worthy,Cubix 100,2,on hand,48 V 100 Ah each,Bluetooth/Wi-Fi/RS485/CAN/RS232,,Rack-mount LiFePO4 batteries with built-in BMS
 monitoring,Battery remote monitor,Eco-Worthy,ESM-100,1,on hand,Battery accessory powered,Battery monitor link,,Displays voltage current and SOC
+monitoring,RJ45 female screw-terminal breakout,Poyiccot,RJ45 8P8C female jack to 8 pin screw terminal connector,2,on hand,RJ45 low-voltage comms,RJ45 female / screw terminal,,Bench wiring and adapter-side breakout for Eco-Worthy battery CAN and RS485 instrumentation
 conversion,Inverter/charger,Magnum Energy / MagnaSine,4448,1,on hand,48 V DC / AC rating TBD,TBD,,Confirm exact model label and monitoring interface
 charging,Charge controller,Midnite Solar,Classic 200,1,on hand,48 V battery system / PV input TBD,TBD,,Legacy solar charge controller
 monitoring,Temperature/humidity sensor,ASAIR,AM2302 / DHT22,1,on hand,3.3-5 V,GPIO single-wire,,Utility-room ambient humidity and temperature
 monitoring,Temperature sensor,Generic,DS18B20 stainless waterproof probe,10,on hand,3.3 V,1-Wire GPIO,,Battery/rack enclosure air heater plate and outside ambient temperature
-temperature-control,Heating mat pair,AliExpress,V19 fused silicone heating pad pair,1 set,ordered,48 V / 200 W,Switched 48 V DC,,Pair wired in series for 48 V battery compartment heater candidate
-temperature-control,GPIO optocoupler board,Generic,8-channel PC817 isolation board,1,on hand,3.3-30 V signal / 10 mA output per channel,GPIO isolation,,Signal-level only; do not switch heater load directly
-control,Solenoid/MOSFET driver board,Adafruit,TBD,1,ordered,TBD,MOSFET low-side switch,,Useful for low-voltage accessory loads or relay coils; not preferred for direct Classic AUX2 interface
-control,Relay module,Javino or similar,1/2/4/6/8 channel high-low trigger relay module,TBD,shopping,5 V coil / DC 30 V 10 A contacts,GPIO trigger / SPDT relay contacts,,Prefer high-level trigger and normally-open contacts for Classic AUX2 charge inhibit
+temperature-control,Ceramic heater,TBD,48 V 200 W ceramic heater,1,planned,48 V / 200 W,Switched 48 V DC,,Substitute for the previously considered AliExpress V19 fused silicone heating pad pair
+temperature-control,GPIO optocoupler board,Generic,8-channel PC817 isolation board,1,not on hand,3.3-30 V signal / 10 mA output per channel,GPIO isolation,,Signal-level only; do not switch heater load directly
+control,Solenoid/MOSFET driver board,Adafruit,TBD,1,not on hand,TBD,MOSFET low-side switch,,Useful for low-voltage accessory loads or relay coils; not preferred for direct Classic AUX2 interface
+control,Relay module,Javino or similar,1/2/4/6/8 channel high-low trigger relay module,TBD,not on hand,5 V coil / DC 30 V 10 A contacts,GPIO trigger / SPDT relay contacts,,Prefer high-level trigger and normally-open contacts for Classic AUX2 charge inhibit
 passive,Resistor,TBD,51 ohm flameproof,10,on hand,1/2 W,through-hole,,From current parts box photo
 passive,Resistor,TBD,150 ohm flameproof,10,on hand,1/2 W,through-hole,,From current parts box photo
 passive,Resistor,TBD,360 ohm flameproof,10,on hand,1/2 W,through-hole,,From current parts box photo
 passive,Resistor,TBD,100k ohm flameproof,TBD,on hand,1/4 W,through-hole,,From current parts box photo; confirm count
-passive,Resistor,TBD,1k ohm,TBD,on hand,TBD,through-hole,,Measured with multimeter; blue-body resistors from current parts box photo
-passive,Resistor,TBD,10k,TBD,needed,TBD,through-hole or terminal-friendly,,Candidate Classic AUX2 pull-up/current-limit resistor
-passive,Resistor,TBD,4.7k,TBD,needed,TBD,through-hole or terminal-friendly,,DS18B20 1-Wire DATA pull-up resistor
+passive,Resistor,TBD,1k ohm,10,on hand,TBD,through-hole,,Measured with multimeter; blue-body resistors from current parts box photo
+passive,Resistor,TBD,10k ohm,10,on hand,TBD,through-hole,,Suitable DHT22/AM2302 DATA pull-up resistor; also candidate Classic AUX2 pull-up/current-limit resistor
+passive,Resistor,TBD,4.7k ohm,TBD,needed,TBD,through-hole or terminal-friendly,,Preferred DS18B20 1-Wire DATA pull-up resistor; approximate with available 10k/1k combinations for bench testing if needed
 passive,Resistor,TBD,120 ohm,TBD,needed,TBD,through-hole or terminal-friendly,,CAN termination/spares if adapter or battery termination is not sufficient
