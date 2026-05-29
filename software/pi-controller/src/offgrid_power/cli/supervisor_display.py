@@ -68,8 +68,10 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         else:
             ambient = AmbientDhtClient(gpio_pin=args.ambient_gpio, sensor_type=args.ambient_kind)
 
+    battery_can_interface = None if args.no_battery_can else args.battery_can_interface
+
     battery = None
-    if not args.no_battery_can and args.battery_can_interface in socketcan_interfaces():
+    if battery_can_interface is not None and args.battery_can_interface in socketcan_interfaces():
         battery = BatteryCanClient(interface=args.battery_can_interface, receive_seconds=args.battery_can_seconds)
 
     return Supervisor(
@@ -83,6 +85,7 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         ),
         ambient=ambient,
         battery=battery,
+        battery_can_interface=battery_can_interface,
     )
 
 

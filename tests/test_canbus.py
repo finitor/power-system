@@ -12,6 +12,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.canbus import (
     CanFrame,
+    canbus_health,
     candump_log_frames,
     decode_pylon_snapshot,
     interface_state,
@@ -54,6 +55,27 @@ class CanBusDiscoveryTest(unittest.TestCase):
         self.assertEqual(len(devices), 1)
         self.assertEqual(devices[0].product, "DFU in FS Mode")
         self.assertEqual(devices[0].serial, "208634B94B45")
+
+    def test_canbus_health_reports_dfu_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as net_dir, tempfile.TemporaryDirectory() as usb_dir:
+            sys_bus_usb = Path(usb_dir)
+            device = sys_bus_usb / "1-1.3"
+            device.mkdir()
+            (device / "idVendor").write_text("0483\n", encoding="utf-8")
+            (device / "idProduct").write_text("df11\n", encoding="utf-8")
+            (device / "product").write_text("DFU in FS Mode\n", encoding="utf-8")
+            (device / "serial").write_text("208634B94B45\n", encoding="utf-8")
+
+            health = canbus_health(
+                interface="can0",
+                sys_class_net=Path(net_dir),
+                sys_bus_usb=sys_bus_usb,
+            )
+
+        self.assertFalse(health.ok)
+        self.assertFalse(health.socketcan_present)
+        self.assertIn("DFU/bootloader", health.status_message())
+        self.assertIn("208634B94B45", health.status_message())
 
 
 class PylonCanDecodeTest(unittest.TestCase):

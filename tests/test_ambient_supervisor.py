@@ -11,7 +11,7 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.ambient import AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
-from offgrid_power.canbus import CanFrame, decode_pylon_snapshot
+from offgrid_power.canbus import CanBusHealth, CanFrame, UsbDevice, decode_pylon_snapshot
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import (
     CHANGED_DIGIT_END,
@@ -91,7 +91,11 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Sensor 0 ambient temp: disconnected", rendered)
 
     def test_terminal_display_renders_battery_can_reading(self) -> None:
-        snapshot = Supervisor(classic=None, ambient=None, battery=FakeBatteryCanClient()).read_snapshot()
+        snapshot = Supervisor(
+            classic=None,
+            ambient=None,
+            battery=FakeBatteryCanClient(),
+        ).read_snapshot()
 
         rendered = render_snapshot(snapshot)
 
@@ -103,6 +107,37 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("charge yes  discharge yes", rendered)
         self.assertIn("protect none  alarms none", rendered)
         self.assertIn("3.274-3.279V", rendered)
+
+    def test_terminal_display_renders_battery_can_dfu_mode(self) -> None:
+        snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
+        snapshot = snapshot.__class__(
+            captured_at=snapshot.captured_at,
+            classic=snapshot.classic,
+            classic_settings=snapshot.classic_settings,
+            battery=None,
+            battery_can_health=CanBusHealth(
+                interface="can0",
+                socketcan_present=False,
+                dfu_devices=(
+                    UsbDevice(
+                        path=Path("/sys/bus/usb/devices/1-1.3"),
+                        vendor_id="0483",
+                        product_id="df11",
+                        product="DFU in FS Mode",
+                        serial="208634B94B45",
+                    ),
+                ),
+            ),
+            ambient=snapshot.ambient,
+            errors=["CAN adapter is in DFU/bootloader mode: DFU in FS Mode serial=208634B94B45"],
+        )
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertIn("Status:  ERROR", rendered)
+        self.assertIn("CAN adapter: DFU/bootloader mode", rendered)
+        self.assertIn("DFU in FS Mode serial 208634B94B45", rendered)
+        self.assertIn("replug USB-CAN adapter", rendered)
 
     def test_supervisor_treats_disconnected_ambient_probe_as_non_error_state(self) -> None:
         snapshot = Supervisor(classic=None, ambient=FakeDisconnectedAmbientClient()).read_snapshot()

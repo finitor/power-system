@@ -22,6 +22,29 @@ class UsbDevice:
 
 
 @dataclass(frozen=True)
+class CanBusHealth:
+    interface: str
+    socketcan_present: bool
+    dfu_devices: tuple[UsbDevice, ...]
+
+    @property
+    def ok(self) -> bool:
+        return self.socketcan_present and not self.dfu_devices
+
+    def status_message(self) -> str:
+        if self.dfu_devices:
+            devices = ", ".join(
+                f"{device.product or 'STM32 DFU'}"
+                f"{f' serial={device.serial}' if device.serial else ''}"
+                for device in self.dfu_devices
+            )
+            return f"CAN adapter is in DFU/bootloader mode: {devices}"
+        if not self.socketcan_present:
+            return f"CAN interface {self.interface} is not present"
+        return f"CAN interface {self.interface} is present"
+
+
+@dataclass(frozen=True)
 class CanFrame:
     arbitration_id: int
     data: bytes
@@ -198,6 +221,18 @@ def socketcan_interfaces(sys_class_net: Path = Path("/sys/class/net")) -> list[s
         if type_path.exists() and type_path.read_text(encoding="utf-8").strip() == ARPHRD_CAN:
             interfaces.append(interface_path.name)
     return interfaces
+
+
+def canbus_health(
+    interface: str = "can0",
+    sys_class_net: Path = Path("/sys/class/net"),
+    sys_bus_usb: Path = Path("/sys/bus/usb/devices"),
+) -> CanBusHealth:
+    return CanBusHealth(
+        interface=interface,
+        socketcan_present=interface in socketcan_interfaces(sys_class_net),
+        dfu_devices=tuple(stm32_dfu_devices(sys_bus_usb)),
+    )
 
 
 def interface_state(interface: str, sys_class_net: Path = Path("/sys/class/net")) -> str:

@@ -124,7 +124,19 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
     lines.append("")
     lines.append("Battery Bank")
     if snapshot.battery is None:
-        lines.append("  No CAN data")
+        if snapshot.battery_can_health is None:
+            lines.append("  No CAN data")
+        elif snapshot.battery_can_health.dfu_devices:
+            lines.append("  CAN adapter: DFU/bootloader mode")
+            for device in snapshot.battery_can_health.dfu_devices[:2]:
+                product = device.product or "STM32 DFU"
+                serial = f" serial {device.serial}" if device.serial else ""
+                lines.append(f"    - {product}{serial}")
+            lines.append("  Action: replug USB-CAN adapter without BOOT/DFU pressed")
+        elif not snapshot.battery_can_health.socketcan_present:
+            lines.append(f"  CAN adapter: interface {snapshot.battery_can_health.interface} not present")
+        else:
+            lines.append("  No CAN frames received")
     else:
         battery = snapshot.battery
         state = battery.state_of_charge
