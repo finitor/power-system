@@ -10,8 +10,9 @@ from .supervisor import SupervisorSnapshot
 
 CHANGED_DIGIT_START = "\033[93m"
 CHANGED_DIGIT_END = "\033[0m"
-UP_ARROW = "\033[92m↑\033[0m"
-DOWN_ARROW = "\033[91m↓\033[0m"
+DIRECTION_ARROW_START = "\033[92m"
+UP_ARROW = f"{DIRECTION_ARROW_START}↑{CHANGED_DIGIT_END}"
+DOWN_ARROW = f"{DIRECTION_ARROW_START}↓{CHANGED_DIGIT_END}"
 MEASUREMENT_PATTERN = re.compile(r"(?<![\w-])(-?\d+(?:\.\d+)?)(kWh|Ah|[VAWCs%])(?![\w-])")
 
 
@@ -121,9 +122,54 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
         lines.append(f"  EQ:      {settings.equalize_voltage_v:5.1f}V")
 
     lines.append("")
+    lines.append("Battery Bank")
+    if snapshot.battery is None:
+        lines.append("  No CAN data")
+    else:
+        battery = snapshot.battery
+        state = battery.state_of_charge
+        measurements = battery.measurements
+        limits = battery.charge_limits
+        status = battery.status
+        requests = battery.request_flags
+        extended = battery.extended_measurements
+
+        if measurements is not None:
+            lines.append(
+                f"  Pack:    {measurements.voltage_v:5.2f}V  "
+                f"{measurements.current_a:5.1f}A  {measurements.temperature_c:4.1f}C"
+            )
+        if state is not None:
+            lines.append(f"  State:   SOC {state.soc_percent:3d}%  SOH {state.soh_percent:3d}%")
+        if limits is not None:
+            lines.append(
+                f"  Limits:  charge {limits.charge_voltage_limit_v:4.1f}V/{limits.charge_current_limit_a:5.1f}A  "
+                f"discharge {limits.discharge_current_limit_a:5.1f}A"
+            )
+        if requests is not None:
+            charge = "yes" if requests.charge_enable else "no"
+            discharge = "yes" if requests.discharge_enable else "no"
+            extra_requests = []
+            if requests.force_charge_1 or requests.force_charge_2:
+                extra_requests.append("force charge")
+            if requests.full_charge_request:
+                extra_requests.append("full charge")
+            suffix = f"  Request: {', '.join(extra_requests)}" if extra_requests else ""
+            lines.append(f"  Enable:  charge {charge}  discharge {discharge}{suffix}")
+        if status is not None:
+            protections = "none" if not status.protection_flags else ", ".join(status.protection_flags[:2])
+            alarms = "none" if not status.alarm_flags else ", ".join(status.alarm_flags[:2])
+            lines.append(f"  BMS:     modules {status.module_count}  protect {protections}  alarms {alarms}")
+        if extended is not None and extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
+            line = f"  Cells:   {extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V"
+            if extended.min_cell_temperature_c is not None and extended.max_cell_temperature_c is not None:
+                line += f"  {extended.min_cell_temperature_c:4.1f}-{extended.max_cell_temperature_c:4.1f}C"
+            lines.append(line)
+
+    lines.append("")
     lines.append("Temperature Probes")
     if snapshot.ambient is None:
-        lines.append("  No data")
+        lines.append("  Sensor 0 ambient temp: disconnected")
     else:
         ambient = snapshot.ambient
         lines.append(f"  Sensor 0 ambient temp: {ambient.temperature_c:5.1f}C")

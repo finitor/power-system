@@ -15,6 +15,10 @@ class AmbientTelemetry:
     captured_at: datetime
 
 
+class AmbientProbeDisconnected(RuntimeError):
+    """Raised when a configured ambient probe is absent or electrically disconnected."""
+
+
 class AmbientDhtClient:
     """Read a DHT11 or AM2302/DHT22 sensor through Adafruit's CircuitPython driver."""
 
@@ -100,7 +104,7 @@ class AmbientDs18b20Client:
         matches = sorted(self.devices_path.glob("28-*/w1_slave"))
         if not matches:
             msg = "No DS18B20 devices found; enable 1-Wire and check wiring"
-            raise RuntimeError(msg)
+            raise AmbientProbeDisconnected(msg)
         return matches[0]
 
     def read(self) -> AmbientTelemetry:
@@ -109,7 +113,7 @@ class AmbientDs18b20Client:
             lines = device_file.read_text(encoding="utf-8").splitlines()
         except FileNotFoundError as exc:
             msg = f"DS18B20 device not found: {device_file.parent.name}"
-            raise RuntimeError(msg) from exc
+            raise AmbientProbeDisconnected(msg) from exc
 
         if len(lines) < 2 or not lines[0].strip().endswith("YES"):
             raise RuntimeError(f"DS18B20 CRC/read failed: {device_file.parent.name}")
@@ -119,6 +123,9 @@ class AmbientDs18b20Client:
             raise RuntimeError(f"DS18B20 temperature missing: {device_file.parent.name}")
 
         raw_millic = int(lines[1].split(marker, maxsplit=1)[1])
+        if raw_millic == 0:
+            raise AmbientProbeDisconnected(f"DS18B20 returned 0.0C; probe may be disconnected: {device_file.parent.name}")
+
         return AmbientTelemetry(
             temperature_c=raw_millic / 1000,
             humidity_percent=None,

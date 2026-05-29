@@ -6,8 +6,10 @@ Read-only supervisory monitoring and future control orchestration for the Raspbe
 
 - `src/offgrid_power/classic.py`: MidNite Classic Modbus TCP telemetry adapter.
 - `src/offgrid_power/ambient.py`: AM2302/DHT22 ambient temperature and humidity adapter.
+- `src/offgrid_power/canbus.py`: SocketCAN discovery and Pylon-style battery CAN decoding helpers.
 - `src/offgrid_power/supervisor.py`: combines adapter reads into a single snapshot.
 - `src/offgrid_power/terminal_display.py`: renders a compact terminal status view.
+- `src/offgrid_power/cli/can_decode.py`: live or log-based battery CAN decoder.
 - `src/offgrid_power/cli/supervisor_display.py`: production entry point for the live terminal display.
 - `../../scripts/supervisor-display.py`: compatibility wrapper for local repo runs.
 
@@ -20,6 +22,17 @@ offgrid-supervisor --classic-host 192.168.0.10
 ```
 
 Use `--once` for a single snapshot. The current scaffold is read-only and performs no control writes.
+
+To inspect the Eco-Worthy/Pylon-style battery CAN bus from the Pi:
+
+```sh
+sudo ip link set can0 down
+sudo ip link set can0 type can bitrate 500000 listen-only on
+sudo ip link set can0 up
+offgrid-can-decode --interface can0 --seconds 3 --raw
+```
+
+Keep `can0` in listen-only mode while validating telemetry. The CAN decoder currently treats writable/control behavior as unavailable and only decodes battery-to-inverter telemetry and permissive/request frames.
 
 Install the sensor extra on the Raspberry Pi before reading the AM2302/DHT22 sensor. DS18B20 probes use Linux's 1-Wire interface and do not need this extra, but it is harmless to leave installed.
 
