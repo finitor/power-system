@@ -5,10 +5,11 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+import sys
 import time
 
 from offgrid_power.ambient import AmbientDhtClient, AmbientDs18b20Client
-from offgrid_power.canbus import BatteryCanClient, socketcan_interfaces
+from offgrid_power.canbus import BatteryCanClient, ensure_socketcan_interface_up, socketcan_interfaces
 from offgrid_power.classic import ClassicClient
 from offgrid_power.config import load_config
 from offgrid_power.supervisor import Supervisor
@@ -24,7 +25,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--classic-timeout", type=float, default=config.classic.timeout_s)
     parser.add_argument("--no-classic", action="store_true", help="Disable MidNite Classic reads")
     parser.add_argument("--battery-can-interface", default="can0", help="SocketCAN battery interface")
+    parser.add_argument("--battery-can-bitrate", type=int, default=500000, help="SocketCAN battery interface bitrate")
     parser.add_argument("--battery-can-seconds", type=float, default=1.5, help="Seconds to collect battery CAN frames")
+    parser.add_argument(
+        "--no-battery-can-auto-up",
+        action="store_true",
+        help="Do not automatically configure and raise a down SocketCAN battery interface",
+    )
     parser.add_argument("--no-battery-can", action="store_true", help="Disable battery CAN reads")
     parser.add_argument(
         "--ambient-kind",
@@ -71,6 +78,16 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
     battery_can_interface = None if args.no_battery_can else args.battery_can_interface
 
     battery = None
+    if battery_can_interface is not None:
+        if not args.no_battery_can_auto_up:
+            try:
+                ensure_socketcan_interface_up(
+                    args.battery_can_interface,
+                    bitrate=args.battery_can_bitrate,
+                    listen_only=True,
+                )
+            except Exception as exc:  # noqa: BLE001 - keep display alive and show the read failure.
+                print(f"Battery CAN auto-up failed: {exc}", file=sys.stderr)
     if battery_can_interface is not None and args.battery_can_interface in socketcan_interfaces():
         battery = BatteryCanClient(interface=args.battery_can_interface, receive_seconds=args.battery_can_seconds)
 

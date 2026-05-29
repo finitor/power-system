@@ -15,6 +15,7 @@ from offgrid_power.canbus import (
     canbus_health,
     candump_log_frames,
     decode_pylon_snapshot,
+    ensure_socketcan_interface_up,
     interface_state,
     socketcan_interfaces,
     stm32_dfu_devices,
@@ -39,6 +40,52 @@ class CanBusDiscoveryTest(unittest.TestCase):
             (sys_class_net / "can0" / "operstate").write_text("down\n", encoding="utf-8")
 
             self.assertEqual(interface_state("can0", sys_class_net), "down")
+
+    def test_ensure_socketcan_interface_up_configures_down_interface(self) -> None:
+        commands = []
+
+        def fake_runner(command, check):
+            commands.append((command, check))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sys_class_net = Path(temp_dir)
+            (sys_class_net / "can0").mkdir()
+            (sys_class_net / "can0" / "type").write_text("280\n", encoding="utf-8")
+            (sys_class_net / "can0" / "operstate").write_text("down\n", encoding="utf-8")
+
+            changed = ensure_socketcan_interface_up(
+                "can0",
+                bitrate=500000,
+                sys_class_net=sys_class_net,
+                runner=fake_runner,
+            )
+
+        self.assertTrue(changed)
+        self.assertEqual(
+            commands,
+            [
+                (["ip", "link", "set", "can0", "type", "can", "bitrate", "500000", "listen-only", "on"], True),
+                (["ip", "link", "set", "can0", "up"], True),
+            ],
+        )
+
+    def test_ensure_socketcan_interface_up_leaves_running_interface_alone(self) -> None:
+        commands = []
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sys_class_net = Path(temp_dir)
+            (sys_class_net / "can0").mkdir()
+            (sys_class_net / "can0" / "type").write_text("280\n", encoding="utf-8")
+            (sys_class_net / "can0" / "operstate").write_text("unknown\n", encoding="utf-8")
+
+            changed = ensure_socketcan_interface_up(
+                "can0",
+                sys_class_net=sys_class_net,
+                runner=lambda command, check: commands.append(command),
+            )
+
+        self.assertFalse(changed)
+        self.assertEqual(commands, [])
 
     def test_stm32_dfu_devices_detects_bootloader_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

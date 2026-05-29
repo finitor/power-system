@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import subprocess
 import time
 from pathlib import Path
 from typing import Iterable
@@ -237,6 +238,29 @@ def canbus_health(
 
 def interface_state(interface: str, sys_class_net: Path = Path("/sys/class/net")) -> str:
     return _read_optional(sys_class_net / interface / "operstate")
+
+
+def ensure_socketcan_interface_up(
+    interface: str = "can0",
+    bitrate: int = 500000,
+    *,
+    listen_only: bool = True,
+    sys_class_net: Path = Path("/sys/class/net"),
+    runner=subprocess.run,
+) -> bool:
+    """Configure and raise a SocketCAN interface when it is present but down."""
+    if interface not in socketcan_interfaces(sys_class_net):
+        return False
+    if interface_state(interface, sys_class_net) != "down":
+        return False
+
+    type_command = ["ip", "link", "set", interface, "type", "can", "bitrate", str(bitrate)]
+    if listen_only:
+        type_command.extend(["listen-only", "on"])
+
+    runner(type_command, check=True)
+    runner(["ip", "link", "set", interface, "up"], check=True)
+    return True
 
 
 def stm32_dfu_devices(sys_bus_usb: Path = Path("/sys/bus/usb/devices")) -> list[UsbDevice]:
