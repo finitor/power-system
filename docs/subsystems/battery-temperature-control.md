@@ -80,14 +80,14 @@ Current leading candidate:
 
 | Candidate | Notes |
 |---|---|
-| AliExpress 1-set V19 fused 48 V / 51.2 V silicone heating pad pair | Pair is wired in series to make a 48 V / 200 W heater assembly; about 4.2 A at 48 V; reasonable prototype candidate; requires external thermostat/control |
+| 48 V 200 W ceramic heater | About 4.2 A at 48 V; selected substitute for the previously considered AliExpress V19 fused silicone heating pad pair; requires external thermostat/control |
 
-The mat's included fuse is useful branch protection, but it is not a thermostat and does not replace the upstream heater-circuit breaker, thermal cutoff, or temperature controller.
+Any heater-integrated fuse or thermal limiter is useful only as local backup protection. It does not replace the upstream heater-circuit breaker, thermal cutoff, or temperature controller.
 
 Mounting guidance:
 
-- Do not stick mats directly to Eco-Worthy rack battery cases unless Eco-Worthy approves it.
-- Prefer mounting mats to an aluminum heat spreader plate or enclosure surface.
+- Do not direct-mount heaters to Eco-Worthy rack battery cases unless Eco-Worthy approves it.
+- Prefer mounting the heater to an aluminum heat spreader plate or enclosure surface.
 - Heat enclosure air/rack metalwork rather than one concentrated spot.
 - Add a small low-temperature-rated circulation fan if the compartment has cold/hot pockets.
 
@@ -102,7 +102,7 @@ At 48 V:
 | 300 W | 6.3 A | 7.7 ohm |
 | 500 W | 10.4 A | 4.6 ohm |
 
-The 200 W mat is a good first implementation. A rough thermal-mass estimate for two 100 Ah rack batteries is about 0.8-1.0 kWh to raise the battery mass from -40 C to +5 C before enclosure losses. At 200 W this could take roughly 4-6 hours in a good enclosure.
+The 200 W heater is a good first implementation. A rough thermal-mass estimate for two 100 Ah rack batteries is about 0.8-1.0 kWh to raise the battery mass from -40 C to +5 C before enclosure losses. At 200 W this could take roughly 4-6 hours in a good enclosure.
 
 Do not size this subsystem to absorb the full 2400 W array. That is water-heater/diversion-load territory, not battery temperature control.
 
@@ -151,7 +151,7 @@ Use normally-open / fail-off logic. The Pi must actively permit heat; if the Pi 
   -> 10 A DC breaker/manual disconnect, 100-150 VDC preferred
   -> DC SSR or MOSFET switch
   -> one-shot thermal fuse near heater
-  -> fused 48 V / 200 W mat pair
+  -> 48 V / 200 W ceramic heater
   -> 48 V return
 ```
 
@@ -190,9 +190,9 @@ Use two independent over-temperature layers:
 | Device | Suggested Rating | Placement | Purpose |
 |---|---:|---|---|
 | Resettable NC thermal switch | 60 C | Heater spreader plate | Opens control path if heater area gets too hot |
-| One-shot thermal fuse | 72-84 C | Near heater mat | Final backup if SSR/control fails on |
+| One-shot thermal fuse | 72-84 C | Near heater | Final backup if SSR/control fails on |
 
-Do not rely on the Pi as the only over-temperature protection. Also do not rely on the mat's included fuse as a thermal safety device.
+Do not rely on the Pi as the only over-temperature protection. Also do not rely on any heater-integrated limiter as the only thermal safety device.
 
 ## Pi Control Interface
 

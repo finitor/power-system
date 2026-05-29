@@ -26,4 +26,6 @@ These names are transport-neutral for now. They could become MQTT topics, databa
 | `power/battery_temperature/battery_temperature_min` | number | C | Minimum observed battery temperature |
 | `power/battery_temperature/heater_plate_temperature` | number | C | Heater spreader plate temperature |
 | `power/battery_temperature/vent_state` | string |  | Closed, open, fan_on, fault |
+| `power/ambient/temperature` | number | C | Utility-room ambient air temperature from AM2302/DHT22 |
+| `power/ambient/humidity` | number | % | Utility-room ambient relative humidity from AM2302/DHT22 |
 | `power/system/health` | JSON |  | Service health summary |

@@ -9,9 +9,18 @@ description = "Raspberry Pi supervisory monitoring for the off-grid power system
 requires-python = ">=3.10"
 dependencies = [
   "pymodbus==3.13.0",
+  "python-can==4.6.1",
+]
+
+[project.optional-dependencies]
+sensors = [
+  "adafruit-blinka>=8,<10",
+  "adafruit-circuitpython-dht>=4,<5",
 ]
 
 [project.scripts]
+offgrid-can-decode = "offgrid_power.cli.can_decode:main"
+offgrid-can-probe = "offgrid_power.cli.can_probe:main"
 offgrid-supervisor = "offgrid_power.cli.supervisor_display:main"
 
 [tool.setuptools]

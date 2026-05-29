@@ -31,6 +31,7 @@ build/
 *.sqlite3
 *.db
 logs/
+data/*.csv
 data/raw/
 data/local/
 

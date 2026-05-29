@@ -21,9 +21,19 @@ class DisplayConfig:
 
 
 @dataclass(frozen=True)
+class AmbientConfig:
+    enabled: bool = True
+    kind: str = "ds18b20"
+    gpio_pin: int = 4
+    ds18b20_device_id: str = ""
+    log_path: str = ""
+
+
+@dataclass(frozen=True)
 class SupervisorConfig:
     classic: ClassicConfig
     display: DisplayConfig
+    ambient: AmbientConfig
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -55,5 +65,11 @@ def load_config() -> SupervisorConfig:
             refresh_seconds=env_float("SUPERVISOR_REFRESH_SECONDS", 5.0),
             clear_screen=env_bool("SUPERVISOR_DISPLAY_CLEAR", True),
         ),
+        ambient=AmbientConfig(
+            enabled=env_bool("AMBIENT_SENSOR_ENABLED", True),
+            kind=os.getenv("AMBIENT_SENSOR_KIND", "ds18b20"),
+            gpio_pin=env_int("AMBIENT_DHT22_GPIO", 4),
+            ds18b20_device_id=os.getenv("AMBIENT_DS18B20_DEVICE_ID", ""),
+            log_path=os.getenv("AMBIENT_LOG_PATH", ""),
+        ),
     )
-
