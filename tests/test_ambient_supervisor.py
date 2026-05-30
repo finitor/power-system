@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 import unittest
@@ -19,6 +19,7 @@ from offgrid_power.terminal_display import (
     CHANGED_DIGIT_START,
     DOWN_ARROW,
     UP_ARROW,
+    format_refresh_age,
     highlight_changed_digits,
     render_snapshot,
 )
@@ -138,6 +139,7 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Battery terminal:  15.3C", rendered)
         self.assertIn("Charge controller FET:  47.8C", rendered)
         self.assertIn("Charge controller PCB:  45.0C", rendered)
+        self.assertLess(rendered.index("Battery cells:"), rendered.index("Battery terminal:"))
 
     def test_terminal_display_renders_battery_can_reading(self) -> None:
         snapshot = Supervisor(
@@ -151,13 +153,27 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Battery Bank", rendered)
         self.assertIn("52.41V", rendered)
         self.assertIn("SOC  30%", rendered)
-        self.assertIn("SOH 100%", rendered)
+        self.assertNotIn("SOH", rendered)
         self.assertIn("charge yes  discharge yes", rendered)
         self.assertIn("3.274-3.279V", rendered)
         self.assertIn("Battery cells:", rendered)
         self.assertIn("9.9-10.9C", rendered)
         self.assertNotIn("Limits:", rendered)
         self.assertNotIn("BMS:", rendered)
+
+    def test_terminal_display_renders_refresh_age(self) -> None:
+        snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
+
+        rendered = render_snapshot(snapshot, now=snapshot.captured_at + timedelta(seconds=5))
+
+        self.assertIn("Refreshed: 5 seconds ago", rendered)
+        self.assertNotIn("Local time:", rendered)
+
+    def test_format_refresh_age_uses_human_singular_and_zero(self) -> None:
+        captured_at = datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(format_refresh_age(captured_at, captured_at), "just now")
+        self.assertEqual(format_refresh_age(captured_at, captured_at + timedelta(seconds=1)), "1 second ago")
 
     def test_terminal_display_renders_battery_can_dfu_mode(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
@@ -217,18 +233,19 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn(f"{CHANGED_DIGIT_START}23.5C{CHANGED_DIGIT_END}", highlighted)
         self.assertIn("21.5", highlight_changed_digits(None, "21.5"))
 
-    def test_terminal_display_still_highlights_time_digits_only(self) -> None:
+    def test_terminal_display_does_not_highlight_refresh_age(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Local time: 2026-05-28 15:48:49 EDT",
-            current="Local time: 2026-05-28 15:48:55 EDT",
+            previous="Refreshed: 1 second ago",
+            current="Refreshed: 2 seconds ago",
         )
 
-        self.assertIn(f":{CHANGED_DIGIT_START}5{CHANGED_DIGIT_END}{CHANGED_DIGIT_START}5{CHANGED_DIGIT_END} EDT", highlighted)
+        self.assertNotIn(CHANGED_DIGIT_START, highlighted)
+        self.assertNotIn(UP_ARROW, highlighted)
 
     def test_terminal_display_adds_direction_arrows_to_changed_values(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Battery:  54.2V    3.6A    196W\nLocal time: 2026-05-28 15:48:49 EDT",
-            current="Battery:  54.1V    3.8A    190W\nLocal time: 2026-05-28 15:48:55 EDT",
+            previous="Battery:  54.2V    3.6A    196W\nRefreshed: 1 second ago",
+            current="Battery:  54.1V    3.8A    190W\nRefreshed: 2 seconds ago",
         )
 
         self.assertIn(DOWN_ARROW, highlighted)

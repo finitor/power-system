@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from datetime import datetime
 from pathlib import Path
 import sys
 import time
@@ -136,15 +137,20 @@ def main() -> int:
     try:
         while True:
             snapshot = supervisor.read_snapshot()
-            rendered = render_snapshot(snapshot)
-            if not args.no_clear:
-                clear_screen()
-            print(highlight_changed_digits(previous_render, rendered))
-            previous_render = rendered
             append_ambient_log(args.ambient_log_path, snapshot)
-            if args.once:
-                return 0 if snapshot.ok else 1
-            time.sleep(args.interval)
+            next_read = time.monotonic() + args.interval
+            while True:
+                rendered = render_snapshot(snapshot, now=datetime.now(snapshot.captured_at.tzinfo))
+                if not args.no_clear:
+                    clear_screen()
+                print(highlight_changed_digits(previous_render, rendered))
+                previous_render = rendered
+                if args.once:
+                    return 0 if snapshot.ok else 1
+                remaining = next_read - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(1.0, remaining))
     except KeyboardInterrupt:
         print()
         return 0

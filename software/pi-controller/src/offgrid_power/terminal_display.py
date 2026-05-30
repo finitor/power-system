@@ -20,8 +20,14 @@ def clear_screen() -> None:
     print("\033[2J\033[H", end="")
 
 
-def format_time(value: datetime) -> str:
-    return value.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
+def format_refresh_age(captured_at: datetime, now: datetime | None = None) -> str:
+    now = now or datetime.now(captured_at.tzinfo)
+    seconds = max(0, int((now - captured_at).total_seconds()))
+    if seconds == 0:
+        return "just now"
+    if seconds == 1:
+        return "1 second ago"
+    return f"{seconds} seconds ago"
 
 
 def highlight_changed_digits(previous: str | None, current: str) -> str:
@@ -38,10 +44,7 @@ def highlight_changed_digits(previous: str | None, current: str) -> str:
         if highlight_value and (line_index, column_index - 1) not in value_highlights:
             highlighted.append(CHANGED_DIGIT_START)
 
-        if char.isdigit() and char != previous_char and current.startswith("Local time:", index - column_index):
-            highlighted.append(f"{CHANGED_DIGIT_START}{char}{CHANGED_DIGIT_END}")
-        else:
-            highlighted.append(char)
+        highlighted.append(char)
 
         if highlight_value and (line_index, column_index + 1) not in value_highlights:
             highlighted.append(CHANGED_DIGIT_END)
@@ -64,7 +67,7 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
     previous_lines = previous.splitlines()
 
     for line_index, current_line in enumerate(current.splitlines()):
-        if current_line.startswith("Local time:") or line_index >= len(previous_lines):
+        if current_line.startswith("Refreshed:") or line_index >= len(previous_lines):
             continue
 
         previous_values = list(MEASUREMENT_PATTERN.finditer(previous_lines[line_index]))
@@ -84,11 +87,11 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
     return markers, highlights
 
 
-def render_snapshot(snapshot: SupervisorSnapshot) -> str:
+def render_snapshot(snapshot: SupervisorSnapshot, now: datetime | None = None) -> str:
     lines: list[str] = []
     width = min(shutil.get_terminal_size((100, 30)).columns, 120)
     lines.append("Off-Grid Power Supervisor".ljust(width))
-    lines.append(f"Local time: {format_time(snapshot.captured_at)}")
+    lines.append(f"Refreshed: {format_refresh_age(snapshot.captured_at, now)}")
     lines.append(f"Status:  {'OK' if snapshot.ok else 'ERROR'}")
     lines.append("")
 
@@ -120,7 +123,7 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
                 f"{measurements.current_a:5.1f}A  {measurements.temperature_c:4.1f}C"
             )
         if state is not None:
-            lines.append(f"  State:   SOC {state.soc_percent:3d}%  SOH {state.soh_percent:3d}%")
+            lines.append(f"  State:   SOC {state.soc_percent:3d}%")
         if requests is not None:
             charge = "yes" if requests.charge_enable else "no"
             discharge = "yes" if requests.discharge_enable else "no"
@@ -148,11 +151,6 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
 
     lines.append("")
     lines.append("Temperatures")
-    if snapshot.classic is not None:
-        classic = snapshot.classic
-        lines.append(f"  Battery terminal: {classic.battery_temp_c:5.1f}C")
-        lines.append(f"  Charge controller FET: {classic.fet_temp_c:5.1f}C")
-        lines.append(f"  Charge controller PCB: {classic.pcb_temp_c:5.1f}C")
     if (
         snapshot.battery is not None
         and snapshot.battery.extended_measurements is not None
@@ -161,6 +159,11 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
     ):
         extended = snapshot.battery.extended_measurements
         lines.append(f"  Battery cells: {extended.min_cell_temperature_c:5.1f}-{extended.max_cell_temperature_c:4.1f}C")
+    if snapshot.classic is not None:
+        classic = snapshot.classic
+        lines.append(f"  Battery terminal: {classic.battery_temp_c:5.1f}C")
+        lines.append(f"  Charge controller FET: {classic.fet_temp_c:5.1f}C")
+        lines.append(f"  Charge controller PCB: {classic.pcb_temp_c:5.1f}C")
     if snapshot.ambient is None:
         lines.append("  Sensor 0 ambient temp: disconnected")
     else:
