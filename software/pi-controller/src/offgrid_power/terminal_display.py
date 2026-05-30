@@ -111,8 +111,6 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
         battery = snapshot.battery
         state = battery.state_of_charge
         measurements = battery.measurements
-        limits = battery.charge_limits
-        status = battery.status
         requests = battery.request_flags
         extended = battery.extended_measurements
 
@@ -123,11 +121,6 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
             )
         if state is not None:
             lines.append(f"  State:   SOC {state.soc_percent:3d}%  SOH {state.soh_percent:3d}%")
-        if limits is not None:
-            lines.append(
-                f"  Limits:  charge {limits.charge_voltage_limit_v:4.1f}V/{limits.charge_current_limit_a:5.1f}A  "
-                f"discharge {limits.discharge_current_limit_a:5.1f}A"
-            )
         if requests is not None:
             charge = "yes" if requests.charge_enable else "no"
             discharge = "yes" if requests.discharge_enable else "no"
@@ -138,15 +131,8 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
                 extra_requests.append("full charge")
             suffix = f"  Request: {', '.join(extra_requests)}" if extra_requests else ""
             lines.append(f"  Enable:  charge {charge}  discharge {discharge}{suffix}")
-        if status is not None:
-            protections = "none" if not status.protection_flags else ", ".join(status.protection_flags[:2])
-            alarms = "none" if not status.alarm_flags else ", ".join(status.alarm_flags[:2])
-            lines.append(f"  BMS:     modules {status.module_count}  protect {protections}  alarms {alarms}")
         if extended is not None and extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
-            line = f"  Cells:   {extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V"
-            if extended.min_cell_temperature_c is not None and extended.max_cell_temperature_c is not None:
-                line += f"  {extended.min_cell_temperature_c:4.1f}-{extended.max_cell_temperature_c:4.1f}C"
-            lines.append(line)
+            lines.append(f"  Cells:   {extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V")
 
     lines.append("")
     if snapshot.classic is None:
@@ -167,6 +153,14 @@ def render_snapshot(snapshot: SupervisorSnapshot) -> str:
         lines.append(f"  Battery terminal: {classic.battery_temp_c:5.1f}C")
         lines.append(f"  Charge controller FET: {classic.fet_temp_c:5.1f}C")
         lines.append(f"  Charge controller PCB: {classic.pcb_temp_c:5.1f}C")
+    if (
+        snapshot.battery is not None
+        and snapshot.battery.extended_measurements is not None
+        and snapshot.battery.extended_measurements.min_cell_temperature_c is not None
+        and snapshot.battery.extended_measurements.max_cell_temperature_c is not None
+    ):
+        extended = snapshot.battery.extended_measurements
+        lines.append(f"  Battery cells: {extended.min_cell_temperature_c:5.1f}-{extended.max_cell_temperature_c:4.1f}C")
     if snapshot.ambient is None:
         lines.append("  Sensor 0 ambient temp: disconnected")
     else:

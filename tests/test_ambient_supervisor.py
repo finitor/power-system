@@ -152,10 +152,12 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("52.41V", rendered)
         self.assertIn("SOC  30%", rendered)
         self.assertIn("SOH 100%", rendered)
-        self.assertIn("charge 58.4V/200.0A", rendered)
         self.assertIn("charge yes  discharge yes", rendered)
-        self.assertIn("protect none  alarms none", rendered)
         self.assertIn("3.274-3.279V", rendered)
+        self.assertIn("Battery cells:", rendered)
+        self.assertIn("9.9-10.9C", rendered)
+        self.assertNotIn("Limits:", rendered)
+        self.assertNotIn("BMS:", rendered)
 
     def test_terminal_display_renders_battery_can_dfu_mode(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
