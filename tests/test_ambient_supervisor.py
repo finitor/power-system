@@ -12,6 +12,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.ambient import AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
 from offgrid_power.canbus import CanBusHealth, CanFrame, UsbDevice, decode_pylon_snapshot
+from offgrid_power.classic import ClassicTelemetry
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import (
     CHANGED_DIGIT_END,
@@ -26,6 +27,36 @@ from offgrid_power.terminal_display import (
 class FakeClassicClient:
     def read(self):
         raise RuntimeError("not connected in test")
+
+
+class FakeClassicLiveClient:
+    def read(self):
+        return (
+            ClassicTelemetry(
+                captured_at=datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc),
+                battery_voltage_v=53.6,
+                pv_voltage_v=100.0,
+                battery_current_a=11.6,
+                daily_energy_kwh=0.9,
+                battery_power_w=625,
+                charge_stage_code=4,
+                charge_stage="BulkMppt",
+                state_code=3,
+                state="MPPT or regulating voltage",
+                pv_current_a=6.3,
+                last_voc_v=110.0,
+                highest_input_voltage_v=120.0,
+                daily_amp_hours_ah=17,
+                lifetime_energy_kwh=1000,
+                lifetime_amp_hours_ah=2000,
+                info_flags=0,
+                active_flags=["Battery temperature sensor installed"],
+                battery_temp_c=15.3,
+                fet_temp_c=47.8,
+                pcb_temp_c=45.0,
+            ),
+            None,
+        )
 
 
 class FakeAmbientClient:
@@ -78,7 +109,7 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         rendered = render_snapshot(supervisor.read_snapshot())
 
-        self.assertIn("Temperature Probes", rendered)
+        self.assertIn("Temperatures", rendered)
         self.assertIn("Sensor 0 ambient temp", rendered)
         self.assertIn("21.5C", rendered)
         self.assertIn("44.0%", rendered)
@@ -89,6 +120,24 @@ class AmbientSupervisorTest(unittest.TestCase):
         rendered = render_snapshot(snapshot)
 
         self.assertIn("Sensor 0 ambient temp: disconnected", rendered)
+
+    def test_terminal_display_orders_battery_first_and_uses_functional_controller_label(self) -> None:
+        snapshot = Supervisor(
+            classic=FakeClassicLiveClient(),
+            ambient=FakeAmbientClient(),
+            battery=FakeBatteryCanClient(),
+        ).read_snapshot()
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertLess(rendered.index("Battery Bank"), rendered.index("Charge Controller"))
+        self.assertLess(rendered.index("Charge Controller"), rendered.index("Temperatures"))
+        self.assertNotIn("MidNite Classic", rendered)
+        self.assertNotIn("Classic Charge Settings", rendered)
+        self.assertNotIn("Flags:", rendered)
+        self.assertIn("Battery terminal:  15.3C", rendered)
+        self.assertIn("Charge controller FET:  47.8C", rendered)
+        self.assertIn("Charge controller PCB:  45.0C", rendered)
 
     def test_terminal_display_renders_battery_can_reading(self) -> None:
         snapshot = Supervisor(
