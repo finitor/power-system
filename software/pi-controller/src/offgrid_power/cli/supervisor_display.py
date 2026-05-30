@@ -132,25 +132,26 @@ def append_ambient_log(log_path: str, snapshot) -> None:
 def main() -> int:
     args = parse_args()
     supervisor = build_supervisor(args)
-    previous_render: str | None = None
+    previous_poll_render: str | None = None
 
     try:
         while True:
             snapshot = supervisor.read_snapshot()
             append_ambient_log(args.ambient_log_path, snapshot)
             next_read = time.monotonic() + args.interval
+            rendered = ""
             while True:
                 rendered = render_snapshot(snapshot, now=datetime.now(snapshot.captured_at.tzinfo))
                 if not args.no_clear:
                     clear_screen()
-                print(highlight_changed_digits(previous_render, rendered))
-                previous_render = rendered
+                print(highlight_changed_digits(previous_poll_render, rendered))
                 if args.once:
                     return 0 if snapshot.ok else 1
                 remaining = next_read - time.monotonic()
                 if remaining <= 0:
                     break
                 time.sleep(min(1.0, remaining))
+            previous_poll_render = rendered
     except KeyboardInterrupt:
         print()
         return 0

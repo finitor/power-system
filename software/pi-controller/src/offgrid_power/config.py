@@ -16,7 +16,7 @@ class ClassicConfig:
 
 @dataclass(frozen=True)
 class DisplayConfig:
-    refresh_seconds: float = 5.0
+    refresh_seconds: float = 10.0
     clear_screen: bool = True
 
 
@@ -62,7 +62,7 @@ def load_config() -> SupervisorConfig:
             timeout_s=env_float("CLASSIC_TIMEOUT_SECONDS", 3.0),
         ),
         display=DisplayConfig(
-            refresh_seconds=env_float("SUPERVISOR_REFRESH_SECONDS", 5.0),
+            refresh_seconds=env_float("SUPERVISOR_REFRESH_SECONDS", 10.0),
             clear_screen=env_bool("SUPERVISOR_DISPLAY_CLEAR", True),
         ),
         ambient=AmbientConfig(
