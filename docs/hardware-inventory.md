@@ -2,6 +2,8 @@
 
 Track every major physical component here. Prefer exact model numbers and interface details.
 
+Use [Shopping List](shopping-list.md) for the one-view procurement status across `to order`, `ordered`, and `on hand`.
+
 | Component | Model | Voltage | Interface | Purpose | Notes |
 |---|---|---:|---|---|---|
 | Raspberry Pi | 3 Model B v1.2 | 5 V | GPIO / USB / Ethernet / Wi-Fi / Bluetooth | Controller and logger | 1 GB RAM, 4x USB 2.0, 40-pin GPIO; add power supply |
