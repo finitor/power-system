@@ -4,12 +4,13 @@
 
 The installation is in Wawa, Ontario, Canada.
 
-Use the installation's actual GPS coordinates when available. Until then, use Wawa town coordinates as a planning approximation:
+The site plus code is `(redacted)`, interpreted relative to Wawa, Ontario. This decodes to the following approximate coordinates:
 
 | Field | Value |
 |---|---:|
-| Latitude | 47.99 N |
-| Longitude | 84.77 W |
+| Plus code | (redacted), Wawa, ON |
+| Latitude | 47.9 N |
+| Longitude | 84.8 W |
 | Time zone | America/Toronto |
 | Standard time offset | UTC-05:00 |
 | Daylight time offset | UTC-04:00 |
@@ -30,15 +31,15 @@ solar noon clock minutes =
 
 where:
 
-- `longitude_degrees` is negative west of Greenwich, so Wawa is about `-84.77`.
+- `longitude_degrees` is negative west of Greenwich. For this site, use `-84.8`.
 - `time_zone_offset_minutes` is `-300` for Eastern Standard Time or `-240` for Eastern Daylight Time.
 - `equation_of_time_minutes` is the date-dependent correction from a solar-position calculator or ephemeris.
 - The result is minutes after local midnight.
 
-Using Wawa's approximate longitude, the longitude-only correction is about:
+Using the site longitude, the longitude-only correction is about:
 
 ```text
-4 * (84.77 - 75.00) = 39.1 minutes
+4 * (84.8 - 75.00) = 39.3 minutes
 ```
 
 So before the equation-of-time correction:
