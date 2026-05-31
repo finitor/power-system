@@ -66,6 +66,36 @@ Stop and separate the devices if:
 - The controller or batteries report alarms.
 - The batteries stop charge/discharge unexpectedly.
 
+## Results From May 31, 2026 Battery-Only Survey
+
+The Eco-Worthy app protocol was changed from Pylon to Victron, then the batteries were observed passively from the Raspberry Pi CAN adapter.
+
+Baseline Pylon mode:
+
+- Capture: `data/can-experiments/20260531-111400-cubix-pylon-baseline-500000.log`
+- 500 kbit/s produced about 34,000 frames in 10 seconds.
+- All observed frames were standard 11-bit CAN IDs.
+- Pylon-style frames decoded normally, including charge limits, SOC/SOH, pack voltage/current/temp, status, charge/discharge request flags, manufacturer `PYLON`, cell voltage range, cell temperature range, and installed capacity.
+
+Eco-Worthy app "Victron" mode:
+
+- Captures:
+  - `data/can-experiments/20260531-112059-cubix-victron-battery-only-500000.log`
+  - `data/can-experiments/20260531-112132-cubix-victron-battery-only-500000.log`
+- 250 kbit/s produced only three standard-ID `0xC` frames in each 10 second survey and no useful battery decode.
+- 500 kbit/s produced about 29,800 frames in 10 seconds.
+- All observed useful frames were standard 11-bit CAN IDs, not 29-bit extended IDs.
+- Core battery metrics still decoded through the Pylon-style map: charge limits, SOC/SOH, pack voltage/current/temp, cell voltage range, cell temperature range, and installed capacity.
+- The manufacturer field changed from `PYLON` to `ECO-LFP4`.
+- The latest-frame decode did not show `0x359` status or `0x35C` charge/discharge request flags during the sampled Victron-mode captures.
+
+Conclusion:
+
+- Eco-Worthy's "Victron" battery protocol setting did not look like VE.Can/NMEA2000 in this battery-only test.
+- It looked like a 500 kbit/s managed-battery CAN profile with standard 11-bit IDs and mostly Pylon-compatible data layout.
+- A shared physical bus with the BlueSolar's VE.Can/NMEA2000 side remains unlikely unless later controller-only testing shows the BlueSolar can also participate in this 500 kbit/s managed-battery profile.
+- The batteries were switched back to Pylon mode after the experiment.
+
 ## Useful Commands
 
 Check the adapter:

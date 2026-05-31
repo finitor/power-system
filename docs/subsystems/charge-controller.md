@@ -2,6 +2,8 @@
 
 ## Hardware
 
+The system is moving toward multiple PV sources. Code and documentation should refer to charge-controller/PV-source telemetry generically where possible instead of assuming the Midnite Classic is the only solar input.
+
 | Item | Value |
 |---|---|
 | Manufacturer | Midnite Solar |
@@ -12,6 +14,13 @@
 | Firmware | TBD |
 | Communication interface | TBD |
 | Optional battery-current accessory | MidNite WhizBang Jr, likely avoid/defer to preserve AUX2 |
+
+## PV Sources
+
+| PV source | Controller | Array | Status | Notes |
+|---|---|---|---|---|
+| PV array 0 | Midnite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | Existing | 8 modules total; exact module ratings may vary around 295-305 W |
+| PV array 1 | Victron BlueSolar MPPT 150/85 CAN-bus | Canadian Solar CS6X-300-adjacent modules, 4s3p | Dry run before mount construction | 12 modules total; exact module ratings may vary around 295-305 W |
 
 ## Telemetry Goals
 
