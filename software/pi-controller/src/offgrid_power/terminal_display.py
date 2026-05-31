@@ -163,6 +163,12 @@ def render_snapshot(
         lines.append(f"  Battery: {classic.battery_voltage_v:5.1f}V  {classic.battery_current_a:5.1f}A  {classic.battery_power_w:5d}W")
         lines.append(f"  PV:      {classic.pv_voltage_v:5.1f}V  {classic.pv_current_a:5.1f}A")
         lines.append(f"  Stage:   {classic.charge_stage}  State: {classic.state}")
+        if classic.is_hypervoc:
+            lines.append(
+                "  PV input: HyperVOC protection"
+                f"  Last Voc {classic.last_voc_v:.1f}V"
+                f"  High {classic.highest_input_voltage_v:.1f}V"
+            )
         lines.append(f"  Today:   {classic.daily_energy_kwh:5.1f}kWh  {classic.daily_amp_hours_ah:5d}Ah")
 
     lines.append("")

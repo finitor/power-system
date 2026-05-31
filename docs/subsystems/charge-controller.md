@@ -58,6 +58,8 @@ Because this is legacy equipment, assume its built-in charge stages may be lead-
 
 For the difference between the Classic's Float stage and actual PV power output, see [FAQ](../faq.md).
 
+The supervisor should surface Classic `HyperVoc` explicitly. In this state the Classic is protecting itself from PV input above its normal operating range and may not charge until array voltage falls back inside range. This can be expected during very cold bright winter conditions if the array is intentionally sized near the Classic 200's upper input envelope.
+
 The Eco-Worthy ESM-100/BMS should be the first battery SOC/current source for the Pi. The Classic already reports its own charge stage, such as bulk, absorb, float, resting, or fault, without a WhizBang Jr.
 
 Avoid or defer WhizBang Jr unless its benefits clearly outweigh the loss of AUX2. The WhizBang Jr uses Classic AUX2, and AUX2 may be more valuable as a control channel for high-level charge inhibit or other Classic functions in this LiFePO4 retrofit.

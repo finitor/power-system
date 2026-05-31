@@ -32,6 +32,25 @@ class FakeClassicClient:
 
 
 class FakeClassicLiveClient:
+    def __init__(
+        self,
+        *,
+        charge_stage_code: int = 4,
+        charge_stage: str = "BulkMppt",
+        state_code: int = 3,
+        state: str = "MPPT or regulating voltage",
+        active_flags: list[str] | None = None,
+        last_voc_v: float = 110.0,
+        highest_input_voltage_v: float = 120.0,
+    ) -> None:
+        self.charge_stage_code = charge_stage_code
+        self.charge_stage = charge_stage
+        self.state_code = state_code
+        self.state = state
+        self.active_flags = active_flags or ["Battery temperature sensor installed"]
+        self.last_voc_v = last_voc_v
+        self.highest_input_voltage_v = highest_input_voltage_v
+
     def read(self):
         return (
             ClassicTelemetry(
@@ -41,18 +60,18 @@ class FakeClassicLiveClient:
                 battery_current_a=11.6,
                 daily_energy_kwh=0.9,
                 battery_power_w=625,
-                charge_stage_code=4,
-                charge_stage="BulkMppt",
-                state_code=3,
-                state="MPPT or regulating voltage",
+                charge_stage_code=self.charge_stage_code,
+                charge_stage=self.charge_stage,
+                state_code=self.state_code,
+                state=self.state,
                 pv_current_a=6.3,
-                last_voc_v=110.0,
-                highest_input_voltage_v=120.0,
+                last_voc_v=self.last_voc_v,
+                highest_input_voltage_v=self.highest_input_voltage_v,
                 daily_amp_hours_ah=17,
                 lifetime_energy_kwh=1000,
                 lifetime_amp_hours_ah=2000,
                 info_flags=0,
-                active_flags=["Battery temperature sensor installed"],
+                active_flags=self.active_flags,
                 battery_temp_c=15.3,
                 fet_temp_c=47.8,
                 pcb_temp_c=45.0,
@@ -177,6 +196,27 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("9.9-10.9C", rendered)
         self.assertNotIn("Limits:", rendered)
         self.assertNotIn("BMS:", rendered)
+
+    def test_terminal_display_renders_classic_hypervoc_protection(self) -> None:
+        snapshot = Supervisor(
+            classic=FakeClassicLiveClient(
+                charge_stage_code=10,
+                charge_stage="HyperVoc",
+                state_code=0,
+                state="Resting",
+                active_flags=["HyperVoc"],
+                last_voc_v=201.0,
+                highest_input_voltage_v=218.0,
+            ),
+            ambient=None,
+        ).read_snapshot()
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertIn("Stage:   HyperVoc", rendered)
+        self.assertIn("PV input: HyperVOC protection", rendered)
+        self.assertIn("Last Voc 201.0V", rendered)
+        self.assertIn("High 218.0V", rendered)
 
     def test_terminal_display_renders_refresh_age(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
