@@ -13,6 +13,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 from offgrid_power.ambient import AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
 from offgrid_power.canbus import CanBusHealth, CanFrame, UsbDevice, decode_pylon_snapshot
 from offgrid_power.classic import ClassicTelemetry
+from offgrid_power.household import HouseholdUsage, HouseholdUsageTracker
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import (
     CHANGED_DIGIT_END,
@@ -132,6 +133,7 @@ class AmbientSupervisorTest(unittest.TestCase):
         rendered = render_snapshot(snapshot)
 
         self.assertLess(rendered.index("Battery Bank"), rendered.index("Charge Controller"))
+        self.assertLess(rendered.index("Household Usage"), rendered.index("Battery Bank"))
         self.assertLess(rendered.index("Charge Controller"), rendered.index("Temperatures"))
         self.assertNotIn("MidNite Classic", rendered)
         self.assertNotIn("Classic Charge Settings", rendered)
@@ -140,6 +142,21 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Charge controller FET:  47.8C", rendered)
         self.assertIn("Charge controller PCB:  45.0C", rendered)
         self.assertLess(rendered.index("Battery cells:"), rendered.index("Battery terminal:"))
+
+    def test_terminal_display_renders_household_usage(self) -> None:
+        rendered = render_snapshot(
+            Supervisor(classic=None, ambient=None).read_snapshot(),
+            household_usage=HouseholdUsage(
+                current_a=14.2,
+                power_w=742.0,
+                consumed_ah=3.5,
+                consumed_percent=1.75,
+            ),
+        )
+
+        self.assertIn("Household Usage", rendered)
+        self.assertIn("Load:     14.2A    742W", rendered)
+        self.assertIn("Today:     3.5Ah   1.8% of bank", rendered)
 
     def test_terminal_display_renders_battery_can_reading(self) -> None:
         snapshot = Supervisor(
@@ -166,14 +183,14 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot, now=snapshot.captured_at + timedelta(seconds=5))
 
-        self.assertIn("Refreshed: 5 seconds ago", rendered)
+        self.assertIn("Refreshed: 05 seconds ago", rendered)
         self.assertNotIn("Local time:", rendered)
 
     def test_format_refresh_age_uses_human_singular_and_zero(self) -> None:
         captured_at = datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc)
 
-        self.assertEqual(format_refresh_age(captured_at, captured_at), "just now")
-        self.assertEqual(format_refresh_age(captured_at, captured_at + timedelta(seconds=1)), "1 second ago")
+        self.assertEqual(format_refresh_age(captured_at, captured_at), "00 seconds ago")
+        self.assertEqual(format_refresh_age(captured_at, captured_at + timedelta(seconds=1)), "01 seconds ago")
 
     def test_terminal_display_renders_battery_can_dfu_mode(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
@@ -232,6 +249,14 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         self.assertIn(f"{CHANGED_DIGIT_START}23.5C{CHANGED_DIGIT_END}", highlighted)
         self.assertIn("21.5", highlight_changed_digits(None, "21.5"))
+
+    def test_terminal_display_highlights_cell_voltage_range_as_one_token(self) -> None:
+        highlighted = highlight_changed_digits(
+            previous="Cells:   3.286-3.289V",
+            current="Cells:   3.287-3.290V",
+        )
+
+        self.assertIn(f"{CHANGED_DIGIT_START}3.287-3.290V{CHANGED_DIGIT_END}", highlighted)
 
     def test_terminal_display_does_not_highlight_refresh_age(self) -> None:
         highlighted = highlight_changed_digits(
@@ -300,6 +325,39 @@ class AmbientSupervisorTest(unittest.TestCase):
             (device_dir / "w1_slave").unlink(missing_ok=True)
             device_dir.rmdir()
             device_dir.parent.rmdir()
+
+    def test_ds18b20_rejects_implausibly_high_temperature_as_disconnected(self) -> None:
+        device_dir = REPO_ROOT / ".tmp-test-ds18b20-high" / "28-000001"
+        device_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (device_dir / "w1_slave").write_text(
+                "aa bb cc dd ee ff gg hh ii : crc=11 YES\n"
+                "aa bb cc dd ee ff gg hh ii t=81000\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(AmbientProbeDisconnected, "probe may be disconnected"):
+                AmbientDs18b20Client(
+                    devices_path=str(device_dir.parent),
+                ).read()
+        finally:
+            (device_dir / "w1_slave").unlink(missing_ok=True)
+            device_dir.rmdir()
+            device_dir.parent.rmdir()
+
+    def test_household_usage_tracker_integrates_until_local_midnight(self) -> None:
+        tracker = HouseholdUsageTracker(battery_capacity_ah=200)
+        first = datetime(2026, 5, 28, 23, 59, 0, tzinfo=timezone.utc)
+        second = first + timedelta(minutes=30)
+
+        tracker.update(first, FakeBatteryCanClient().read(), FakeClassicLiveClient().read()[0])
+        usage = tracker.update(second, FakeBatteryCanClient().read(), FakeClassicLiveClient().read()[0])
+
+        self.assertIsNotNone(usage)
+        self.assertAlmostEqual(usage.current_a, 11.6)
+        self.assertAlmostEqual(usage.power_w, 625.0)
+        self.assertAlmostEqual(usage.consumed_ah, 5.8)
+        self.assertAlmostEqual(usage.consumed_percent, 2.9)
 
 
 if __name__ == "__main__":

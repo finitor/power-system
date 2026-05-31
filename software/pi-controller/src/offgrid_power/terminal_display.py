@@ -6,6 +6,7 @@ import re
 import shutil
 from datetime import datetime
 
+from .household import HouseholdUsage
 from .supervisor import SupervisorSnapshot
 
 CHANGED_DIGIT_START = "\033[93m"
@@ -13,7 +14,7 @@ CHANGED_DIGIT_END = "\033[0m"
 DIRECTION_ARROW_START = "\033[92m"
 UP_ARROW = f"{DIRECTION_ARROW_START}↑{CHANGED_DIGIT_END}"
 DOWN_ARROW = f"{DIRECTION_ARROW_START}↓{CHANGED_DIGIT_END}"
-MEASUREMENT_PATTERN = re.compile(r"(?<![\w-])(-?\d+(?:\.\d+)?)(kWh|Ah|[VAWCs%])(?![\w-])")
+MEASUREMENT_PATTERN = re.compile(r"(?<![\w-])(-?\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?)(kWh|Ah|[VAWCs%])(?![\w-])")
 
 
 def clear_screen() -> None:
@@ -23,11 +24,7 @@ def clear_screen() -> None:
 def format_refresh_age(captured_at: datetime, now: datetime | None = None) -> str:
     now = now or datetime.now(captured_at.tzinfo)
     seconds = max(0, int((now - captured_at).total_seconds()))
-    if seconds == 0:
-        return "just now"
-    if seconds == 1:
-        return "1 second ago"
-    return f"{seconds} seconds ago"
+    return f"{seconds:02d} seconds ago"
 
 
 def highlight_changed_digits(previous: str | None, current: str) -> str:
@@ -73,8 +70,8 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
         previous_values = list(MEASUREMENT_PATTERN.finditer(previous_lines[line_index]))
         current_values = list(MEASUREMENT_PATTERN.finditer(current_line))
         for previous_match, current_match in zip(previous_values, current_values, strict=False):
-            previous_value = float(previous_match.group(1))
-            current_value = float(current_match.group(1))
+            previous_value = _measurement_sort_value(previous_match.group(1))
+            current_value = _measurement_sort_value(current_match.group(1))
             if current_value > previous_value:
                 markers[(line_index, current_match.end() - 1)] = UP_ARROW
                 highlights.update((line_index, column) for column in range(current_match.start(), current_match.end()))
@@ -87,7 +84,18 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
     return markers, highlights
 
 
-def render_snapshot(snapshot: SupervisorSnapshot, now: datetime | None = None) -> str:
+def _measurement_sort_value(value: str) -> tuple[float, ...]:
+    if "-" in value[1:]:
+        first, second = value.split("-", maxsplit=1)
+        return (float(first), float(second))
+    return (float(value),)
+
+
+def render_snapshot(
+    snapshot: SupervisorSnapshot,
+    now: datetime | None = None,
+    household_usage: HouseholdUsage | None = None,
+) -> str:
     lines: list[str] = []
     width = min(shutil.get_terminal_size((100, 30)).columns, 120)
     lines.append("Off-Grid Power Supervisor".ljust(width))
@@ -95,6 +103,14 @@ def render_snapshot(snapshot: SupervisorSnapshot, now: datetime | None = None) -
     lines.append(f"Status:  {'OK' if snapshot.ok else 'ERROR'}")
     lines.append("")
 
+    lines.append("Household Usage")
+    if household_usage is None:
+        lines.append("  No data")
+    else:
+        lines.append(f"  Load:    {household_usage.current_a:5.1f}A  {household_usage.power_w:5.0f}W")
+        lines.append(f"  Today:   {household_usage.consumed_ah:5.1f}Ah  {household_usage.consumed_percent:4.1f}% of bank")
+
+    lines.append("")
     lines.append("Battery Bank")
     if snapshot.battery is None:
         if snapshot.battery_can_health is None:

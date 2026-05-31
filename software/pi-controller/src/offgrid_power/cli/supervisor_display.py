@@ -13,6 +13,7 @@ from offgrid_power.ambient import AmbientDhtClient, AmbientDs18b20Client
 from offgrid_power.canbus import BatteryCanClient, ensure_socketcan_interface_up, socketcan_interfaces
 from offgrid_power.classic import ClassicClient
 from offgrid_power.config import load_config
+from offgrid_power.household import HouseholdUsageTracker
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
 
@@ -58,6 +59,7 @@ def parse_args() -> argparse.Namespace:
         help="Append ambient readings to this CSV file",
     )
     parser.add_argument("--interval", type=float, default=config.display.refresh_seconds)
+    parser.add_argument("--battery-capacity-ah", type=float, default=config.display.battery_capacity_ah)
     parser.add_argument(
         "--no-clear",
         action="store_true",
@@ -132,16 +134,22 @@ def append_ambient_log(log_path: str, snapshot) -> None:
 def main() -> int:
     args = parse_args()
     supervisor = build_supervisor(args)
+    household = HouseholdUsageTracker(battery_capacity_ah=args.battery_capacity_ah)
     previous_poll_render: str | None = None
 
     try:
         while True:
             snapshot = supervisor.read_snapshot()
+            household_usage = household.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             append_ambient_log(args.ambient_log_path, snapshot)
             next_read = time.monotonic() + args.interval
             rendered = ""
             while True:
-                rendered = render_snapshot(snapshot, now=datetime.now(snapshot.captured_at.tzinfo))
+                rendered = render_snapshot(
+                    snapshot,
+                    now=datetime.now(snapshot.captured_at.tzinfo),
+                    household_usage=household_usage,
+                )
                 if not args.no_clear:
                     clear_screen()
                 print(highlight_changed_digits(previous_poll_render, rendered))
