@@ -14,6 +14,7 @@ from offgrid_power.canbus import (
     CanFrame,
     canbus_health,
     candump_log_frames,
+    configure_socketcan_interface,
     decode_pylon_snapshot,
     ensure_socketcan_interface_up,
     interface_state,
@@ -86,6 +87,34 @@ class CanBusDiscoveryTest(unittest.TestCase):
 
         self.assertFalse(changed)
         self.assertEqual(commands, [])
+
+    def test_configure_socketcan_interface_forces_bitrate_and_listen_only(self) -> None:
+        commands = []
+
+        def fake_runner(command, check):
+            commands.append((command, check))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            sys_class_net = Path(temp_dir)
+            (sys_class_net / "can0").mkdir()
+            (sys_class_net / "can0" / "type").write_text("280\n", encoding="utf-8")
+
+            changed = configure_socketcan_interface(
+                "can0",
+                bitrate=250000,
+                sys_class_net=sys_class_net,
+                runner=fake_runner,
+            )
+
+        self.assertTrue(changed)
+        self.assertEqual(
+            commands,
+            [
+                (["ip", "link", "set", "can0", "down"], False),
+                (["ip", "link", "set", "can0", "type", "can", "bitrate", "250000", "listen-only", "on"], True),
+                (["ip", "link", "set", "can0", "up"], True),
+            ],
+        )
 
     def test_stm32_dfu_devices_detects_bootloader_mode(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -189,6 +218,12 @@ class PylonCanDecodeTest(unittest.TestCase):
         self.assertEqual(frames[0].timestamp, 1780064750.959438)
         self.assertEqual(frames[0].arbitration_id, 0x351)
         self.assertEqual(frames[0].data, bytes.fromhex("4802D007D007C001"))
+
+    def test_parses_extended_candump_log_frame_hint(self) -> None:
+        frames = candump_log_frames(["(1780064750.959438) can0 09F8017F#0102030405060708"])
+
+        self.assertEqual(frames[0].arbitration_id, 0x09F8017F)
+        self.assertTrue(frames[0].is_extended_id)
 
 
 if __name__ == "__main__":

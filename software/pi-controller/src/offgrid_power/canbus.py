@@ -50,6 +50,7 @@ class CanFrame:
     arbitration_id: int
     data: bytes
     timestamp: float | None = None
+    is_extended_id: bool = False
 
 
 @dataclass(frozen=True)
@@ -207,6 +208,7 @@ class BatteryCanClient:
                         arbitration_id=message.arbitration_id,
                         data=bytes(message.data),
                         timestamp=message.timestamp,
+                        is_extended_id=message.is_extended_id,
                     )
                 )
 
@@ -257,6 +259,31 @@ def ensure_socketcan_interface_up(
     type_command = ["ip", "link", "set", interface, "type", "can", "bitrate", str(bitrate)]
     if listen_only:
         type_command.extend(["listen-only", "on"])
+
+    runner(type_command, check=True)
+    runner(["ip", "link", "set", interface, "up"], check=True)
+    return True
+
+
+def configure_socketcan_interface(
+    interface: str = "can0",
+    bitrate: int = 500000,
+    *,
+    listen_only: bool = True,
+    sys_class_net: Path = Path("/sys/class/net"),
+    runner=subprocess.run,
+) -> bool:
+    """Force a SocketCAN interface to a known bitrate and mode."""
+    if interface not in socketcan_interfaces(sys_class_net):
+        return False
+
+    runner(["ip", "link", "set", interface, "down"], check=False)
+
+    type_command = ["ip", "link", "set", interface, "type", "can", "bitrate", str(bitrate)]
+    if listen_only:
+        type_command.extend(["listen-only", "on"])
+    else:
+        type_command.extend(["listen-only", "off"])
 
     runner(type_command, check=True)
     runner(["ip", "link", "set", interface, "up"], check=True)
@@ -326,7 +353,15 @@ def candump_log_frames(lines: Iterable[str]) -> list[CanFrame]:
             continue
 
         frame_id_text, data_text = frame_text.split("#", maxsplit=1)
-        frames.append(CanFrame(int(frame_id_text, 16), bytes.fromhex(data_text), timestamp))
+        arbitration_id = int(frame_id_text, 16)
+        frames.append(
+            CanFrame(
+                arbitration_id,
+                bytes.fromhex(data_text),
+                timestamp,
+                is_extended_id=arbitration_id > 0x7FF,
+            )
+        )
     return frames
 
 

@@ -63,6 +63,7 @@ def _read_live_frames(interface: str, seconds: float) -> list[CanFrame]:
                     arbitration_id=message.arbitration_id,
                     data=bytes(message.data),
                     timestamp=message.timestamp,
+                    is_extended_id=message.is_extended_id,
                 )
             )
     return frames
