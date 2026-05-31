@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 import subprocess
 import time
 from pathlib import Path
@@ -11,6 +12,30 @@ from typing import Iterable
 ARPHRD_CAN = "280"
 STM32_DFU_VENDOR_ID = "0483"
 STM32_DFU_PRODUCT_ID = "df11"
+
+
+class BatteryCanProtocol(str, Enum):
+    PYLON = "pylon"
+    ECOWORTHY_VICTRON = "ecoworthy-victron"
+
+    @classmethod
+    def normalize(cls, value: "BatteryCanProtocol | str") -> "BatteryCanProtocol":
+        if isinstance(value, cls):
+            return value
+        cleaned = value.strip().lower().replace("_", "-")
+        aliases = {
+            "eco-worthy-victron": cls.ECOWORTHY_VICTRON,
+            "ecoworthy-victron": cls.ECOWORTHY_VICTRON,
+            "eco-victron": cls.ECOWORTHY_VICTRON,
+            "victron": cls.ECOWORTHY_VICTRON,
+            "pylon": cls.PYLON,
+            "pylontech": cls.PYLON,
+        }
+        try:
+            return aliases[cleaned]
+        except KeyError as exc:
+            choices = ", ".join(protocol.value for protocol in cls)
+            raise ValueError(f"unknown battery CAN protocol {value!r}; choose one of: {choices}") from exc
 
 
 @dataclass(frozen=True)
@@ -183,9 +208,15 @@ class PylonCanSnapshot:
 
 
 class BatteryCanClient:
-    def __init__(self, interface: str = "can0", receive_seconds: float = 1.5) -> None:
+    def __init__(
+        self,
+        interface: str = "can0",
+        receive_seconds: float = 1.5,
+        protocol: BatteryCanProtocol | str = BatteryCanProtocol.PYLON,
+    ) -> None:
         self.interface = interface
         self.receive_seconds = receive_seconds
+        self.protocol = BatteryCanProtocol.normalize(protocol)
 
     def read(self) -> PylonCanSnapshot:
         try:
@@ -214,7 +245,7 @@ class BatteryCanClient:
 
         if not frames:
             raise RuntimeError(f"no CAN frames received on {self.interface}")
-        return decode_pylon_snapshot(frames)
+        return decode_battery_snapshot(frames, self.protocol)
 
 
 def socketcan_interfaces(sys_class_net: Path = Path("/sys/class/net")) -> list[str]:
@@ -329,6 +360,17 @@ def decode_pylon_snapshot(frames: Iterable[CanFrame]) -> PylonCanSnapshot:
         extended_measurements=_decode_extended_measurements(raw_frames),
         raw_frames=raw_frames,
     )
+
+
+def decode_battery_snapshot(
+    frames: Iterable[CanFrame],
+    protocol: BatteryCanProtocol | str = BatteryCanProtocol.PYLON,
+) -> PylonCanSnapshot:
+    normalized = BatteryCanProtocol.normalize(protocol)
+    if normalized in {BatteryCanProtocol.PYLON, BatteryCanProtocol.ECOWORTHY_VICTRON}:
+        return decode_pylon_snapshot(frames)
+
+    raise ValueError(f"unsupported battery CAN protocol {normalized.value!r}")
 
 
 def candump_log_frames(lines: Iterable[str]) -> list[CanFrame]:

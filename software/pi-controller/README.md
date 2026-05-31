@@ -6,7 +6,7 @@ Read-only supervisory monitoring and future control orchestration for the Raspbe
 
 - `src/offgrid_power/classic.py`: MidNite Classic Modbus TCP telemetry adapter.
 - `src/offgrid_power/ambient.py`: AM2302/DHT22 ambient temperature and humidity adapter.
-- `src/offgrid_power/canbus.py`: SocketCAN discovery and Pylon-style battery CAN decoding helpers.
+- `src/offgrid_power/canbus.py`: SocketCAN discovery and battery CAN decoding helpers.
 - `src/offgrid_power/supervisor.py`: combines adapter reads into a single snapshot.
 - `src/offgrid_power/terminal_display.py`: renders a compact terminal status view.
 - `src/offgrid_power/cli/can_decode.py`: live or log-based battery CAN decoder.
@@ -30,6 +30,26 @@ sudo ip link set can0 down
 sudo ip link set can0 type can bitrate 500000 listen-only on
 sudo ip link set can0 up
 offgrid-can-decode --interface can0 --seconds 3 --raw
+```
+
+The production display defaults to the current Pylon-compatible profile. A later switch to the Eco-Worthy app's "Victron" profile can be tested without code changes by setting:
+
+```sh
+BATTERY_CAN_PROTOCOL=ecoworthy-victron
+```
+
+or by launching:
+
+```sh
+offgrid-supervisor --battery-can-protocol ecoworthy-victron
+```
+
+The `ecoworthy-victron` profile currently uses the same 500 kbit/s standard-frame decoder as Pylon, based on the May 31, 2026 capture where the core live metrics remained available and the manufacturer field changed to `ECO-LFP4`.
+
+For passive protocol surveys and raw capture logs:
+
+```sh
+sudo offgrid-can-survey --interface can0 --bitrates 250000,500000 --seconds 10 --label battery-protocol-check
 ```
 
 Keep `can0` in listen-only mode while validating telemetry. The CAN decoder currently treats writable/control behavior as unavailable and only decodes battery-to-inverter telemetry and permissive/request frames.
@@ -99,6 +119,7 @@ CLASSIC_PORT=502
 CLASSIC_DEVICE_ID=10
 SUPERVISOR_REFRESH_SECONDS=5
 SUPERVISOR_DISPLAY_CLEAR=true
+BATTERY_CAN_PROTOCOL=pylon
 AMBIENT_SENSOR_ENABLED=true
 AMBIENT_SENSOR_KIND=ds18b20
 AMBIENT_DHT22_GPIO=4

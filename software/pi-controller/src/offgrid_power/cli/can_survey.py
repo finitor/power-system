@@ -9,7 +9,12 @@ from datetime import datetime
 from pathlib import Path
 import time
 
-from offgrid_power.canbus import CanFrame, configure_socketcan_interface, decode_pylon_snapshot
+from offgrid_power.canbus import (
+    BatteryCanProtocol,
+    CanFrame,
+    configure_socketcan_interface,
+    decode_battery_snapshot,
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--seconds", type=float, default=10.0, help="Seconds to collect at each bitrate")
     parser.add_argument("--label", default="can-survey", help="Label used in saved log filenames")
+    parser.add_argument(
+        "--protocol",
+        default=BatteryCanProtocol.PYLON.value,
+        choices=[protocol.value for protocol in BatteryCanProtocol],
+        help="Battery CAN decode profile used for the summary hint",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -79,7 +90,7 @@ def main() -> int:
 
         if frames:
             overall_ok = True
-            print_pylon_hint(frames)
+            print_protocol_hint(frames, args.protocol)
         print()
 
     return 0 if overall_ok else 1
@@ -167,18 +178,18 @@ def print_summary(bitrate: int, summary: CanTrafficSummary) -> None:
         print(f"Top extended PGNs: {pgns}")
 
 
-def print_pylon_hint(frames: list[CanFrame]) -> None:
-    snapshot = decode_pylon_snapshot(frames)
+def print_protocol_hint(frames: list[CanFrame], protocol: str) -> None:
+    snapshot = decode_battery_snapshot(frames, protocol)
     lines = [
         line
         for line in snapshot.summary_lines()
         if line.startswith(("0x351 ", "0x355 ", "0x356 ", "0x359 ", "0x35C ", "0x35E "))
     ]
     if not lines:
-        print("Pylon-style battery frames: not detected in this capture")
+        print(f"{protocol} battery frames: not detected in this capture")
         return
 
-    print("Pylon-style battery frames detected:")
+    print(f"{protocol} battery frames detected:")
     for line in lines:
         print(f"  {line}")
 

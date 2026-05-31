@@ -11,10 +11,12 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.canbus import (
+    BatteryCanProtocol,
     CanFrame,
     canbus_health,
     candump_log_frames,
     configure_socketcan_interface,
+    decode_battery_snapshot,
     decode_pylon_snapshot,
     ensure_socketcan_interface_up,
     interface_state,
@@ -155,6 +157,34 @@ class CanBusDiscoveryTest(unittest.TestCase):
 
 
 class PylonCanDecodeTest(unittest.TestCase):
+    def test_battery_protocol_aliases_normalize(self) -> None:
+        self.assertEqual(BatteryCanProtocol.normalize("pylontech"), BatteryCanProtocol.PYLON)
+        self.assertEqual(BatteryCanProtocol.normalize("victron"), BatteryCanProtocol.ECOWORTHY_VICTRON)
+        self.assertEqual(BatteryCanProtocol.normalize("eco-worthy_victron"), BatteryCanProtocol.ECOWORTHY_VICTRON)
+
+    def test_ecoworthy_victron_profile_decodes_known_shared_frames(self) -> None:
+        snapshot = decode_battery_snapshot(
+            [
+                CanFrame(0x351, bytes.fromhex("4802D007D007C001")),
+                CanFrame(0x355, bytes.fromhex("5600640098210000")),
+                CanFrame(0x356, bytes.fromhex("46155A00A0000000")),
+                CanFrame(0x35E, bytes.fromhex("45434F2D4C465034")),
+                CanFrame(0x373, bytes.fromhex("490D4E0D20012101")),
+                CanFrame(0x379, bytes.fromhex("C800000000000000")),
+            ],
+            BatteryCanProtocol.ECOWORTHY_VICTRON,
+        )
+
+        self.assertIsNotNone(snapshot.state_of_charge)
+        self.assertEqual(snapshot.state_of_charge.soc_percent, 86)
+        self.assertIsNotNone(snapshot.measurements)
+        self.assertAlmostEqual(snapshot.measurements.voltage_v, 54.46)
+        self.assertAlmostEqual(snapshot.measurements.current_a, 9.0)
+        self.assertEqual(snapshot.manufacturer, "ECO-LFP4")
+        self.assertIsNotNone(snapshot.extended_measurements)
+        self.assertAlmostEqual(snapshot.extended_measurements.min_cell_voltage_v, 3.401)
+        self.assertEqual(snapshot.extended_measurements.installed_capacity_ah, 200)
+
     def test_decodes_known_pylon_frames(self) -> None:
         snapshot = decode_pylon_snapshot(
             [
