@@ -103,6 +103,10 @@ class ClassicTelemetry:
     fet_temp_c: float
     pcb_temp_c: float
 
+    @property
+    def is_hypervoc(self) -> bool:
+        return self.charge_stage == "HyperVoc" or "HyperVoc" in self.active_flags
+
 
 @dataclass(frozen=True)
 class ClassicChargeSettings:
@@ -237,4 +241,3 @@ def read_block(
             f"{start_register + count - 1}: {response}"
         )
     return RegisterBlock(start_register, list(response.registers))
-

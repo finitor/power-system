@@ -1,0 +1,16 @@
+[Unit]
+Description=Off-grid power supervisor display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/@OFFGRID_USER@/power-system
+Environment=CLASSIC_HOST=192.168.0.10
+EnvironmentFile=-/etc/offgrid-power.env
+ExecStart=/home/@OFFGRID_USER@/power-system/.venv/bin/offgrid-supervisor --classic-host ${CLASSIC_HOST}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

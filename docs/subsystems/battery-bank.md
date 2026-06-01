@@ -41,6 +41,8 @@ Validation needed before treating CAN as the production battery telemetry path:
 - Confirm the protocol selected in the Eco-Worthy app/tool, starting with the default Pylon CAN protocol.
 - Compare CAN data against the Eco-Worthy app and/or RS485 host software.
 
+The Pi software defaults to `BATTERY_CAN_PROTOCOL=pylon`. A later change to the Eco-Worthy app's "Victron" protocol can use `BATTERY_CAN_PROTOCOL=ecoworthy-victron` or `offgrid-supervisor --battery-can-protocol ecoworthy-victron`. The May 31, 2026 battery-only capture of that app setting still used 500 kbit/s standard CAN frames and preserved the core display metrics: SOC/SOH, pack voltage/current/temperature, charge limits, cell voltage range, cell temperature range, and installed capacity. It did not look like VE.Can/NMEA2000 at 250 kbit/s.
+
 Keep RS485 and RS232 as fallback or parallel research paths because the protocol table also shows host-computer-capable RS485 and RS232 options. Preferred RS485 fallback hardware is an isolated USB-to-RS485 adapter, such as the Waveshare USB TO RS485/422 industrial isolated converter.
 
 ## Shunt Decision

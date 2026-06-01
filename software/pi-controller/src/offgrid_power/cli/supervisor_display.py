@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import argparse
 import csv
+from datetime import datetime
 from pathlib import Path
+import sys
 from threading import Thread
 import time
 
 from offgrid_power.ambient import AmbientDhtClient, AmbientDs18b20Client
-from offgrid_power.canbus import BatteryCanClient, socketcan_interfaces
+from offgrid_power.canbus import (
+    BatteryCanClient,
+    BatteryCanProtocol,
+    ensure_socketcan_interface_up,
+    socketcan_interfaces,
+)
 from offgrid_power.classic import ClassicClient
 from offgrid_power.config import load_config
+from offgrid_power.household import HouseholdUsageTracker
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
 from offgrid_power.web_display import HouseholdLoadTracker, SnapshotCache, run_display_server
@@ -22,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Display live power-system metrics.")
     add_supervisor_arguments(parser)
     parser.add_argument("--interval", type=float, default=config.display.refresh_seconds)
+    parser.add_argument("--battery-capacity-ah", type=float, default=config.display.battery_capacity_ah)
     parser.add_argument("--web-display", action="store_true", help="Serve the same supervisor snapshots over HTTP")
     parser.add_argument("--web-host", default="0.0.0.0", help="HTTP display bind address")
     parser.add_argument("--web-port", type=int, default=8080, help="HTTP display port")
@@ -48,7 +57,19 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--classic-timeout", type=float, default=config.classic.timeout_s)
     parser.add_argument("--no-classic", action="store_true", help="Disable MidNite Classic reads")
     parser.add_argument("--battery-can-interface", default="can0", help="SocketCAN battery interface")
+    parser.add_argument("--battery-can-bitrate", type=int, default=500000, help="SocketCAN battery interface bitrate")
     parser.add_argument("--battery-can-seconds", type=float, default=1.5, help="Seconds to collect battery CAN frames")
+    parser.add_argument(
+        "--battery-can-protocol",
+        default=config.battery_can.protocol,
+        choices=[protocol.value for protocol in BatteryCanProtocol],
+        help="Battery CAN decode profile",
+    )
+    parser.add_argument(
+        "--no-battery-can-auto-up",
+        action="store_true",
+        help="Do not automatically configure and raise a down SocketCAN battery interface",
+    )
     parser.add_argument("--no-battery-can", action="store_true", help="Disable battery CAN reads")
     parser.add_argument(
         "--ambient-kind",
@@ -83,9 +104,25 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         else:
             ambient = AmbientDhtClient(gpio_pin=args.ambient_gpio, sensor_type=args.ambient_kind)
 
+    battery_can_interface = None if args.no_battery_can else args.battery_can_interface
+
     battery = None
-    if not args.no_battery_can and args.battery_can_interface in socketcan_interfaces():
-        battery = BatteryCanClient(interface=args.battery_can_interface, receive_seconds=args.battery_can_seconds)
+    if battery_can_interface is not None:
+        if not args.no_battery_can_auto_up:
+            try:
+                ensure_socketcan_interface_up(
+                    args.battery_can_interface,
+                    bitrate=args.battery_can_bitrate,
+                    listen_only=True,
+                )
+            except Exception as exc:  # noqa: BLE001 - keep display alive and show the read failure.
+                print(f"Battery CAN auto-up failed: {exc}", file=sys.stderr)
+    if battery_can_interface is not None and args.battery_can_interface in socketcan_interfaces():
+        battery = BatteryCanClient(
+            interface=args.battery_can_interface,
+            receive_seconds=args.battery_can_seconds,
+            protocol=args.battery_can_protocol,
+        )
 
     return Supervisor(
         classic=None
@@ -98,6 +135,7 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         ),
         ambient=ambient,
         battery=battery,
+        battery_can_interface=battery_can_interface,
     )
 
 
@@ -126,26 +164,38 @@ def append_ambient_log(log_path: str, snapshot) -> None:
 def main() -> int:
     args = parse_args()
     supervisor = build_supervisor(args)
-    snapshot_cache = SnapshotCache()
+    household = HouseholdUsageTracker(battery_capacity_ah=args.battery_capacity_ah)
     household_load_tracker = HouseholdLoadTracker()
+    snapshot_cache = SnapshotCache()
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache)
-    previous_render: str | None = None
+    previous_poll_render: str | None = None
 
     try:
         while True:
             snapshot = supervisor.read_snapshot()
+            household_usage = household.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             household_load = household_load_tracker.update(snapshot)
             snapshot_cache.set(snapshot, household_load)
-            rendered = render_snapshot(snapshot, household_load=household_load)
-            if not args.no_clear:
-                clear_screen()
-            print(highlight_changed_digits(previous_render, rendered))
-            previous_render = rendered
             append_ambient_log(args.ambient_log_path, snapshot)
-            if args.once:
-                return 0 if snapshot.ok else 1
-            time.sleep(args.interval)
+            next_read = time.monotonic() + args.interval
+            rendered = ""
+            while True:
+                rendered = render_snapshot(
+                    snapshot,
+                    now=datetime.now(snapshot.captured_at.tzinfo),
+                    household_usage=household_usage,
+                )
+                if not args.no_clear:
+                    clear_screen()
+                print(highlight_changed_digits(previous_poll_render, rendered))
+                if args.once:
+                    return 0 if snapshot.ok else 1
+                remaining = next_read - time.monotonic()
+                if remaining <= 0:
+                    break
+                time.sleep(min(1.0, remaining))
+            previous_poll_render = rendered
     except KeyboardInterrupt:
         print()
         return 0

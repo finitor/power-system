@@ -7,18 +7,18 @@ import shutil
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from .household import HouseholdUsage
 from .supervisor import SupervisorSnapshot
 
 if TYPE_CHECKING:
     from .classic import ClassicChargeSettings
-    from .web_display import HouseholdLoadSummary
 
 CHANGED_DIGIT_START = "\033[93m"
 CHANGED_DIGIT_END = "\033[0m"
 DIRECTION_ARROW_START = "\033[92m"
 UP_ARROW = f"{DIRECTION_ARROW_START}↑{CHANGED_DIGIT_END}"
 DOWN_ARROW = f"{DIRECTION_ARROW_START}↓{CHANGED_DIGIT_END}"
-MEASUREMENT_PATTERN = re.compile(r"(?<![\w-])(-?\d+(?:\.\d+)?)(kWh|mV|Ah|[VAWCs%])(?![\w-])")
+MEASUREMENT_PATTERN = re.compile(r"(?<![\w-])(-?\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?)(kWh|mV|Ah|[VAWCs%])(?![\w-])")
 ROW_LABEL_WIDTH = 21
 BATTERY_IDLE_CURRENT_A = 0.5
 
@@ -31,6 +31,12 @@ def format_time(value: datetime) -> str:
     return value.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
+def format_refresh_age(captured_at: datetime, now: datetime | None = None) -> str:
+    now = now or datetime.now(captured_at.tzinfo)
+    seconds = max(0, int((now - captured_at).total_seconds()))
+    return f"{seconds:02d} seconds ago"
+
+
 def highlight_changed_digits(previous: str | None, current: str) -> str:
     if previous is None:
         return current
@@ -39,16 +45,12 @@ def highlight_changed_digits(previous: str | None, current: str) -> str:
     highlighted: list[str] = []
     line_index = 0
     column_index = 0
-    for index, char in enumerate(current):
-        previous_char = previous[index] if index < len(previous) else ""
+    for char in current:
         highlight_value = (line_index, column_index) in value_highlights
         if highlight_value and (line_index, column_index - 1) not in value_highlights:
             highlighted.append(CHANGED_DIGIT_START)
 
-        if char.isdigit() and char != previous_char and current.startswith("Local time:", index - column_index):
-            highlighted.append(f"{CHANGED_DIGIT_START}{char}{CHANGED_DIGIT_END}")
-        else:
-            highlighted.append(char)
+        highlighted.append(char)
 
         if highlight_value and (line_index, column_index + 1) not in value_highlights:
             highlighted.append(CHANGED_DIGIT_END)
@@ -71,14 +73,14 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
     previous_lines = previous.splitlines()
 
     for line_index, current_line in enumerate(current.splitlines()):
-        if current_line.startswith("Local time:") or line_index >= len(previous_lines):
+        if current_line.startswith("Refreshed:") or line_index >= len(previous_lines):
             continue
 
         previous_values = list(MEASUREMENT_PATTERN.finditer(previous_lines[line_index]))
         current_values = list(MEASUREMENT_PATTERN.finditer(current_line))
         for previous_match, current_match in zip(previous_values, current_values, strict=False):
-            previous_value = float(previous_match.group(1))
-            current_value = float(current_match.group(1))
+            previous_value = _measurement_sort_value(previous_match.group(1))
+            current_value = _measurement_sort_value(current_match.group(1))
             if current_value > previous_value:
                 markers[(line_index, current_match.end() - 1)] = UP_ARROW
                 highlights.update((line_index, column) for column in range(current_match.start(), current_match.end()))
@@ -91,41 +93,40 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
     return markers, highlights
 
 
-def render_snapshot(snapshot: SupervisorSnapshot, household_load: HouseholdLoadSummary | None = None) -> str:
+def _measurement_sort_value(value: str) -> tuple[float, ...]:
+    if "-" in value[1:]:
+        first, second = value.split("-", maxsplit=1)
+        return (float(first), float(second))
+    return (float(value),)
+
+
+def render_snapshot(
+    snapshot: SupervisorSnapshot,
+    now: datetime | None = None,
+    household_usage: HouseholdUsage | None = None,
+) -> str:
     lines: list[str] = []
     width = min(shutil.get_terminal_size((100, 30)).columns, 120)
     lines.append("Off-Grid Power Supervisor".ljust(width))
-    lines.append(f"Local time: {format_time(snapshot.captured_at)}")
+    lines.append(f"Refreshed: {format_refresh_age(snapshot.captured_at, now)}")
     lines.append(_status_line(snapshot))
     lines.append("")
 
     lines.append("Load")
-    if household_load is None:
+    if household_usage is None:
         lines.append("  No data")
     else:
-        lines.append(_row("Now", f"{household_load.current_a:.1f}A  {household_load.power_w}W"))
-        if household_load.average_today_text is not None:
-            lines.append(_row("Average Today", household_load.average_today_text))
-        if household_load.today_text is not None:
-            lines.append(_row("Cumulative Today", household_load.today_text))
-        if household_load.remaining_text is not None:
-            lines.append(_row("Estimated Autonomy", household_load.remaining_text))
-    lines.append("")
+        lines.append(_row("Now", f"{household_usage.current_a:.1f}A  {household_usage.power_w:.0f}W"))
+        lines.append(_row("Cumulative Today", f"{household_usage.consumed_ah:.1f}Ah {household_usage.consumed_percent:.1f}% of bank"))
 
+    lines.append("")
     lines.extend(_battery_bank_lines(snapshot))
 
     lines.append("")
     lines.extend(_charge_controller_lines(snapshot))
 
     lines.append("")
-    lines.append("Temperature Probes")
-    if snapshot.ambient is None:
-        lines.append(_row("Sensor 0 ambient temp", "disconnected"))
-    else:
-        ambient = snapshot.ambient
-        lines.append(_row("Sensor 0 ambient temp", f"{ambient.temperature_c:.1f}C"))
-        if ambient.humidity_percent is not None:
-            lines.append(_row("Humidity", f"{ambient.humidity_percent:.1f}%"))
+    lines.extend(_temperature_lines(snapshot))
 
     if snapshot.errors:
         lines.append("")
@@ -138,38 +139,6 @@ def render_snapshot(snapshot: SupervisorSnapshot, household_load: HouseholdLoadS
     return "\n".join(lines)
 
 
-def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
-    lines: list[str] = []
-    controllers = [(0, snapshot.classic)]
-    for index, classic in controllers:
-        lines.append(f"Charge Controller {index}")
-        if classic is None:
-            lines.append("  No data")
-            continue
-
-        lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A"))
-        lines.append(_row("Battery", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"))
-        stage_value = classic.charge_stage
-        if classic.state != classic.charge_stage:
-            stage_value += f"  State: {classic.state}"
-        lines.append(_row("Stage", stage_value))
-        lines.append(_row("Today Cumulative", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
-        lines.append(_row("Temps", f"batt {classic.battery_temp_c:.1f}C  FET {classic.fet_temp_c:.1f}C  PCB {classic.pcb_temp_c:.1f}C"))
-        if index == 0 and snapshot.classic_settings is not None:
-            lines.append(_charge_settings_line(snapshot.classic_settings))
-    return lines
-
-
-def _charge_settings_line(settings: ClassicChargeSettings) -> str:
-    return _row(
-        "Charge Settings",
-        f"Limit {settings.battery_current_limit_a:.1f}A  "
-        f"Absorb {settings.absorb_voltage_v:.1f}V for {settings.absorb_time_s}s  "
-        f"Float {settings.float_voltage_v:.1f}V  "
-        f"EQ {settings.equalize_voltage_v:.1f}V",
-    )
-
-
 def _status_line(snapshot: SupervisorSnapshot) -> str:
     status = f"Status:  {'OK' if snapshot.ok else 'ERROR'}"
     if snapshot.battery is None or snapshot.battery.state_of_charge is None:
@@ -180,7 +149,7 @@ def _status_line(snapshot: SupervisorSnapshot) -> str:
 def _battery_bank_lines(snapshot: SupervisorSnapshot) -> list[str]:
     lines = ["Battery Bank"]
     if snapshot.battery is None:
-        lines.append("  No CAN data")
+        lines.extend(_missing_battery_lines(snapshot))
         return lines
 
     battery = snapshot.battery
@@ -206,14 +175,85 @@ def _battery_bank_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Enable", f"charge {charge}  discharge {discharge}{suffix}"))
     if extended is not None and extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
         delta_mv = round((extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000)
-        line = f"{extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V ({delta_mv}mV delta)"
-        if extended.min_cell_temperature_c is not None and extended.max_cell_temperature_c is not None:
-            line += f"  {extended.min_cell_temperature_c:.1f}-{extended.max_cell_temperature_c:.1f}C"
-        lines.append(_row("Cells", line))
+        lines.append(_row("Cells", f"{extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V ({delta_mv}mV delta)"))
     if status is not None:
         conditions = [*status.protection_flags, *status.alarm_flags]
-        value = "none" if not conditions else ", ".join(conditions)
-        lines.append(_row("Protection/Alarms", value))
+        lines.append(_row("Protection/Alarms", "none" if not conditions else ", ".join(conditions)))
+    return lines
+
+
+def _missing_battery_lines(snapshot: SupervisorSnapshot) -> list[str]:
+    if snapshot.battery_can_health is None:
+        return ["  No CAN data"]
+    if snapshot.battery_can_health.dfu_devices:
+        lines = ["  CAN adapter: DFU/bootloader mode"]
+        for device in snapshot.battery_can_health.dfu_devices[:2]:
+            product = device.product or "STM32 DFU"
+            serial = f" serial {device.serial}" if device.serial else ""
+            lines.append(f"    - {product}{serial}")
+        lines.append("  Action: replug USB-CAN adapter without BOOT/DFU pressed")
+        return lines
+    if not snapshot.battery_can_health.socketcan_present:
+        return [f"  CAN adapter: interface {snapshot.battery_can_health.interface} not present"]
+    return ["  No CAN frames received"]
+
+
+def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
+    lines: list[str] = []
+    controllers = [(0, snapshot.classic)]
+    for index, classic in controllers:
+        lines.append(f"Charge Controller {index}")
+        if classic is None:
+            lines.append("  No data")
+            continue
+
+        lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A"))
+        lines.append(_row("Battery", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"))
+        stage_value = classic.charge_stage
+        if classic.state != classic.charge_stage:
+            stage_value += f"  State: {classic.state}"
+        lines.append(_row("Stage", stage_value))
+        if classic.is_hypervoc:
+            lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
+        lines.append(_row("Today Cumulative", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
+        lines.append(_row("Temps", f"batt {classic.battery_temp_c:.1f}C  FET {classic.fet_temp_c:.1f}C  PCB {classic.pcb_temp_c:.1f}C"))
+        if index == 0 and snapshot.classic_settings is not None:
+            lines.append(_charge_settings_line(snapshot.classic_settings))
+    return lines
+
+
+def _charge_settings_line(settings: ClassicChargeSettings) -> str:
+    return _row(
+        "Charge Settings",
+        f"Limit {settings.battery_current_limit_a:.1f}A  "
+        f"Absorb {settings.absorb_voltage_v:.1f}V for {settings.absorb_time_s}s  "
+        f"Float {settings.float_voltage_v:.1f}V  "
+        f"EQ {settings.equalize_voltage_v:.1f}V",
+    )
+
+
+def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
+    lines = ["Temperatures"]
+    if (
+        snapshot.battery is not None
+        and snapshot.battery.extended_measurements is not None
+        and snapshot.battery.extended_measurements.min_cell_temperature_c is not None
+        and snapshot.battery.extended_measurements.max_cell_temperature_c is not None
+    ):
+        extended = snapshot.battery.extended_measurements
+        lines.append(_row("Battery cells", f"{extended.min_cell_temperature_c:.1f}-{extended.max_cell_temperature_c:.1f}C"))
+    if snapshot.classic is not None:
+        classic = snapshot.classic
+        lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
+        lines.append(_row("Charge controller FET", f"{classic.fet_temp_c:.1f}C"))
+        lines.append(_row("Charge controller PCB", f"{classic.pcb_temp_c:.1f}C"))
+    if snapshot.ambient is None:
+        lines.append(_row("Sensor 0 ambient temp", "disconnected"))
+    else:
+        ambient = snapshot.ambient
+        lines.append(_row("Sensor 0 ambient temp", f"{ambient.temperature_c:.1f}C"))
+        if ambient.humidity_percent is not None:
+            lines.append(_row("Humidity", f"{ambient.humidity_percent:.1f}%"))
     return lines
 
 

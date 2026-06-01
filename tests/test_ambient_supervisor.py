@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 import unittest
@@ -11,23 +11,73 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.ambient import AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
-from offgrid_power.canbus import CanFrame, PylonCanSnapshot, PylonStatus, decode_pylon_snapshot
+from offgrid_power.canbus import CanBusHealth, CanFrame, PylonCanSnapshot, PylonStatus, UsbDevice, decode_pylon_snapshot
 from offgrid_power.classic import ClassicChargeSettings, ClassicTelemetry
+from offgrid_power.household import HouseholdUsage, HouseholdUsageTracker
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import (
     CHANGED_DIGIT_END,
     CHANGED_DIGIT_START,
     DOWN_ARROW,
     UP_ARROW,
+    format_refresh_age,
     highlight_changed_digits,
     render_snapshot,
 )
-from offgrid_power.web_display import HouseholdLoadSummary
 
 
 class FakeClassicClient:
     def read(self):
         raise RuntimeError("not connected in test")
+
+
+class FakeClassicLiveClient:
+    def __init__(
+        self,
+        *,
+        charge_stage_code: int = 4,
+        charge_stage: str = "BulkMppt",
+        state_code: int = 3,
+        state: str = "MPPT or regulating voltage",
+        active_flags: list[str] | None = None,
+        last_voc_v: float = 110.0,
+        highest_input_voltage_v: float = 120.0,
+    ) -> None:
+        self.charge_stage_code = charge_stage_code
+        self.charge_stage = charge_stage
+        self.state_code = state_code
+        self.state = state
+        self.active_flags = active_flags or ["Battery temperature sensor installed"]
+        self.last_voc_v = last_voc_v
+        self.highest_input_voltage_v = highest_input_voltage_v
+
+    def read(self):
+        return (
+            ClassicTelemetry(
+                captured_at=datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc),
+                battery_voltage_v=53.6,
+                pv_voltage_v=100.0,
+                battery_current_a=11.6,
+                daily_energy_kwh=0.9,
+                battery_power_w=625,
+                charge_stage_code=self.charge_stage_code,
+                charge_stage=self.charge_stage,
+                state_code=self.state_code,
+                state=self.state,
+                pv_current_a=6.3,
+                last_voc_v=self.last_voc_v,
+                highest_input_voltage_v=self.highest_input_voltage_v,
+                daily_amp_hours_ah=17,
+                lifetime_energy_kwh=1000,
+                lifetime_amp_hours_ah=2000,
+                info_flags=0,
+                active_flags=self.active_flags,
+                battery_temp_c=15.3,
+                fet_temp_c=47.8,
+                pcb_temp_c=45.0,
+            ),
+            None,
+        )
 
 
 class FakeAmbientClient:
@@ -85,7 +135,7 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         rendered = render_snapshot(supervisor.read_snapshot())
 
-        self.assertIn("Temperature Probes", rendered)
+        self.assertIn("Temperatures", rendered)
         self.assertIn("Sensor 0 ambient temp", rendered)
         self.assertIn("21.5C", rendered)
         self.assertIn("44.0%", rendered)
@@ -97,8 +147,48 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         self.assertIn("Sensor 0 ambient temp: disconnected", rendered)
 
+    def test_terminal_display_orders_core_groups(self) -> None:
+        snapshot = Supervisor(
+            classic=FakeClassicLiveClient(),
+            ambient=FakeAmbientClient(),
+            battery=FakeBatteryCanClient(),
+        ).read_snapshot()
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertLess(rendered.index("Load"), rendered.index("Battery Bank"))
+        self.assertLess(rendered.index("Battery Bank"), rendered.index("Charge Controller 0"))
+        self.assertLess(rendered.index("Charge Controller 0"), rendered.index("Temperatures"))
+        self.assertNotIn("MidNite Classic", rendered)
+        self.assertNotIn("Classic Charge Settings", rendered)
+        self.assertNotIn("Flags:", rendered)
+        self.assertIn("Battery terminal:      15.3C", rendered)
+        self.assertIn("Charge controller FET: 47.8C", rendered)
+        self.assertIn("Charge controller PCB: 45.0C", rendered)
+        self.assertLess(rendered.index("Battery cells:"), rendered.index("Battery terminal:"))
+
+    def test_terminal_display_renders_household_usage(self) -> None:
+        rendered = render_snapshot(
+            Supervisor(classic=None, ambient=None).read_snapshot(),
+            household_usage=HouseholdUsage(
+                current_a=14.2,
+                power_w=742.0,
+                consumed_ah=3.5,
+                consumed_percent=1.75,
+            ),
+        )
+
+        self.assertIn("Load", rendered)
+        self.assertNotIn("Household Usage", rendered)
+        self.assertIn("Now:                   14.2A  742W", rendered)
+        self.assertIn("Cumulative Today:      3.5Ah 1.8% of bank", rendered)
+
     def test_terminal_display_renders_battery_can_reading(self) -> None:
-        snapshot = Supervisor(classic=None, ambient=None, battery=FakeBatteryCanClient()).read_snapshot()
+        snapshot = Supervisor(
+            classic=None,
+            ambient=None,
+            battery=FakeBatteryCanClient(),
+        ).read_snapshot()
 
         rendered = render_snapshot(snapshot)
 
@@ -113,7 +203,80 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("charge 58.4V/200.0A", rendered)
         self.assertIn("charge yes  discharge yes", rendered)
         self.assertIn("Protection/Alarms:     none", rendered)
-        self.assertIn("3.274-3.279V", rendered)
+        self.assertIn("3.274-3.279V (5mV delta)", rendered)
+        self.assertIn("Battery cells:", rendered)
+        self.assertIn("9.9-10.9C", rendered)
+        self.assertNotIn("BMS:", rendered)
+
+    def test_terminal_display_renders_pack_charge_state(self) -> None:
+        rendered = render_snapshot(Supervisor(classic=None, ambient=None, battery=FakeBatteryCanClient()).read_snapshot())
+
+        self.assertIn("Pack:                  52.41V  0.0A  idle", rendered)
+        self.assertNotIn("Pack:                  52.41V  0.0A  11.3C", rendered)
+
+    def test_terminal_display_renders_classic_hypervoc_protection(self) -> None:
+        snapshot = Supervisor(
+            classic=FakeClassicLiveClient(
+                charge_stage_code=10,
+                charge_stage="HyperVoc",
+                state_code=0,
+                state="Resting",
+                active_flags=["HyperVoc"],
+                last_voc_v=201.0,
+                highest_input_voltage_v=218.0,
+            ),
+            ambient=None,
+        ).read_snapshot()
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertIn("Stage:                 HyperVoc  State: Resting", rendered)
+        self.assertIn("PV input:              HyperVOC protection  Last Voc 201.0V  High 218.0V", rendered)
+
+    def test_terminal_display_renders_refresh_age(self) -> None:
+        snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
+
+        rendered = render_snapshot(snapshot, now=snapshot.captured_at + timedelta(seconds=5))
+
+        self.assertIn("Refreshed: 05 seconds ago", rendered)
+        self.assertNotIn("Local time:", rendered)
+
+    def test_format_refresh_age_uses_human_singular_and_zero(self) -> None:
+        captured_at = datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc)
+
+        self.assertEqual(format_refresh_age(captured_at, captured_at), "00 seconds ago")
+        self.assertEqual(format_refresh_age(captured_at, captured_at + timedelta(seconds=1)), "01 seconds ago")
+
+    def test_terminal_display_renders_battery_can_dfu_mode(self) -> None:
+        snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
+        snapshot = snapshot.__class__(
+            captured_at=snapshot.captured_at,
+            classic=snapshot.classic,
+            classic_settings=snapshot.classic_settings,
+            battery=None,
+            battery_can_health=CanBusHealth(
+                interface="can0",
+                socketcan_present=False,
+                dfu_devices=(
+                    UsbDevice(
+                        path=Path("/sys/bus/usb/devices/1-1.3"),
+                        vendor_id="0483",
+                        product_id="df11",
+                        product="DFU in FS Mode",
+                        serial="208634B94B45",
+                    ),
+                ),
+            ),
+            ambient=snapshot.ambient,
+            errors=["CAN adapter is in DFU/bootloader mode: DFU in FS Mode serial=208634B94B45"],
+        )
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertIn("Status:  ERROR", rendered)
+        self.assertIn("CAN adapter: DFU/bootloader mode", rendered)
+        self.assertIn("DFU in FS Mode serial 208634B94B45", rendered)
+        self.assertIn("replug USB-CAN adapter", rendered)
 
     def test_terminal_display_enumerates_battery_protections_and_alarms(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
@@ -121,6 +284,7 @@ class AmbientSupervisorTest(unittest.TestCase):
             captured_at=snapshot.captured_at,
             classic=None,
             classic_settings=None,
+            battery_can_health=None,
             battery=PylonCanSnapshot(
                 status=PylonStatus(
                     module_count=2,
@@ -138,37 +302,6 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Status:  OK", rendered)
         self.assertNotIn("BMS modules", rendered)
         self.assertIn("Protection/Alarms:     high cell voltage, low temperature, charge over current", rendered)
-
-    def test_terminal_display_renders_usage_remaining_line(self) -> None:
-        snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()
-
-        rendered = render_snapshot(
-            snapshot,
-            household_load=HouseholdLoadSummary(
-                current_a=5.1,
-                power_w=272,
-                average_today_text="4.3A  228W",
-                today_text="104.0Ah",
-                remaining_text="21.2h",
-            ),
-        )
-
-        self.assertIn("Load", rendered)
-        self.assertNotIn("Usage", rendered)
-        self.assertNotIn("Household Usage", rendered)
-        self.assertIn("  Now:                   5.1A  272W", rendered)
-        self.assertIn("  Average Today:         4.3A  228W", rendered)
-        self.assertIn("  Cumulative Today:      104.0Ah", rendered)
-        self.assertIn("  Estimated Autonomy:    21.2h", rendered)
-        rows = rendered.splitlines()
-        now_line = next(line for line in rows if line.startswith("  Now:"))
-        average_line = next(line for line in rows if line.startswith("  Average Today:"))
-        cumulative_line = next(line for line in rows if line.startswith("  Cumulative Today:"))
-        remaining_line = next(line for line in rows if line.startswith("  Estimated Autonomy:"))
-        self.assertEqual(
-            {now_line.index("5.1A"), average_line.index("4.3A"), cumulative_line.index("104.0Ah"), remaining_line.index("21.2h")},
-            {25},
-        )
 
     def test_supervisor_treats_disconnected_ambient_probe_as_non_error_state(self) -> None:
         snapshot = Supervisor(classic=None, ambient=FakeDisconnectedAmbientClient()).read_snapshot()
@@ -224,6 +357,7 @@ class AmbientSupervisorTest(unittest.TestCase):
             ),
             classic_settings=None,
             battery=FakeBatteryCanClient().read(),
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -281,6 +415,7 @@ class AmbientSupervisorTest(unittest.TestCase):
                 aux_function_word=0,
             ),
             battery=None,
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -290,7 +425,7 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("  Charge Settings:       Limit 80.0A  Absorb 55.2V for 300s  Float 54.0V  EQ 55.2V", rendered)
         self.assertNotIn("Charge Controller 0 Settings", rendered)
         self.assertLess(rendered.index("Charge Controller 0"), rendered.index("  Charge Settings:"))
-        self.assertLess(rendered.index("  Charge Settings:"), rendered.index("Temperature Probes"))
+        self.assertLess(rendered.index("  Charge Settings:"), rendered.index("Temperatures"))
 
     def test_terminal_display_hides_redundant_charge_controller_state(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
@@ -321,6 +456,7 @@ class AmbientSupervisorTest(unittest.TestCase):
             ),
             classic_settings=None,
             battery=None,
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -339,18 +475,27 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn(f"{CHANGED_DIGIT_START}23.5C{CHANGED_DIGIT_END}", highlighted)
         self.assertIn("21.5", highlight_changed_digits(None, "21.5"))
 
-    def test_terminal_display_still_highlights_time_digits_only(self) -> None:
+    def test_terminal_display_highlights_cell_voltage_range_as_one_token(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Local time: 2026-05-28 15:48:49 EDT",
-            current="Local time: 2026-05-28 15:48:55 EDT",
+            previous="Cells:   3.286-3.289V",
+            current="Cells:   3.287-3.290V",
         )
 
-        self.assertIn(f":{CHANGED_DIGIT_START}5{CHANGED_DIGIT_END}{CHANGED_DIGIT_START}5{CHANGED_DIGIT_END} EDT", highlighted)
+        self.assertIn(f"{CHANGED_DIGIT_START}3.287-3.290V{CHANGED_DIGIT_END}", highlighted)
+
+    def test_terminal_display_does_not_highlight_refresh_age(self) -> None:
+        highlighted = highlight_changed_digits(
+            previous="Refreshed: 1 second ago",
+            current="Refreshed: 2 seconds ago",
+        )
+
+        self.assertNotIn(CHANGED_DIGIT_START, highlighted)
+        self.assertNotIn(UP_ARROW, highlighted)
 
     def test_terminal_display_adds_direction_arrows_to_changed_values(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Battery:  54.2V    3.6A    196W\nLocal time: 2026-05-28 15:48:49 EDT",
-            current="Battery:  54.1V    3.8A    190W\nLocal time: 2026-05-28 15:48:55 EDT",
+            previous="Battery:  54.2V    3.6A    196W\nRefreshed: 1 second ago",
+            current="Battery:  54.1V    3.8A    190W\nRefreshed: 2 seconds ago",
         )
 
         self.assertIn(DOWN_ARROW, highlighted)
@@ -414,6 +559,39 @@ class AmbientSupervisorTest(unittest.TestCase):
             (device_dir / "w1_slave").unlink(missing_ok=True)
             device_dir.rmdir()
             device_dir.parent.rmdir()
+
+    def test_ds18b20_rejects_implausibly_high_temperature_as_disconnected(self) -> None:
+        device_dir = REPO_ROOT / ".tmp-test-ds18b20-high" / "28-000001"
+        device_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            (device_dir / "w1_slave").write_text(
+                "aa bb cc dd ee ff gg hh ii : crc=11 YES\n"
+                "aa bb cc dd ee ff gg hh ii t=81000\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(AmbientProbeDisconnected, "probe may be disconnected"):
+                AmbientDs18b20Client(
+                    devices_path=str(device_dir.parent),
+                ).read()
+        finally:
+            (device_dir / "w1_slave").unlink(missing_ok=True)
+            device_dir.rmdir()
+            device_dir.parent.rmdir()
+
+    def test_household_usage_tracker_integrates_until_local_midnight(self) -> None:
+        tracker = HouseholdUsageTracker(battery_capacity_ah=200)
+        first = datetime(2026, 5, 28, 23, 59, 0, tzinfo=timezone.utc)
+        second = first + timedelta(minutes=30)
+
+        tracker.update(first, FakeBatteryCanClient().read(), FakeClassicLiveClient().read()[0])
+        usage = tracker.update(second, FakeBatteryCanClient().read(), FakeClassicLiveClient().read()[0])
+
+        self.assertIsNotNone(usage)
+        self.assertAlmostEqual(usage.current_a, 11.6)
+        self.assertAlmostEqual(usage.power_w, 625.0)
+        self.assertAlmostEqual(usage.consumed_ah, 5.8)
+        self.assertAlmostEqual(usage.consumed_percent, 2.9)
 
 
 if __name__ == "__main__":

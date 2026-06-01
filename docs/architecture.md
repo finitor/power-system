@@ -4,6 +4,7 @@
 
 This project is organized around the major power-system subsystems that require telemetry, documentation, and possibly supervisory control:
 
+- [Site](site.md): Wawa, Ontario installation context, time zone, and solar-noon calculation notes.
 - [Battery bank](subsystems/battery-bank.md): 2x Eco-Worthy Cubix 100 48 V 100 Ah rack-mount batteries.
 - [Solar charge controller](subsystems/charge-controller.md): legacy Midnite Solar Classic 200.
 - [Battery temperature control](subsystems/battery-temperature-control.md): winter warming, warm-weather ventilation, and charge-temperature permissives.

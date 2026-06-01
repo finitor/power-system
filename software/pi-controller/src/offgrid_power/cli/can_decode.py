@@ -6,15 +6,21 @@ import argparse
 import time
 from pathlib import Path
 
-from offgrid_power.canbus import CanFrame, candump_log_frames, decode_pylon_snapshot
+from offgrid_power.canbus import BatteryCanProtocol, CanFrame, candump_log_frames, decode_battery_snapshot
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Decode Pylon-style battery CAN telemetry.")
+    parser = argparse.ArgumentParser(description="Decode battery CAN telemetry.")
     parser.add_argument("--interface", default="can0", help="SocketCAN interface to read")
     parser.add_argument("--seconds", type=float, default=3.0, help="Seconds to collect live frames")
     parser.add_argument("--log", type=Path, help="Decode a candump -L log instead of reading live CAN")
     parser.add_argument("--raw", action="store_true", help="Print raw latest frames after decoded summary")
+    parser.add_argument(
+        "--protocol",
+        default=BatteryCanProtocol.PYLON.value,
+        choices=[protocol.value for protocol in BatteryCanProtocol],
+        help="Battery CAN decode profile",
+    )
     return parser.parse_args()
 
 
@@ -29,7 +35,7 @@ def main() -> int:
         print("No CAN frames received.")
         return 1
 
-    snapshot = decode_pylon_snapshot(frames)
+    snapshot = decode_battery_snapshot(frames, args.protocol)
     for line in snapshot.summary_lines():
         print(line)
 
@@ -63,6 +69,7 @@ def _read_live_frames(interface: str, seconds: float) -> list[CanFrame]:
                     arbitration_id=message.arbitration_id,
                     data=bytes(message.data),
                     timestamp=message.timestamp,
+                    is_extended_id=message.is_extended_id,
                 )
             )
     return frames

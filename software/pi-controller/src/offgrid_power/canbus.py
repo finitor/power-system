@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+import subprocess
 import time
 from pathlib import Path
 from typing import Iterable
@@ -10,6 +12,30 @@ from typing import Iterable
 ARPHRD_CAN = "280"
 STM32_DFU_VENDOR_ID = "0483"
 STM32_DFU_PRODUCT_ID = "df11"
+
+
+class BatteryCanProtocol(str, Enum):
+    PYLON = "pylon"
+    ECOWORTHY_VICTRON = "ecoworthy-victron"
+
+    @classmethod
+    def normalize(cls, value: "BatteryCanProtocol | str") -> "BatteryCanProtocol":
+        if isinstance(value, cls):
+            return value
+        cleaned = value.strip().lower().replace("_", "-")
+        aliases = {
+            "eco-worthy-victron": cls.ECOWORTHY_VICTRON,
+            "ecoworthy-victron": cls.ECOWORTHY_VICTRON,
+            "eco-victron": cls.ECOWORTHY_VICTRON,
+            "victron": cls.ECOWORTHY_VICTRON,
+            "pylon": cls.PYLON,
+            "pylontech": cls.PYLON,
+        }
+        try:
+            return aliases[cleaned]
+        except KeyError as exc:
+            choices = ", ".join(protocol.value for protocol in cls)
+            raise ValueError(f"unknown battery CAN protocol {value!r}; choose one of: {choices}") from exc
 
 
 @dataclass(frozen=True)
@@ -22,10 +48,34 @@ class UsbDevice:
 
 
 @dataclass(frozen=True)
+class CanBusHealth:
+    interface: str
+    socketcan_present: bool
+    dfu_devices: tuple[UsbDevice, ...]
+
+    @property
+    def ok(self) -> bool:
+        return self.socketcan_present and not self.dfu_devices
+
+    def status_message(self) -> str:
+        if self.dfu_devices:
+            devices = ", ".join(
+                f"{device.product or 'STM32 DFU'}"
+                f"{f' serial={device.serial}' if device.serial else ''}"
+                for device in self.dfu_devices
+            )
+            return f"CAN adapter is in DFU/bootloader mode: {devices}"
+        if not self.socketcan_present:
+            return f"CAN interface {self.interface} is not present"
+        return f"CAN interface {self.interface} is present"
+
+
+@dataclass(frozen=True)
 class CanFrame:
     arbitration_id: int
     data: bytes
     timestamp: float | None = None
+    is_extended_id: bool = False
 
 
 @dataclass(frozen=True)
@@ -158,9 +208,15 @@ class PylonCanSnapshot:
 
 
 class BatteryCanClient:
-    def __init__(self, interface: str = "can0", receive_seconds: float = 1.5) -> None:
+    def __init__(
+        self,
+        interface: str = "can0",
+        receive_seconds: float = 1.5,
+        protocol: BatteryCanProtocol | str = BatteryCanProtocol.PYLON,
+    ) -> None:
         self.interface = interface
         self.receive_seconds = receive_seconds
+        self.protocol = BatteryCanProtocol.normalize(protocol)
 
     def read(self) -> PylonCanSnapshot:
         try:
@@ -183,12 +239,13 @@ class BatteryCanClient:
                         arbitration_id=message.arbitration_id,
                         data=bytes(message.data),
                         timestamp=message.timestamp,
+                        is_extended_id=message.is_extended_id,
                     )
                 )
 
         if not frames:
             raise RuntimeError(f"no CAN frames received on {self.interface}")
-        return decode_pylon_snapshot(frames)
+        return decode_battery_snapshot(frames, self.protocol)
 
 
 def socketcan_interfaces(sys_class_net: Path = Path("/sys/class/net")) -> list[str]:
@@ -200,8 +257,68 @@ def socketcan_interfaces(sys_class_net: Path = Path("/sys/class/net")) -> list[s
     return interfaces
 
 
+def canbus_health(
+    interface: str = "can0",
+    sys_class_net: Path = Path("/sys/class/net"),
+    sys_bus_usb: Path = Path("/sys/bus/usb/devices"),
+) -> CanBusHealth:
+    return CanBusHealth(
+        interface=interface,
+        socketcan_present=interface in socketcan_interfaces(sys_class_net),
+        dfu_devices=tuple(stm32_dfu_devices(sys_bus_usb)),
+    )
+
+
 def interface_state(interface: str, sys_class_net: Path = Path("/sys/class/net")) -> str:
     return _read_optional(sys_class_net / interface / "operstate")
+
+
+def ensure_socketcan_interface_up(
+    interface: str = "can0",
+    bitrate: int = 500000,
+    *,
+    listen_only: bool = True,
+    sys_class_net: Path = Path("/sys/class/net"),
+    runner=subprocess.run,
+) -> bool:
+    """Configure and raise a SocketCAN interface when it is present but down."""
+    if interface not in socketcan_interfaces(sys_class_net):
+        return False
+    if interface_state(interface, sys_class_net) != "down":
+        return False
+
+    type_command = ["ip", "link", "set", interface, "type", "can", "bitrate", str(bitrate)]
+    if listen_only:
+        type_command.extend(["listen-only", "on"])
+
+    runner(type_command, check=True)
+    runner(["ip", "link", "set", interface, "up"], check=True)
+    return True
+
+
+def configure_socketcan_interface(
+    interface: str = "can0",
+    bitrate: int = 500000,
+    *,
+    listen_only: bool = True,
+    sys_class_net: Path = Path("/sys/class/net"),
+    runner=subprocess.run,
+) -> bool:
+    """Force a SocketCAN interface to a known bitrate and mode."""
+    if interface not in socketcan_interfaces(sys_class_net):
+        return False
+
+    runner(["ip", "link", "set", interface, "down"], check=False)
+
+    type_command = ["ip", "link", "set", interface, "type", "can", "bitrate", str(bitrate)]
+    if listen_only:
+        type_command.extend(["listen-only", "on"])
+    else:
+        type_command.extend(["listen-only", "off"])
+
+    runner(type_command, check=True)
+    runner(["ip", "link", "set", interface, "up"], check=True)
+    return True
 
 
 def stm32_dfu_devices(sys_bus_usb: Path = Path("/sys/bus/usb/devices")) -> list[UsbDevice]:
@@ -245,6 +362,17 @@ def decode_pylon_snapshot(frames: Iterable[CanFrame]) -> PylonCanSnapshot:
     )
 
 
+def decode_battery_snapshot(
+    frames: Iterable[CanFrame],
+    protocol: BatteryCanProtocol | str = BatteryCanProtocol.PYLON,
+) -> PylonCanSnapshot:
+    normalized = BatteryCanProtocol.normalize(protocol)
+    if normalized in {BatteryCanProtocol.PYLON, BatteryCanProtocol.ECOWORTHY_VICTRON}:
+        return decode_pylon_snapshot(frames)
+
+    raise ValueError(f"unsupported battery CAN protocol {normalized.value!r}")
+
+
 def candump_log_frames(lines: Iterable[str]) -> list[CanFrame]:
     frames: list[CanFrame] = []
     for line in lines:
@@ -267,7 +395,15 @@ def candump_log_frames(lines: Iterable[str]) -> list[CanFrame]:
             continue
 
         frame_id_text, data_text = frame_text.split("#", maxsplit=1)
-        frames.append(CanFrame(int(frame_id_text, 16), bytes.fromhex(data_text), timestamp))
+        arbitration_id = int(frame_id_text, 16)
+        frames.append(
+            CanFrame(
+                arbitration_id,
+                bytes.fromhex(data_text),
+                timestamp,
+                is_extended_id=arbitration_id > 0x7FF,
+            )
+        )
     return frames
 
 

@@ -2,6 +2,8 @@
 
 Track every major physical component here. Prefer exact model numbers and interface details.
 
+Use [Shopping List](shopping-list.md) for the one-view procurement status across `to order`, `ordered`, and `on hand`.
+
 | Component | Model | Voltage | Interface | Purpose | Notes |
 |---|---|---:|---|---|---|
 | Raspberry Pi | 3 Model B v1.2 | 5 V | GPIO / USB / Ethernet / Wi-Fi / Bluetooth | Controller and logger | 1 GB RAM, 4x USB 2.0, 40-pin GPIO; add power supply |
@@ -13,6 +15,9 @@ Track every major physical component here. Prefer exact model numbers and interf
 | Rack batteries | 2x Eco-Worthy Cubix 100 | 48 V, 100 Ah each; 200 Ah total nominal bank | Bluetooth/Wi-Fi, RS485, CAN, RS232, ESM-100 monitor | Energy storage | LiFePO4; built-in 100 A BMS per battery; each battery is 56.1 x 48.3 x 14.3 cm / 22.09 x 19.02 x 5.63 in; confirm usable capacity, charge/discharge limits, and parallel wiring |
 | Battery remote monitor | Eco-Worthy ESM-100 | Battery accessory powered | Battery monitor link | Battery voltage/current/SOC display | Makes WhizBang Jr shunt optional for first build if equivalent BMS data is available to Pi |
 | Charge controller | Midnite Solar Classic 200 | 48 V battery system, PV input TBD | TBD, likely network / Modbus-capable | Solar charging | Legacy controller; confirm firmware, network access, and telemetry interface |
+| Charge controller | Victron BlueSolar MPPT 150/85 CAN-bus | 48 V battery system, 150 V PV input, 85 A output | VE.Can / RJ45 CAN bus | Second PV array solar charging | Ordered; manual identifies two RJ45 CAN connectors, VE.Can parallel operation, and NMEA2000 protocol |
+| PV array 0 | Canadian Solar CS6X-300-adjacent modules | Nominal module rating about 295-305 W each | 4s2p PV string wiring | Existing solar input | On hand / installed; 8 modules total; exact per-module ratings may vary across CS6X-300, CS6X-295, or CS6X-305 |
+| PV array 1 | Canadian Solar CS6X-300-adjacent modules | Nominal module rating about 295-305 W each | 4s3p PV string wiring | Second solar input | On hand; currently in dry run on the ground before mount construction; 12 modules total; exact per-module ratings may vary across CS6X-300, CS6X-295, or CS6X-305 |
 | Inverter/charger | MagnaSine 4448 | 48 V DC, AC output TBD | TBD, likely Magnum remote / network accessories | AC inversion and charging | Confirm exact model label, continuous rating, AC wiring, and monitoring interface |
 | Battery monitor / shunt | WhizBang Jr candidate | TBD | Midnite Classic accessory / shunt | Optional independent current/SOC cross-check | Defer unless BMS/ESM-100 telemetry is incomplete or Classic charge control benefits from shunt data |
 | Temperature sensors | 10x DS18B20 stainless waterproof probes | 3.3 V | 1-Wire GPIO | Battery / enclosure temperature | Map each sensor ID to physical location during installation |
@@ -30,4 +35,5 @@ Track every major physical component here. Prefer exact model numbers and interf
 | Eco-Worthy Cubix 100 battery 1 | CAN / RS485 TBD | TBD | Confirm BMS communication options |
 | Eco-Worthy Cubix 100 battery 2 | CAN / RS485 TBD | TBD | Confirm whether batteries expose individual telemetry |
 | Midnite Solar Classic 200 | TBD | TBD | Confirm Ethernet, Modbus, or other supported interface |
+| Victron BlueSolar MPPT 150/85 CAN-bus | VE.Can / RJ45 CAN bus | TBD | Ordered second charge controller; likely separate PV source telemetry path from Classic |
 | MagnaSine 4448 | TBD | TBD | Confirm remote/network bridge availability |

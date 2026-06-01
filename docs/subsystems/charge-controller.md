@@ -2,6 +2,8 @@
 
 ## Hardware
 
+The system is moving toward multiple PV sources. Code and documentation should refer to charge-controller/PV-source telemetry generically where possible instead of assuming the Midnite Classic is the only solar input.
+
 | Item | Value |
 |---|---|
 | Manufacturer | Midnite Solar |
@@ -12,6 +14,13 @@
 | Firmware | TBD |
 | Communication interface | TBD |
 | Optional battery-current accessory | MidNite WhizBang Jr, likely avoid/defer to preserve AUX2 |
+
+## PV Sources
+
+| PV source | Controller | Array | Status | Notes |
+|---|---|---|---|---|
+| PV array 0 | Midnite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | Existing | 8 modules total; exact module ratings may vary around 295-305 W |
+| PV array 1 | Victron BlueSolar MPPT 150/85 CAN-bus | Canadian Solar CS6X-300-adjacent modules, 4s3p | Dry run before mount construction | 12 modules total; exact module ratings may vary around 295-305 W |
 
 ## Telemetry Goals
 
@@ -46,6 +55,10 @@ Use [Lead-Acid To LiFePO4 Changeover](../runbooks/lead-acid-to-lifepo4-changeove
 The charge controller owns charge regulation. The Raspberry Pi may monitor it and may later adjust non-critical settings only if the interface is reliable and the change is reversible from the controller front panel.
 
 Because this is legacy equipment, assume its built-in charge stages may be lead-acid oriented until proven otherwise. The supervisor must specifically account for LiFePO4 behavior: bulk/absorb may be useful, sustained float should not become the normal long-term state after the bank is full, and equalization must be disabled for normal operation.
+
+For the difference between the Classic's Float stage and actual PV power output, see [FAQ](../faq.md).
+
+The supervisor should surface Classic `HyperVoc` explicitly. In this state the Classic is protecting itself from PV input above its normal operating range and may not charge until array voltage falls back inside range. This can be expected during very cold bright winter conditions if the array is intentionally sized near the Classic 200's upper input envelope.
 
 The Eco-Worthy ESM-100/BMS should be the first battery SOC/current source for the Pi. The Classic already reports its own charge stage, such as bulk, absorb, float, resting, or fault, without a WhizBang Jr.
 

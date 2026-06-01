@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from .ambient import AmbientDhtClient, AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
-from .canbus import BatteryCanClient, PylonCanSnapshot
+from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_health
 from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
 
 
@@ -16,6 +16,7 @@ class SupervisorSnapshot:
     classic: ClassicTelemetry | None
     classic_settings: ClassicChargeSettings | None
     battery: PylonCanSnapshot | None
+    battery_can_health: CanBusHealth | None
     ambient: AmbientTelemetry | None
     errors: list[str]
 
@@ -33,16 +34,19 @@ class Supervisor:
         classic: ClassicClient | None,
         ambient: AmbientClient | None = None,
         battery: BatteryCanClient | None = None,
+        battery_can_interface: str | None = None,
     ) -> None:
         self.classic = classic
         self.ambient = ambient
         self.battery = battery
+        self.battery_can_interface = battery_can_interface
 
     def read_snapshot(self) -> SupervisorSnapshot:
         errors: list[str] = []
         classic: ClassicTelemetry | None = None
         classic_settings: ClassicChargeSettings | None = None
         battery: PylonCanSnapshot | None = None
+        battery_can_health: CanBusHealth | None = None
         ambient: AmbientTelemetry | None = None
 
         if self.classic is not None:
@@ -59,6 +63,11 @@ class Supervisor:
             except Exception:  # noqa: BLE001 - ambient is advisory unless a control loop depends on it.
                 ambient = None
 
+        if self.battery_can_interface is not None:
+            battery_can_health = canbus_health(self.battery_can_interface)
+            if not battery_can_health.ok:
+                errors.append(battery_can_health.status_message())
+
         if self.battery is not None:
             try:
                 battery = self.battery.read()
@@ -70,6 +79,7 @@ class Supervisor:
             classic=classic,
             classic_settings=classic_settings,
             battery=battery,
+            battery_can_health=battery_can_health,
             ambient=ambient,
             errors=errors,
         )

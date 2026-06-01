@@ -36,7 +36,28 @@ class ClassicDecodeTest(unittest.TestCase):
         self.assertEqual(telemetry.charge_stage, "BulkMppt")
         self.assertEqual(telemetry.state_code, 3)
         self.assertEqual(telemetry.state, "MPPT or regulating voltage")
+        self.assertFalse(telemetry.is_hypervoc)
         self.assertEqual(telemetry.battery_temp_c, 19.6)
+
+    def test_decode_live_registers_exposes_hypervoc_state(self) -> None:
+        block = RegisterBlock(
+            start_register=4115,
+            values=[
+                548, 2050, 0, 0, 0, 0x0A00, 0, 2010, 2180, 0,
+                0, 0, 0, 0, 0, 0x0400, 0, 164, 453, 435,
+            ],
+        )
+
+        telemetry = decode_live(
+            block,
+            captured_at=datetime(2026, 5, 31, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(telemetry.charge_stage, "HyperVoc")
+        self.assertIn("HyperVoc", telemetry.active_flags)
+        self.assertTrue(telemetry.is_hypervoc)
+        self.assertEqual(telemetry.last_voc_v, 201.0)
+        self.assertEqual(telemetry.highest_input_voltage_v, 218.0)
 
     def test_decode_settings_registers_from_observed_classic_sample(self) -> None:
         block = RegisterBlock(

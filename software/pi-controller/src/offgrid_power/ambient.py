@@ -123,8 +123,10 @@ class AmbientDs18b20Client:
             raise RuntimeError(f"DS18B20 temperature missing: {device_file.parent.name}")
 
         raw_millic = int(lines[1].split(marker, maxsplit=1)[1])
-        if raw_millic == 0:
-            raise AmbientProbeDisconnected(f"DS18B20 returned 0.0C; probe may be disconnected: {device_file.parent.name}")
+        if raw_millic == 0 or raw_millic >= 80000 or raw_millic <= -55000:
+            raise AmbientProbeDisconnected(
+                f"DS18B20 returned implausible temperature; probe may be disconnected: {device_file.parent.name}"
+            )
 
         return AmbientTelemetry(
             temperature_c=raw_millic / 1000,

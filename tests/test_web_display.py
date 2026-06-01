@@ -50,6 +50,7 @@ class WebDisplayTest(unittest.TestCase):
                     CanFrame(0x373, bytes.fromhex("4C0D5A0D21012201")),
                 ]
             ),
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -116,6 +117,7 @@ class WebDisplayTest(unittest.TestCase):
             ),
             classic_settings=None,
             battery=None,
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -160,6 +162,7 @@ class WebDisplayTest(unittest.TestCase):
             ),
             classic_settings=None,
             battery=None,
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -182,6 +185,7 @@ class WebDisplayTest(unittest.TestCase):
                     manufacturer_marker="PN",
                 )
             ),
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -196,6 +200,7 @@ class WebDisplayTest(unittest.TestCase):
             classic=None,
             classic_settings=None,
             battery=None,
+            battery_can_health=None,
             ambient=None,
             errors=["bad <device>"],
         )
@@ -238,6 +243,7 @@ class WebDisplayTest(unittest.TestCase):
                     CanFrame(0x356, bytes.fromhex("0C15F4FFA7000000")),
                 ]
             ),
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
@@ -372,6 +378,7 @@ class WebDisplayTest(unittest.TestCase):
                     CanFrame(0x379, bytes.fromhex("C800000000000000")),
                 ]
             ),
+            battery_can_health=None,
             ambient=None,
             errors=[],
         )
