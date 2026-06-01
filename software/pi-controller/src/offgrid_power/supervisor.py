@@ -56,8 +56,8 @@ class Supervisor:
                 ambient = self.ambient.read()
             except AmbientProbeDisconnected:
                 ambient = None
-            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
-                errors.append(f"Ambient sensor read failed: {exc}")
+            except Exception:  # noqa: BLE001 - ambient is advisory unless a control loop depends on it.
+                ambient = None
 
         if self.battery is not None:
             try:

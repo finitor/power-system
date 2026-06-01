@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from pathlib import Path
+from threading import Thread
 import time
 
 from offgrid_power.ambient import AmbientDhtClient, AmbientDs18b20Client
@@ -13,11 +14,34 @@ from offgrid_power.classic import ClassicClient
 from offgrid_power.config import load_config
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
+from offgrid_power.web_display import HouseholdLoadTracker, SnapshotCache, run_display_server
 
 
 def parse_args() -> argparse.Namespace:
     config = load_config()
     parser = argparse.ArgumentParser(description="Display live power-system metrics.")
+    add_supervisor_arguments(parser)
+    parser.add_argument("--interval", type=float, default=config.display.refresh_seconds)
+    parser.add_argument("--web-display", action="store_true", help="Serve the same supervisor snapshots over HTTP")
+    parser.add_argument("--web-host", default="0.0.0.0", help="HTTP display bind address")
+    parser.add_argument("--web-port", type=int, default=8080, help="HTTP display port")
+    parser.add_argument(
+        "--web-access-log-path",
+        default="data/web-display-access.log",
+        help="Append HTTP display access logs here; use an empty string to log to stdout",
+    )
+    parser.add_argument(
+        "--no-clear",
+        action="store_true",
+        default=not config.display.clear_screen,
+        help="Do not clear the terminal before each redraw",
+    )
+    parser.add_argument("--once", action="store_true", help="Render one snapshot and exit")
+    return parser.parse_args()
+
+
+def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
+    config = load_config()
     parser.add_argument("--classic-host", default=config.classic.host)
     parser.add_argument("--classic-port", type=int, default=config.classic.port)
     parser.add_argument("--classic-device-id", type=int, default=config.classic.device_id)
@@ -49,15 +73,6 @@ def parse_args() -> argparse.Namespace:
         default=config.ambient.log_path,
         help="Append ambient readings to this CSV file",
     )
-    parser.add_argument("--interval", type=float, default=config.display.refresh_seconds)
-    parser.add_argument(
-        "--no-clear",
-        action="store_true",
-        default=not config.display.clear_screen,
-        help="Do not clear the terminal before each redraw",
-    )
-    parser.add_argument("--once", action="store_true", help="Render one snapshot and exit")
-    return parser.parse_args()
 
 
 def build_supervisor(args: argparse.Namespace) -> Supervisor:
@@ -111,12 +126,18 @@ def append_ambient_log(log_path: str, snapshot) -> None:
 def main() -> int:
     args = parse_args()
     supervisor = build_supervisor(args)
+    snapshot_cache = SnapshotCache()
+    household_load_tracker = HouseholdLoadTracker()
+    if args.web_display:
+        start_web_display(args, supervisor, snapshot_cache)
     previous_render: str | None = None
 
     try:
         while True:
             snapshot = supervisor.read_snapshot()
-            rendered = render_snapshot(snapshot)
+            household_load = household_load_tracker.update(snapshot)
+            snapshot_cache.set(snapshot, household_load)
+            rendered = render_snapshot(snapshot, household_load=household_load)
             if not args.no_clear:
                 clear_screen()
             print(highlight_changed_digits(previous_render, rendered))
@@ -128,6 +149,22 @@ def main() -> int:
     except KeyboardInterrupt:
         print()
         return 0
+
+
+def start_web_display(args: argparse.Namespace, supervisor: Supervisor, snapshot_cache: SnapshotCache) -> None:
+    thread = Thread(
+        target=run_display_server,
+        kwargs={
+            "supervisor": supervisor,
+            "host": args.web_host,
+            "port": args.web_port,
+            "snapshot_provider": snapshot_cache.get,
+            "household_load_provider": snapshot_cache.get_household_load,
+            "access_log_path": args.web_access_log_path or None,
+        },
+        daemon=True,
+    )
+    thread.start()
 
 
 if __name__ == "__main__":

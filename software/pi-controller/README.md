@@ -9,8 +9,10 @@ Read-only supervisory monitoring and future control orchestration for the Raspbe
 - `src/offgrid_power/canbus.py`: SocketCAN discovery and Pylon-style battery CAN decoding helpers.
 - `src/offgrid_power/supervisor.py`: combines adapter reads into a single snapshot.
 - `src/offgrid_power/terminal_display.py`: renders a compact terminal status view.
+- `src/offgrid_power/web_display.py`: renders and serves primitive HTML status pages.
 - `src/offgrid_power/cli/can_decode.py`: live or log-based battery CAN decoder.
 - `src/offgrid_power/cli/supervisor_display.py`: production entry point for the live terminal display.
+- `src/offgrid_power/cli/web_display.py`: local HTTP display server for wall displays.
 - `../../scripts/supervisor-display.py`: compatibility wrapper for local repo runs.
 
 Run from the repo root:
@@ -22,6 +24,20 @@ offgrid-supervisor --classic-host 192.168.0.10
 ```
 
 Use `--once` for a single snapshot. The current scaffold is read-only and performs no control writes.
+
+To serve the same snapshots that the terminal supervisor is rendering over local HTTP:
+
+```sh
+offgrid-supervisor --classic-host 192.168.0.10 --web-display --web-port 8080
+```
+
+The standalone web server is still useful for quick tests:
+
+```sh
+offgrid-web-display --host 0.0.0.0 --port 8080 --classic-host 192.168.0.10
+```
+
+Open `http://blueberry.local:8080/` from the Kindle browser. The page is plain HTML/CSS, uses a 60 second meta refresh, and performs no control writes. Rendering is selected from the browser user agent; `/kindle` remains as a compatibility alias while testing. Access logs are written to `data/web-display-access.log` by default; try `http://blueberry.local:8080/healthz` when debugging old browsers or Wi-Fi reachability.
 
 To inspect the Eco-Worthy/Pylon-style battery CAN bus from the Pi:
 

@@ -22,6 +22,7 @@ sensors = [
 offgrid-can-decode = "offgrid_power.cli.can_decode:main"
 offgrid-can-probe = "offgrid_power.cli.can_probe:main"
 offgrid-supervisor = "offgrid_power.cli.supervisor_display:main"
+offgrid-web-display = "offgrid_power.cli.web_display:main"
 
 [tool.setuptools]
 package-dir = {"" = "software/pi-controller/src"}
