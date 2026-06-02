@@ -4,6 +4,12 @@
 
 The inverter/charger appears to be a Magnum MS4448PAE-class unit with an ME-RC50 remote. The existing phone-style remote cable indicates that the inverter is using Magnum's proprietary remote/accessory network.
 
+## Current Hardware Status
+
+Dedicated pilot adapter on order, expected 2026-06-05: Waveshare USB TO RS485/422 Industrial Grade Isolated Converter, with onboard original FT232RL and SP485EEN, multiple protection, wall-mount support, and rail-mount support.
+
+Use this adapter only for the Magnum network pilot. Do not share it with the battery RS485 fallback bus.
+
 ## Prior Art
 
 ### pyMagnum
@@ -56,7 +62,7 @@ Notes:
 
 Add for pilot testing:
 
-- One more isolated USB-RS485 adapter dedicated to the Magnum network.
+- Waveshare USB TO RS485/422 Industrial Grade Isolated Converter, on order expected 2026-06-05, dedicated to the Magnum network.
 - RJ11 6P4C or 6P6C breakout connectors.
 - Short RJ11 telephone patch cables.
 

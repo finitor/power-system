@@ -3,6 +3,7 @@ controller,Raspberry Pi,Raspberry Pi,3 Model B v1.2,1,on hand,5 V,GPIO/USB/Ether
 storage,Rack battery,Eco-Worthy,Cubix 100,2,on hand,48 V 100 Ah each,Bluetooth/Wi-Fi/RS485/CAN/RS232,,Rack-mount LiFePO4 batteries with built-in BMS
 monitoring,Battery remote monitor,Eco-Worthy,ESM-100,1,on hand,Battery accessory powered,Battery monitor link,,Displays voltage current and SOC
 monitoring,RJ45 female screw-terminal breakout,Poyiccot,RJ45 8P8C female jack to 8 pin screw terminal connector,2,on hand,RJ45 low-voltage comms,RJ45 female / screw terminal,,Bench wiring and adapter-side breakout for Eco-Worthy battery CAN and RS485 instrumentation
+monitoring,Magnum USB-to-RS485 adapter,Waveshare,USB TO RS485/422 Industrial Grade Isolated Converter,1,on order expected 2026-06-05,USB powered,USB/RJ11 breakout to Magnum RS485 network,https://www.waveshare.com/usb-to-rs485-422.htm,Dedicated Magnum inverter network pilot adapter; onboard original FT232RL and SP485EEN with multiple protection; keep separate from battery RS485 bus
 conversion,Inverter/charger,Magnum Energy / MagnaSine,4448,1,on hand,48 V DC / AC rating TBD,TBD,,Confirm exact model label and monitoring interface
 charging,Charge controller,Midnite Solar,Classic 200,1,on hand,48 V battery system / PV input TBD,TBD,,Legacy solar charge controller
 monitoring,Temperature/humidity sensor,ASAIR,AM2302 / DHT22,1,on hand,3.3-5 V,GPIO single-wire,,Utility-room ambient humidity and temperature
