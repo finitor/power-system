@@ -45,6 +45,8 @@ The Pi software defaults to `BATTERY_CAN_PROTOCOL=pylon`. A later change to the 
 
 Keep RS485 and RS232 as fallback or parallel research paths because the protocol table also shows host-computer-capable RS485 and RS232 options. Preferred RS485 fallback hardware is an isolated USB-to-RS485 adapter, such as the Waveshare USB TO RS485/422 industrial isolated converter.
 
+See [Charge Management](../charge-management.md) for how BMS-advertised CVL/CCL, cell voltage, and cell delta are used by the supervisor.
+
 ## Shunt Decision
 
 The Eco-Worthy ESM-100 remote monitor changes the battery monitor decision. It already displays battery voltage, current, and state of charge, so a separate WhizBang Jr shunt is not required for the first battery telemetry build if the Pi can obtain equivalent BMS data over CAN or RS485.

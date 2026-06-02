@@ -1,4 +1,4 @@
-"""Household load estimates derived from battery and charge-controller telemetry."""
+"""Load estimates derived from battery and charge-controller telemetry."""
 
 from __future__ import annotations
 
@@ -10,14 +10,14 @@ from .canbus import PylonCanSnapshot
 
 
 @dataclass(frozen=True)
-class HouseholdUsage:
+class LoadTotals:
     current_a: float
     power_w: float
     consumed_ah: float
     consumed_percent: float
 
 
-class HouseholdUsageTracker:
+class LoadTotalsTracker:
     def __init__(self, battery_capacity_ah: float = 200.0) -> None:
         self.battery_capacity_ah = battery_capacity_ah
         self._day: date | None = None
@@ -29,7 +29,7 @@ class HouseholdUsageTracker:
         captured_at: datetime,
         battery: PylonCanSnapshot | None,
         classic: ClassicTelemetry | None,
-    ) -> HouseholdUsage | None:
+    ) -> LoadTotals | None:
         if battery is None or battery.measurements is None or classic is None:
             self._last_sample_at = captured_at
             return None
@@ -53,7 +53,7 @@ class HouseholdUsageTracker:
         if self.battery_capacity_ah > 0:
             consumed_percent = self._consumed_ah / self.battery_capacity_ah * 100
 
-        return HouseholdUsage(
+        return LoadTotals(
             current_a=current_a,
             power_w=power_w,
             consumed_ah=self._consumed_ah,

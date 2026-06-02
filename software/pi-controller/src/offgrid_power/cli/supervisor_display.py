@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
 from threading import Thread
@@ -19,10 +19,11 @@ from offgrid_power.canbus import (
 )
 from offgrid_power.classic import ClassicClient
 from offgrid_power.config import load_config
-from offgrid_power.household import HouseholdUsageTracker
+from offgrid_power.load import LoadTotalsTracker
+from offgrid_power.metrics import MetricRecorder
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
-from offgrid_power.web_display import HouseholdLoadTracker, SnapshotCache, run_display_server
+from offgrid_power.web_display import LoadSampleBuffer, LoadTracker, SnapshotCache, run_display_server
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,6 +39,22 @@ def parse_args() -> argparse.Namespace:
         "--web-access-log-path",
         default="data/web-display-access.log",
         help="Append HTTP display access logs here; use an empty string to log to stdout",
+    )
+    parser.add_argument(
+        "--load-sample-log-path",
+        default="data/load-samples.csv",
+        help="Append rolling load samples here; use an empty string to disable persistent samples",
+    )
+    parser.add_argument(
+        "--load-sample-retention-hours",
+        type=float,
+        default=24,
+        help="Keep this many hours of load samples in the rolling log",
+    )
+    parser.add_argument(
+        "--metrics-db-path",
+        default="data/metrics.sqlite",
+        help="Append all supervisor metrics to this SQLite database; use an empty string to disable",
     )
     parser.add_argument(
         "--no-clear",
@@ -164,8 +181,13 @@ def append_ambient_log(log_path: str, snapshot) -> None:
 def main() -> int:
     args = parse_args()
     supervisor = build_supervisor(args)
-    household = HouseholdUsageTracker(battery_capacity_ah=args.battery_capacity_ah)
-    household_load_tracker = HouseholdLoadTracker()
+    load_totals_tracker = LoadTotalsTracker(battery_capacity_ah=args.battery_capacity_ah)
+    load_sample_buffer = LoadSampleBuffer(
+        path=args.load_sample_log_path or None,
+        retention=timedelta(hours=args.load_sample_retention_hours),
+    )
+    load_summary_tracker = LoadTracker(sample_buffer=load_sample_buffer)
+    metric_recorder = MetricRecorder(args.metrics_db_path or None)
     snapshot_cache = SnapshotCache()
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache)
@@ -174,9 +196,10 @@ def main() -> int:
     try:
         while True:
             snapshot = supervisor.read_snapshot()
-            household_usage = household.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
-            household_load = household_load_tracker.update(snapshot)
-            snapshot_cache.set(snapshot, household_load)
+            load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
+            load_summary = load_summary_tracker.update(snapshot)
+            record_metrics(metric_recorder, snapshot, load_summary)
+            snapshot_cache.set(snapshot, load_summary)
             append_ambient_log(args.ambient_log_path, snapshot)
             next_read = time.monotonic() + args.interval
             rendered = ""
@@ -184,7 +207,8 @@ def main() -> int:
                 rendered = render_snapshot(
                     snapshot,
                     now=datetime.now(snapshot.captured_at.tzinfo),
-                    household_usage=household_usage,
+                    load_totals=load_totals,
+                    load_summary=load_summary,
                 )
                 if not args.no_clear:
                     clear_screen()
@@ -209,12 +233,19 @@ def start_web_display(args: argparse.Namespace, supervisor: Supervisor, snapshot
             "host": args.web_host,
             "port": args.web_port,
             "snapshot_provider": snapshot_cache.get,
-            "household_load_provider": snapshot_cache.get_household_load,
+            "load_summary_provider": snapshot_cache.get_load_summary,
             "access_log_path": args.web_access_log_path or None,
         },
         daemon=True,
     )
     thread.start()
+
+
+def record_metrics(metric_recorder: MetricRecorder, snapshot, load_summary) -> None:
+    try:
+        metric_recorder.record_snapshot(snapshot, load_summary=load_summary)
+    except Exception as exc:  # noqa: BLE001 - metrics are advisory to the live display.
+        print(f"Metrics record failed: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

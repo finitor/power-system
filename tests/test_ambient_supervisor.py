@@ -11,9 +11,18 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.ambient import AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
-from offgrid_power.canbus import CanBusHealth, CanFrame, PylonCanSnapshot, PylonStatus, UsbDevice, decode_pylon_snapshot
+from offgrid_power.canbus import (
+    CanBusHealth,
+    CanFrame,
+    PylonCanSnapshot,
+    PylonChargeLimits,
+    PylonExtendedMeasurements,
+    PylonStatus,
+    UsbDevice,
+    decode_pylon_snapshot,
+)
 from offgrid_power.classic import ClassicChargeSettings, ClassicTelemetry
-from offgrid_power.household import HouseholdUsage, HouseholdUsageTracker
+from offgrid_power.load import LoadTotals, LoadTotalsTracker
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import (
     CHANGED_DIGIT_END,
@@ -24,6 +33,7 @@ from offgrid_power.terminal_display import (
     highlight_changed_digits,
     render_snapshot,
 )
+from offgrid_power.web_display import LoadSummary
 
 
 class FakeClassicClient:
@@ -80,6 +90,50 @@ class FakeClassicLiveClient:
         )
 
 
+class FakeClassicSettingsClient:
+    def read(self):
+        captured_at = datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc)
+        return (
+            ClassicTelemetry(
+                captured_at=captured_at,
+                battery_voltage_v=53.6,
+                pv_voltage_v=100.0,
+                battery_current_a=11.6,
+                daily_energy_kwh=0.9,
+                battery_power_w=625,
+                charge_stage_code=4,
+                charge_stage="BulkMppt",
+                state_code=3,
+                state="MPPT or regulating voltage",
+                pv_current_a=6.3,
+                last_voc_v=110.0,
+                highest_input_voltage_v=120.0,
+                daily_amp_hours_ah=17,
+                lifetime_energy_kwh=1000,
+                lifetime_amp_hours_ah=2000,
+                info_flags=0,
+                active_flags=[],
+                battery_temp_c=15.3,
+                fet_temp_c=47.8,
+                pcb_temp_c=45.0,
+            ),
+            ClassicChargeSettings(
+                captured_at=captured_at,
+                battery_current_limit_a=80.0,
+                absorb_voltage_v=56.0,
+                float_voltage_v=55.9,
+                equalize_voltage_v=56.0,
+                sliding_current_limit_a=800,
+                absorb_time_s=3600,
+                max_temp_comp_voltage_v=56.0,
+                min_temp_comp_voltage_v=52.8,
+                temp_comp_mv_per_c_cell=-5.0,
+                mppt_mode_raw=0x000B,
+                aux_function_word=0x5201,
+            ),
+        )
+
+
 class FakeAmbientClient:
     def read(self) -> AmbientTelemetry:
         return AmbientTelemetry(
@@ -110,6 +164,34 @@ class FakeBatteryCanClient:
                 CanFrame(0x35C, bytes.fromhex("C000000000000000")),
                 CanFrame(0x373, bytes.fromhex("CA0CCF0C1B011C01")),
             ]
+        )
+
+
+class FakeLimitedBatteryCanClient:
+    def read(self):
+        return PylonCanSnapshot(
+            charge_limits=PylonChargeLimits(
+                charge_voltage_limit_v=55.8,
+                charge_current_limit_a=40.0,
+                discharge_current_limit_a=200.0,
+                discharge_voltage_limit_v=44.8,
+            )
+        )
+
+
+class FakeCellSequenceBatteryCanClient:
+    def __init__(self, readings: list[tuple[float, float]]) -> None:
+        self.readings = readings
+        self.index = 0
+
+    def read(self):
+        min_cell_v, max_cell_v = self.readings[min(self.index, len(self.readings) - 1)]
+        self.index += 1
+        return PylonCanSnapshot(
+            extended_measurements=PylonExtendedMeasurements(
+                min_cell_voltage_v=min_cell_v,
+                max_cell_voltage_v=max_cell_v,
+            )
         )
 
 
@@ -167,10 +249,10 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Charge controller PCB: 45.0C", rendered)
         self.assertLess(rendered.index("Battery cells:"), rendered.index("Battery terminal:"))
 
-    def test_terminal_display_renders_household_usage(self) -> None:
+    def test_terminal_display_renders_load_totals(self) -> None:
         rendered = render_snapshot(
             Supervisor(classic=None, ambient=None).read_snapshot(),
-            household_usage=HouseholdUsage(
+            load_totals=LoadTotals(
                 current_a=14.2,
                 power_w=742.0,
                 consumed_ah=3.5,
@@ -179,9 +261,32 @@ class AmbientSupervisorTest(unittest.TestCase):
         )
 
         self.assertIn("Load", rendered)
-        self.assertNotIn("Household Usage", rendered)
         self.assertIn("Now:                   14.2A  742W", rendered)
         self.assertIn("Cumulative Today:      3.5Ah 1.8% of bank", rendered)
+
+    def test_terminal_display_prefers_load_summary(self) -> None:
+        rendered = render_snapshot(
+            Supervisor(classic=None, ambient=None).read_snapshot(),
+            load_totals=LoadTotals(
+                current_a=14.2,
+                power_w=742.0,
+                consumed_ah=3.5,
+                consumed_percent=1.75,
+            ),
+            load_summary=LoadSummary(
+                current_a=5.1,
+                power_w=272,
+                average_today_text="4.3A  228W",
+                today_text="104.0Ah 52.0% of bank",
+                remaining_text="21.2h",
+            ),
+        )
+
+        self.assertIn("Now:                   5.1A  272W", rendered)
+        self.assertIn("3hr Rolling Avg:       4.3A  228W", rendered)
+        self.assertIn("Cumulative Today:      104.0Ah 52.0% of bank", rendered)
+        self.assertIn("Estimated Autonomy:    21.2h", rendered)
+        self.assertNotIn("14.2A", rendered)
 
     def test_terminal_display_renders_battery_can_reading(self) -> None:
         snapshot = Supervisor(
@@ -204,6 +309,10 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("charge yes  discharge yes", rendered)
         self.assertIn("Protection/Alarms:     none", rendered)
         self.assertIn("3.274-3.279V (5mV delta)", rendered)
+        self.assertLess(battery_group.index("Flow:"), battery_group.index("Cells:"))
+        self.assertLess(battery_group.index("Cells:"), battery_group.index("Protection/Alarms:"))
+        self.assertLess(battery_group.index("Protection/Alarms:"), battery_group.index("Enable:"))
+        self.assertLess(battery_group.index("Enable:"), battery_group.index("Limits:"))
         self.assertIn("Battery cells:", rendered)
         self.assertIn("9.9-10.9C", rendered)
         self.assertNotIn("BMS:", rendered)
@@ -211,8 +320,9 @@ class AmbientSupervisorTest(unittest.TestCase):
     def test_terminal_display_renders_pack_charge_state(self) -> None:
         rendered = render_snapshot(Supervisor(classic=None, ambient=None, battery=FakeBatteryCanClient()).read_snapshot())
 
-        self.assertIn("Pack:                  52.41V  0.0A  idle", rendered)
-        self.assertNotIn("Pack:                  52.41V  0.0A  11.3C", rendered)
+        self.assertIn("Flow:                  52.41V  0.0A  0W  idle", rendered)
+        self.assertNotIn("Pack:", rendered)
+        self.assertNotIn("Flow:                  52.41V  0.0A  11.3C", rendered)
 
     def test_terminal_display_renders_classic_hypervoc_protection(self) -> None:
         snapshot = Supervisor(
@@ -328,6 +438,58 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertEqual(len(snapshot.errors), 1)
         self.assertIn("Classic read failed", snapshot.errors[0])
 
+    def test_supervisor_reports_charge_controller_settings_above_bms_limits(self) -> None:
+        snapshot = Supervisor(
+            classic=FakeClassicSettingsClient(),
+            battery=FakeLimitedBatteryCanClient(),
+        ).read_snapshot()
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertFalse(snapshot.ok)
+        self.assertEqual(snapshot.errors, [])
+        self.assertIn("Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A", snapshot.status_conditions)
+        self.assertIn(
+            "Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V, Float 55.9V, "
+            "Equalize 56.0V, Max temp-comp 56.0V > 55.8V",
+            snapshot.status_conditions,
+        )
+        self.assertIn("Status:  ERROR", rendered)
+        self.assertIn("Status Conditions", rendered)
+        self.assertIn("Charge controller 0 CCL exceeds battery CCL", rendered)
+
+    def test_supervisor_debounces_high_cell_and_delta_conditions(self) -> None:
+        supervisor = Supervisor(
+            classic=None,
+            battery=FakeCellSequenceBatteryCanClient(
+                [
+                    (3.470, 3.555),
+                    (3.470, 3.555),
+                ]
+            ),
+        )
+
+        first = supervisor.read_snapshot()
+        second = supervisor.read_snapshot()
+
+        self.assertTrue(first.ok)
+        self.assertEqual(first.status_conditions, [])
+        self.assertFalse(second.ok)
+        self.assertIn("Battery cell high: max cell 3.555V >= 3.550V", second.status_conditions)
+        self.assertIn(
+            "Battery cell delta high: 85mV >= 75mV while max cell 3.555V >= 3.450V",
+            second.status_conditions,
+        )
+
+    def test_supervisor_reports_cell_overvoltage_immediately(self) -> None:
+        snapshot = Supervisor(
+            classic=None,
+            battery=FakeCellSequenceBatteryCanClient([(3.520, 3.610)]),
+        ).read_snapshot()
+
+        self.assertFalse(snapshot.ok)
+        self.assertIn("Battery cell overvoltage risk: max cell 3.610V >= 3.600V", snapshot.status_conditions)
+
     def test_terminal_display_renders_charge_controller_zero_with_pv_first(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
         snapshot = snapshot.__class__(
@@ -369,7 +531,7 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertLess(rendered.index("Battery Bank"), rendered.index("Charge Controller 0"))
         self.assertLess(rendered.index("  PV:"), rendered.index("  Battery:"))
         self.assertIn("  Stage:                 Float  State: MPPT or regulating voltage", rendered)
-        self.assertIn("  Today Cumulative:      5.8kWh  106Ah", rendered)
+        self.assertIn("  Production Today:      5.8kWh  106Ah", rendered)
         self.assertNotIn("Flags:", rendered)
         self.assertNotIn("PV input lower than battery output", rendered)
 
@@ -579,19 +741,19 @@ class AmbientSupervisorTest(unittest.TestCase):
             device_dir.rmdir()
             device_dir.parent.rmdir()
 
-    def test_household_usage_tracker_integrates_until_local_midnight(self) -> None:
-        tracker = HouseholdUsageTracker(battery_capacity_ah=200)
+    def test_load_totals_tracker_integrates_until_local_midnight(self) -> None:
+        tracker = LoadTotalsTracker(battery_capacity_ah=200)
         first = datetime(2026, 5, 28, 23, 59, 0, tzinfo=timezone.utc)
         second = first + timedelta(minutes=30)
 
         tracker.update(first, FakeBatteryCanClient().read(), FakeClassicLiveClient().read()[0])
-        usage = tracker.update(second, FakeBatteryCanClient().read(), FakeClassicLiveClient().read()[0])
+        load = tracker.update(second, FakeBatteryCanClient().read(), FakeClassicLiveClient().read()[0])
 
-        self.assertIsNotNone(usage)
-        self.assertAlmostEqual(usage.current_a, 11.6)
-        self.assertAlmostEqual(usage.power_w, 625.0)
-        self.assertAlmostEqual(usage.consumed_ah, 5.8)
-        self.assertAlmostEqual(usage.consumed_percent, 2.9)
+        self.assertIsNotNone(load)
+        self.assertAlmostEqual(load.current_a, 11.6)
+        self.assertAlmostEqual(load.power_w, 625.0)
+        self.assertAlmostEqual(load.consumed_ah, 5.8)
+        self.assertAlmostEqual(load.consumed_percent, 2.9)
 
 
 if __name__ == "__main__":

@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from .ambient import AmbientDhtClient, AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
 from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_health
 from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
+
+
+CELL_HIGH_VOLTAGE_WARNING_V = 3.55
+CELL_OVERVOLTAGE_ALERT_V = 3.60
+CELL_DELTA_TOP_OF_CHARGE_V = 3.45
+CELL_DELTA_WARNING_MV = 75
+CELL_DELTA_CRITICAL_MV = 100
 
 
 @dataclass(frozen=True)
@@ -19,10 +26,18 @@ class SupervisorSnapshot:
     battery_can_health: CanBusHealth | None
     ambient: AmbientTelemetry | None
     errors: list[str]
+    status_conditions: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return not self.errors
+        return not self.errors and not self.status_conditions
+
+
+@dataclass(frozen=True)
+class StatusConditionCandidate:
+    key: str
+    text: str
+    required_samples: int = 1
 
 
 AmbientClient = AmbientDhtClient | AmbientDs18b20Client
@@ -40,6 +55,7 @@ class Supervisor:
         self.ambient = ambient
         self.battery = battery
         self.battery_can_interface = battery_can_interface
+        self._status_condition_counts: dict[str, int] = {}
 
     def read_snapshot(self) -> SupervisorSnapshot:
         errors: list[str] = []
@@ -74,6 +90,9 @@ class Supervisor:
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Battery CAN read failed: {exc}")
 
+        status_conditions = charge_limit_status_conditions(classic_settings, battery)
+        status_conditions.extend(self._stable_status_conditions(cell_status_condition_candidates(battery)))
+
         return SupervisorSnapshot(
             captured_at=datetime.now(timezone.utc),
             classic=classic,
@@ -82,4 +101,104 @@ class Supervisor:
             battery_can_health=battery_can_health,
             ambient=ambient,
             errors=errors,
+            status_conditions=status_conditions,
         )
+
+    def _stable_status_conditions(self, candidates: list[StatusConditionCandidate]) -> list[str]:
+        active_keys = {candidate.key for candidate in candidates}
+        self._status_condition_counts = {
+            key: count
+            for key, count in self._status_condition_counts.items()
+            if key in active_keys
+        }
+
+        conditions: list[str] = []
+        for candidate in candidates:
+            count = self._status_condition_counts.get(candidate.key, 0) + 1
+            self._status_condition_counts[candidate.key] = count
+            if count >= candidate.required_samples:
+                conditions.append(candidate.text)
+        return conditions
+
+
+def charge_limit_status_conditions(
+    classic_settings: ClassicChargeSettings | None,
+    battery: PylonCanSnapshot | None,
+) -> list[str]:
+    if classic_settings is None or battery is None or battery.charge_limits is None:
+        return []
+
+    conditions: list[str] = []
+    limits = battery.charge_limits
+    if classic_settings.battery_current_limit_a > limits.charge_current_limit_a:
+        conditions.append(
+            "Charge controller 0 CCL exceeds battery CCL: "
+            f"{classic_settings.battery_current_limit_a:.1f}A > {limits.charge_current_limit_a:.1f}A"
+        )
+
+    voltage_setpoints = [
+        ("Absorb", classic_settings.absorb_voltage_v),
+        ("Float", classic_settings.float_voltage_v),
+        ("Equalize", classic_settings.equalize_voltage_v),
+        ("Max temp-comp", classic_settings.max_temp_comp_voltage_v),
+    ]
+    exceeded = [
+        f"{label} {value:.1f}V"
+        for label, value in voltage_setpoints
+        if value > limits.charge_voltage_limit_v
+    ]
+    if exceeded:
+        conditions.append(
+            "Charge controller 0 CVS exceeds battery CVL: "
+            f"{', '.join(exceeded)} > {limits.charge_voltage_limit_v:.1f}V"
+        )
+    return conditions
+
+
+def cell_status_condition_candidates(battery: PylonCanSnapshot | None) -> list[StatusConditionCandidate]:
+    if battery is None or battery.extended_measurements is None:
+        return []
+
+    extended = battery.extended_measurements
+    candidates: list[StatusConditionCandidate] = []
+    max_cell_v = extended.max_cell_voltage_v
+    min_cell_v = extended.min_cell_voltage_v
+
+    if max_cell_v is not None:
+        if max_cell_v >= CELL_OVERVOLTAGE_ALERT_V:
+            candidates.append(
+                StatusConditionCandidate(
+                    "battery.cell.overvoltage",
+                    f"Battery cell overvoltage risk: max cell {max_cell_v:.3f}V >= {CELL_OVERVOLTAGE_ALERT_V:.3f}V",
+                )
+            )
+        elif max_cell_v >= CELL_HIGH_VOLTAGE_WARNING_V:
+            candidates.append(
+                StatusConditionCandidate(
+                    "battery.cell.high",
+                    f"Battery cell high: max cell {max_cell_v:.3f}V >= {CELL_HIGH_VOLTAGE_WARNING_V:.3f}V",
+                    required_samples=2,
+                )
+            )
+
+    if min_cell_v is not None and max_cell_v is not None and max_cell_v >= CELL_DELTA_TOP_OF_CHARGE_V:
+        delta_mv = round((max_cell_v - min_cell_v) * 1000)
+        if delta_mv >= CELL_DELTA_CRITICAL_MV:
+            candidates.append(
+                StatusConditionCandidate(
+                    "battery.cell.delta.critical",
+                    "Battery cell delta critical: "
+                    f"{delta_mv}mV >= {CELL_DELTA_CRITICAL_MV}mV while max cell {max_cell_v:.3f}V >= {CELL_DELTA_TOP_OF_CHARGE_V:.3f}V",
+                    required_samples=2,
+                )
+            )
+        elif delta_mv >= CELL_DELTA_WARNING_MV:
+            candidates.append(
+                StatusConditionCandidate(
+                    "battery.cell.delta.high",
+                    "Battery cell delta high: "
+                    f"{delta_mv}mV >= {CELL_DELTA_WARNING_MV}mV while max cell {max_cell_v:.3f}V >= {CELL_DELTA_TOP_OF_CHARGE_V:.3f}V",
+                    required_samples=2,
+                )
+            )
+    return candidates

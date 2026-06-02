@@ -7,11 +7,12 @@ import shutil
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from .household import HouseholdUsage
+from .load import LoadTotals
 from .supervisor import SupervisorSnapshot
 
 if TYPE_CHECKING:
     from .classic import ClassicChargeSettings
+    from .web_display import LoadSummary
 
 CHANGED_DIGIT_START = "\033[93m"
 CHANGED_DIGIT_END = "\033[0m"
@@ -103,7 +104,8 @@ def _measurement_sort_value(value: str) -> tuple[float, ...]:
 def render_snapshot(
     snapshot: SupervisorSnapshot,
     now: datetime | None = None,
-    household_usage: HouseholdUsage | None = None,
+    load_totals: LoadTotals | None = None,
+    load_summary: LoadSummary | None = None,
 ) -> str:
     lines: list[str] = []
     width = min(shutil.get_terminal_size((100, 30)).columns, 120)
@@ -113,11 +115,19 @@ def render_snapshot(
     lines.append("")
 
     lines.append("Load")
-    if household_usage is None:
+    if load_summary is not None:
+        lines.append(_row("Now", f"{load_summary.current_a:.1f}A  {load_summary.power_w}W"))
+        if load_summary.average_today_text is not None:
+            lines.append(_row("3hr Rolling Avg", load_summary.average_today_text))
+        if load_summary.today_text is not None:
+            lines.append(_row("Cumulative Today", load_summary.today_text))
+        if load_summary.remaining_text is not None:
+            lines.append(_row("Estimated Autonomy", load_summary.remaining_text))
+    elif load_totals is None:
         lines.append("  No data")
     else:
-        lines.append(_row("Now", f"{household_usage.current_a:.1f}A  {household_usage.power_w:.0f}W"))
-        lines.append(_row("Cumulative Today", f"{household_usage.consumed_ah:.1f}Ah {household_usage.consumed_percent:.1f}% of bank"))
+        lines.append(_row("Now", f"{load_totals.current_a:.1f}A  {load_totals.power_w:.0f}W"))
+        lines.append(_row("Cumulative Today", f"{load_totals.consumed_ah:.1f}Ah {load_totals.consumed_percent:.1f}% of bank"))
 
     lines.append("")
     lines.extend(_battery_bank_lines(snapshot))
@@ -133,6 +143,11 @@ def render_snapshot(
         lines.append("Errors")
         for error in snapshot.errors:
             lines.append(f"  - {error}")
+    if snapshot.status_conditions:
+        lines.append("")
+        lines.append("Status Conditions")
+        for condition in snapshot.status_conditions:
+            lines.append(f"  - {condition}")
 
     lines.append("")
     lines.append("Press Ctrl-C to exit. Read-only monitor; no control writes are performed.")
@@ -160,9 +175,14 @@ def _battery_bank_lines(snapshot: SupervisorSnapshot) -> list[str]:
     extended = battery.extended_measurements
 
     if measurements is not None:
-        lines.append(_row("Pack", f"{measurements.voltage_v:.2f}V  {measurements.current_a:.1f}A  {_battery_state(measurements.current_a)}"))
-    if limits is not None:
-        lines.append(_row("Limits", f"charge {limits.charge_voltage_limit_v:.1f}V/{limits.charge_current_limit_a:.1f}A  discharge {limits.discharge_current_limit_a:.1f}A"))
+        power_w = round(measurements.voltage_v * measurements.current_a)
+        lines.append(_row("Flow", f"{measurements.voltage_v:.2f}V  {measurements.current_a:.1f}A  {power_w}W  {_battery_state(measurements.current_a)}"))
+    if extended is not None and extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
+        delta_mv = round((extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000)
+        lines.append(_row("Cells", f"{extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V ({delta_mv}mV delta)"))
+    if status is not None:
+        conditions = [*status.protection_flags, *status.alarm_flags]
+        lines.append(_row("Protection/Alarms", "none" if not conditions else ", ".join(conditions)))
     if requests is not None:
         charge = "yes" if requests.charge_enable else "no"
         discharge = "yes" if requests.discharge_enable else "no"
@@ -173,12 +193,8 @@ def _battery_bank_lines(snapshot: SupervisorSnapshot) -> list[str]:
             extra_requests.append("full charge")
         suffix = f"  Request: {', '.join(extra_requests)}" if extra_requests else ""
         lines.append(_row("Enable", f"charge {charge}  discharge {discharge}{suffix}"))
-    if extended is not None and extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
-        delta_mv = round((extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000)
-        lines.append(_row("Cells", f"{extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V ({delta_mv}mV delta)"))
-    if status is not None:
-        conditions = [*status.protection_flags, *status.alarm_flags]
-        lines.append(_row("Protection/Alarms", "none" if not conditions else ", ".join(conditions)))
+    if limits is not None:
+        lines.append(_row("Limits", f"charge {limits.charge_voltage_limit_v:.1f}V/{limits.charge_current_limit_a:.1f}A  discharge {limits.discharge_current_limit_a:.1f}A"))
     return lines
 
 
@@ -215,7 +231,7 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Stage", stage_value))
         if classic.is_hypervoc:
             lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
-        lines.append(_row("Today Cumulative", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
+        lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
         lines.append(_row("Temps", f"batt {classic.battery_temp_c:.1f}C  FET {classic.fet_temp_c:.1f}C  PCB {classic.pcb_temp_c:.1f}C"))
         if index == 0 and snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))

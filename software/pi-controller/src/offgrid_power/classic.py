@@ -221,6 +221,46 @@ class ClassicClient:
         finally:
             client.close()
 
+    def write_charge_settings(
+        self,
+        *,
+        battery_current_limit_a: float | None = None,
+        absorb_voltage_v: float | None = None,
+        float_voltage_v: float | None = None,
+        equalize_voltage_v: float | None = None,
+        absorb_time_s: int | None = None,
+        max_temp_comp_voltage_v: float | None = None,
+    ) -> ClassicChargeSettings:
+        writes: dict[int, int] = {}
+        if battery_current_limit_a is not None:
+            writes[4148] = round(battery_current_limit_a * 10)
+        if absorb_voltage_v is not None:
+            writes[4149] = round(absorb_voltage_v * 10)
+        if float_voltage_v is not None:
+            writes[4150] = round(float_voltage_v * 10)
+        if equalize_voltage_v is not None:
+            writes[4151] = round(equalize_voltage_v * 10)
+        if absorb_time_s is not None:
+            writes[4154] = absorb_time_s
+        if max_temp_comp_voltage_v is not None:
+            writes[4155] = round(max_temp_comp_voltage_v * 10)
+
+        client = ModbusTcpClient(self.host, port=self.port, timeout=self.timeout)
+        if not client.connect():
+            raise ConnectionError(f"Could not connect to {self.host}:{self.port}")
+        try:
+            for register, value in writes.items():
+                response = client.write_register(
+                    address=register - 1,
+                    value=value,
+                    device_id=self.device_id,
+                )
+                if response.isError():
+                    raise RuntimeError(f"Modbus write failed for register {register}: {response}")
+            return decode_settings(read_block(client, 4148, 18, self.device_id), captured_at=datetime.now(timezone.utc))
+        finally:
+            client.close()
+
 
 def read_block(
     client: ModbusTcpClient,

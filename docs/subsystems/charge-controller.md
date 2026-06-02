@@ -62,6 +62,8 @@ The supervisor should surface Classic `HyperVoc` explicitly. In this state the C
 
 The Eco-Worthy ESM-100/BMS should be the first battery SOC/current source for the Pi. The Classic already reports its own charge stage, such as bulk, absorb, float, resting, or fault, without a WhizBang Jr.
 
+See [Charge Management](../charge-management.md) for the policy that compares Classic charge settings against BMS-advertised CVL/CCL and raises read-only alerts for cell-voltage and cell-delta conditions.
+
 Avoid or defer WhizBang Jr unless its benefits clearly outweigh the loss of AUX2. The WhizBang Jr uses Classic AUX2, and AUX2 may be more valuable as a control channel for high-level charge inhibit or other Classic functions in this LiFePO4 retrofit.
 
 ## AUX2 Input Functions
