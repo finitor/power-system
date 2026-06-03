@@ -33,13 +33,13 @@ On 2026-06-01, a supervised sunny-day top-off attempt was run against the MidNit
 
 Temporary Classic settings used for the attempt:
 
-| Setting | Temporary value | Rollback value |
-|---|---:|---:|
-| Absorb voltage | 56.0 V | 55.2 V |
-| Float voltage | 55.9 V | 54.0 V |
-| Equalize voltage | 56.0 V | 55.2 V |
-| Absorb time | 3600 s | 300 s |
-| Max temp-comp voltage | 56.0 V | 55.2 V |
+| Setting | Elevated test value | Former baseline | New baseline as of 2026-06-03 |
+|---|---:|---:|---:|
+| Absorb voltage | 56.0 V | 55.2 V | 55.6 V |
+| Float voltage | 55.9 V | 54.0 V | 55.0 V |
+| Equalize voltage | 56.0 V | 55.2 V | 55.6 V |
+| Absorb time | 3600 s | 300 s | 1950 s |
+| Max temp-comp voltage | 56.0 V | 55.2 V | 55.6 V |
 
 Observed result:
 
@@ -50,6 +50,6 @@ Observed result:
 - No BMS protections or alarms appeared, and charge enable stayed true.
 - Cell delta was stable enough for the test, roughly 28 mV during the charge hold, with a later single read around 45 mV after rollback and load transition.
 
-Conclusion: raising the Classic top-end settings can push the pack past the usual 96-97% plateau without immediately upsetting the BMS, at least under direct supervision and good solar conditions. Treat this as a proven manual mechanism, not yet a routine unattended policy.
+Conclusion: raising the Classic top-end settings can push the pack past the usual 96-97% plateau without immediately upsetting the BMS, at least under direct supervision and good solar conditions. After observing the midpoint settings behave benignly twice, the midpoint was promoted to the normal Classic baseline on 2026-06-03.
 
-Future top-off attempts should be infrequent, sunny-day only, and supervised until automated stop criteria are implemented. Roll back immediately if the BMS reports any protection or alarm, charge enable drops, max cell voltage climbs uncomfortably, cell delta grows quickly, or SOC reaches 100%. Roll back before leaving the system unattended.
+More aggressive top-off attempts should still be infrequent, sunny-day only, and supervised until automated stop criteria are implemented. Roll back immediately if the BMS reports any protection or alarm, charge enable drops, max cell voltage climbs uncomfortably, cell delta grows quickly, or SOC reaches 100%. Roll back before leaving the system unattended.

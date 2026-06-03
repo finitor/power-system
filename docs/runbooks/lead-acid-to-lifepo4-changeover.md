@@ -48,18 +48,18 @@ Keep this table as the rollback reference for the old lead-acid bank. Before cha
 2. Open the Classic front panel or MidNite local application.
 3. Change the battery type/profile/settings manually. This is a full battery-profile change, not only a charge-voltage change. Update bank capacity, charge profile, equalization behavior, rebulk/restart behavior, and any low-voltage thresholds that were tuned for the old lead-acid bank.
 
-   MidNite's archived Classic lithium guidance says to use manufacturer/BMS requirements for Absorb, use a short Absorb time, set Float low enough that the battery is not held at a high charge voltage, disable Equalize, and use Rebulk to restart charging later. Initial conservative planning targets:
+   MidNite's archived Classic lithium guidance says to use manufacturer/BMS requirements for Absorb, use a short Absorb time, set Float low enough that the battery is not held at a high charge voltage, disable Equalize, and use Rebulk to restart charging later. Current Classic baseline targets:
 
    | Setting | Candidate value | Notes |
    |---|---:|---|
    | Battery/bank capacity | 200 Ah nominal | Two Cubix 100 batteries in parallel; update any Classic or accessory setting that uses bank Ah |
-   | Absorb voltage | 55.2 V | Conservative 48 V LiFePO4 starting point from MidNite forum guidance; consider up to 56.0 V only after first-cycle testing |
-   | Absorb time | 5 minutes initially | MidNite FAQ suggests short absorb; Classic minimum is about 3 minutes; extend toward 15-30 minutes only if testing shows the bank is not reaching the desired full condition |
-   | Float voltage | 53.6-54.0 V | Start low to avoid sustained high float; tune only if loads cause unwanted battery discharge while PV is available |
+   | Absorb voltage | 55.6 V | Midpoint between the first conservative setting and the supervised elevated top-off setting; observed benignly twice |
+   | Absorb time | 1950 s | Midpoint between the first 5-minute setting and the supervised 1-hour top-off setting |
+   | Float voltage | 55.0 V | Midpoint setting intended to let the pack finish more consistently without holding the full elevated float target |
    | Rebulk voltage | TBD, below float | Choose after observing resting voltage and load behavior; avoid chatter between float/resting and bulk |
    | Low-voltage thresholds | TBD for LiFePO4 | If the Classic or any accessory has low-voltage alarms/load-control thresholds, do not carry over lead-acid values blindly |
    | Equalize | Disabled | Do not equalize LiFePO4 in normal operation |
-   | Equalize voltage/time/interval | Harmless/disabled values | Prevent accidental equalize entry; keep any EQ voltage no higher than the normal absorb target if the UI requires a value |
+   | Equalize voltage/time/interval | 55.6 V / disabled | Prevent accidental equalize entry; keep any EQ voltage no higher than the normal absorb target if the UI requires a value |
    | Temperature compensation | Lowest/neutral behavior available | LiFePO4 charging should be governed by BMS/external temperature limits, not lead-acid compensation; MidNite notes that leaving BTS active with minimum compensation can preserve high-temperature shutdown behavior |
    | Battery current limit | TBD, no more than battery and wiring limits | Two Cubix batteries can accept more current than one, but wiring, breakers, and charger behavior still set the limit |
 
