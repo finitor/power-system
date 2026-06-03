@@ -1,4 +1,4 @@
-"""Read-only MidNite Classic Modbus telemetry adapter."""
+"""MidNite Classic Modbus telemetry and guarded setting writer."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from pymodbus.client import ModbusTcpClient
 DEFAULT_HOST = "192.168.0.10"
 DEFAULT_PORT = 502
 DEFAULT_DEVICE_ID = 10
+
+CLASSIC_SERIAL_REGISTER = 28673
+ETHERNET_UNLOCK_REGISTER = 20492
 
 
 CHARGE_STAGES = {
@@ -192,7 +195,7 @@ def decode_settings(
 
 
 class ClassicClient:
-    """Small read-only client for the Classic live-data registers."""
+    """Small client for Classic live data and selected charge settings."""
 
     def __init__(
         self,
@@ -249,14 +252,9 @@ class ClassicClient:
         if not client.connect():
             raise ConnectionError(f"Could not connect to {self.host}:{self.port}")
         try:
+            unlock_ethernet_writes(client, self.device_id)
             for register, value in writes.items():
-                response = client.write_register(
-                    address=register - 1,
-                    value=value,
-                    device_id=self.device_id,
-                )
-                if response.isError():
-                    raise RuntimeError(f"Modbus write failed for register {register}: {response}")
+                write_register(client, register, value, self.device_id)
             return decode_settings(read_block(client, 4148, 18, self.device_id), captured_at=datetime.now(timezone.utc))
         finally:
             client.close()
@@ -281,3 +279,36 @@ def read_block(
             f"{start_register + count - 1}: {response}"
         )
     return RegisterBlock(start_register, list(response.registers))
+
+
+def write_register(
+    client: ModbusTcpClient,
+    register: int,
+    value: int,
+    device_id: int,
+) -> None:
+    # MidNite's map lists Modbus register numbers. pymodbus expects packet
+    # addresses, which are register number minus one for the Classic.
+    response = client.write_register(
+        address=register - 1,
+        value=value,
+        device_id=device_id,
+    )
+    if response.isError():
+        raise RuntimeError(f"Modbus write failed for register {register}: {response}")
+
+
+def unlock_ethernet_writes(client: ModbusTcpClient, device_id: int) -> None:
+    serial = read_block(client, CLASSIC_SERIAL_REGISTER, 2, device_id)
+    write_register(
+        client,
+        ETHERNET_UNLOCK_REGISTER,
+        serial.get(CLASSIC_SERIAL_REGISTER),
+        device_id,
+    )
+    write_register(
+        client,
+        ETHERNET_UNLOCK_REGISTER + 1,
+        serial.get(CLASSIC_SERIAL_REGISTER + 1),
+        device_id,
+    )

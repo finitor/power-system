@@ -10,7 +10,52 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
-from offgrid_power.classic import RegisterBlock, decode_live, decode_settings
+from offgrid_power.classic import (
+    ETHERNET_UNLOCK_REGISTER,
+    CLASSIC_SERIAL_REGISTER,
+    RegisterBlock,
+    decode_live,
+    decode_settings,
+    unlock_ethernet_writes,
+)
+
+
+class FakeModbusResponse:
+    def __init__(self, registers: list[int] | None = None, error: bool = False) -> None:
+        self.registers = registers or []
+        self.error = error
+
+    def isError(self) -> bool:
+        return self.error
+
+
+class FakeModbusClient:
+    def __init__(self) -> None:
+        self.writes: list[tuple[int, int, int]] = []
+
+    def read_holding_registers(
+        self,
+        *,
+        address: int,
+        count: int,
+        device_id: int,
+    ) -> FakeModbusResponse:
+        self.assert_serial_read(address, count)
+        return FakeModbusResponse([0x1234, 0x5678])
+
+    def write_register(
+        self,
+        *,
+        address: int,
+        value: int,
+        device_id: int,
+    ) -> FakeModbusResponse:
+        self.writes.append((address, value, device_id))
+        return FakeModbusResponse()
+
+    def assert_serial_read(self, address: int, count: int) -> None:
+        if address != CLASSIC_SERIAL_REGISTER - 1 or count != 2:
+            raise AssertionError((address, count))
 
 
 class ClassicDecodeTest(unittest.TestCase):
@@ -79,6 +124,19 @@ class ClassicDecodeTest(unittest.TestCase):
         self.assertEqual(settings.equalize_voltage_v, 64.8)
         self.assertEqual(settings.absorb_time_s, 7200)
         self.assertEqual(settings.temp_comp_mv_per_c_cell, -5.0)
+
+    def test_unlock_ethernet_writes_uses_classic_serial_words(self) -> None:
+        client = FakeModbusClient()
+
+        unlock_ethernet_writes(client, device_id=10)
+
+        self.assertEqual(
+            client.writes,
+            [
+                (ETHERNET_UNLOCK_REGISTER - 1, 0x1234, 10),
+                (ETHERNET_UNLOCK_REGISTER, 0x5678, 10),
+            ],
+        )
 
 
 if __name__ == "__main__":
