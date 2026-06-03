@@ -11,6 +11,7 @@
 | BMS | Built in, 100 A BMS per battery |
 | Remote monitor | Eco-Worthy ESM-100 |
 | Physical arrangement | Rack-mounted, details TBD |
+| Parallel wiring | Diagonal / cross-connected main takeoff, corrected 2026-06-03 |
 | Candidate Pi interface | DSD TECH SH-C31G isolated USB-to-CAN adapter |
 
 ## Telemetry Goals
@@ -85,9 +86,10 @@ Do not implement any battery-related control until the disconnects, manual overr
 
 ## Wiring And Protection
 
-Document:
+The two Cubix 100 batteries are wired as a parallel bank with a diagonal/cross-connected main takeoff: the system main positive is taken from one end of the parallel set and the system main negative from the opposite end. This keeps the path resistance closer for both packs than landing both main conductors on the same battery, and should reduce unequal current sharing and SOC/cell-balance drift between packs.
 
-- Parallel wiring method for the two batteries.
+Document or confirm:
+
 - Per-battery overcurrent protection.
 - Main DC disconnect.
 - Cable gauge and length.
@@ -100,6 +102,7 @@ Document:
 - Can each battery provide telemetry independently?
 - Is a separate WhizBang Jr / shunt monitor useful enough to consume Classic AUX2, or should AUX2 be preserved for charger control?
 - What are the manufacturer limits for parallel operation?
+- What final cable gauge, cable length, terminal torque, and per-pack overcurrent protection are installed for the diagonal parallel wiring?
 - Does CAN expose full telemetry, or only inverter-oriented battery summary/status?
 - Is RS485 a better first integration path for Pi-based monitoring?
 - What voltage/SOC thresholds should define full-charge, charge stop, and charge restart for this exact battery model?

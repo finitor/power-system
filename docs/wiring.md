@@ -13,8 +13,8 @@ Use this file as the canonical wiring record. Update it whenever a physical conn
 
 | From | To | Voltage | Cable Gauge | Fuse / Breaker | Notes |
 |---|---|---:|---|---|---|
-| Eco-Worthy Cubix 100 battery 1 | 48 V DC bus / battery combiner | 48 V nominal | TBD | TBD | Confirm parallel wiring method and manufacturer guidance |
-| Eco-Worthy Cubix 100 battery 2 | 48 V DC bus / battery combiner | 48 V nominal | TBD | TBD | Confirm equal-length cabling and per-battery protection |
+| Eco-Worthy Cubix 100 battery 1 | 48 V DC bus / battery combiner | 48 V nominal | TBD | TBD | Parallel bank is wired diagonally/cross-connected: main positive is taken from one battery end of the parallel set and main negative from the opposite battery end. This was corrected on 2026-06-03 to improve current sharing and reduce pack drift. Confirm cable gauge, equal-length interconnects, torque, and per-battery protection. |
+| Eco-Worthy Cubix 100 battery 2 | 48 V DC bus / battery combiner | 48 V nominal | TBD | TBD | Parallel bank is wired diagonally/cross-connected with the opposite main takeoff from battery 1. Do not connect both main positive and main negative to the same battery in normal operation. Confirm manufacturer guidance and document final cable lengths. |
 | PV array 0 | Midnite Solar Classic 200 PV input | PV DC | TBD | Existing 20 A 2-pole disconnect | Existing array-side disconnect; confirm DC/PV voltage rating, load-break rating, and conductor ampacity before reconfiguring array 0 |
 | 48 V DC bus | Midnite Solar Classic 200 battery terminals | 48 V nominal | TBD | Existing 100 A 2-pole disconnect | Solar charge output to battery bank; confirm DC voltage rating, polarity/wiring, and conductor ampacity |
 | 48 V DC bus | MagnaSine 4448 DC input | 48 V nominal | TBD | TBD | High-current inverter feed; document disconnect and overcurrent protection |
