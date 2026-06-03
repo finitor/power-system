@@ -46,6 +46,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--battery-current-limit", type=float)
     parser.add_argument("--force", action="store_true", help="Write even if planned settings exceed BMS CVL/CCL")
     parser.add_argument("--dry-run", action="store_true", help="Check and print planned settings without writing")
+    parser.add_argument(
+        "--no-persist",
+        action="store_true",
+        help="Change live Classic settings only; do not force an EEPROM save",
+    )
     return parser.parse_args()
 
 
@@ -106,6 +111,7 @@ def main() -> int:
         equalize_voltage_v=targets.equalize_voltage_v,
         absorb_time_s=targets.absorb_time_s,
         max_temp_comp_voltage_v=targets.max_temp_comp_voltage_v,
+        persist=not args.no_persist,
     )
     print(
         "Readback: "

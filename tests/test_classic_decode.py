@@ -13,9 +13,12 @@ sys.path.insert(0, str(PACKAGE_SRC))
 from offgrid_power.classic import (
     ETHERNET_UNLOCK_REGISTER,
     CLASSIC_SERIAL_REGISTER,
+    FORCE_EEPROM_UPDATE_WRITE,
+    FORCE_FLAGS_REGISTER,
     RegisterBlock,
     decode_live,
     decode_settings,
+    force_eeprom_update,
     unlock_ethernet_writes,
 )
 
@@ -136,6 +139,16 @@ class ClassicDecodeTest(unittest.TestCase):
                 (ETHERNET_UNLOCK_REGISTER - 1, 0x1234, 10),
                 (ETHERNET_UNLOCK_REGISTER, 0x5678, 10),
             ],
+        )
+
+    def test_force_eeprom_update_writes_classic_force_flag(self) -> None:
+        client = FakeModbusClient()
+
+        force_eeprom_update(client, device_id=10)
+
+        self.assertEqual(
+            client.writes,
+            [(FORCE_FLAGS_REGISTER - 1, FORCE_EEPROM_UPDATE_WRITE, 10)],
         )
 
 

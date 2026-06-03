@@ -14,6 +14,9 @@ DEFAULT_DEVICE_ID = 10
 
 CLASSIC_SERIAL_REGISTER = 28673
 ETHERNET_UNLOCK_REGISTER = 20492
+FORCE_FLAGS_REGISTER = 4160
+FORCE_EEPROM_UPDATE_WRITE = 0x0004
+EEPROM_ERROR_FLAG = 0x00000002
 
 
 CHARGE_STAGES = {
@@ -233,6 +236,7 @@ class ClassicClient:
         equalize_voltage_v: float | None = None,
         absorb_time_s: int | None = None,
         max_temp_comp_voltage_v: float | None = None,
+        persist: bool = True,
     ) -> ClassicChargeSettings:
         writes: dict[int, int] = {}
         if battery_current_limit_a is not None:
@@ -255,7 +259,18 @@ class ClassicClient:
             unlock_ethernet_writes(client, self.device_id)
             for register, value in writes.items():
                 write_register(client, register, value, self.device_id)
-            return decode_settings(read_block(client, 4148, 18, self.device_id), captured_at=datetime.now(timezone.utc))
+            if persist:
+                force_eeprom_update(client, self.device_id)
+                live = decode_live(
+                    read_block(client, 4115, 20, self.device_id),
+                    captured_at=datetime.now(timezone.utc),
+                )
+                if live.info_flags & EEPROM_ERROR_FLAG:
+                    raise RuntimeError("Classic reported EEPROM error after charge-setting write")
+            return decode_settings(
+                read_block(client, 4148, 18, self.device_id),
+                captured_at=datetime.now(timezone.utc),
+            )
         finally:
             client.close()
 
@@ -310,5 +325,14 @@ def unlock_ethernet_writes(client: ModbusTcpClient, device_id: int) -> None:
         client,
         ETHERNET_UNLOCK_REGISTER + 1,
         serial.get(CLASSIC_SERIAL_REGISTER + 1),
+        device_id,
+    )
+
+
+def force_eeprom_update(client: ModbusTcpClient, device_id: int) -> None:
+    write_register(
+        client,
+        FORCE_FLAGS_REGISTER,
+        FORCE_EEPROM_UPDATE_WRITE,
         device_id,
     )
