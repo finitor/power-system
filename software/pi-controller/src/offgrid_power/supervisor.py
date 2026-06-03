@@ -10,6 +10,10 @@ from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_hea
 from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
 
 
+STATUS_OK = "OK"
+STATUS_WARNING = "WARNING"
+STATUS_ERROR = "ERROR"
+
 CELL_HIGH_VOLTAGE_WARNING_V = 3.55
 CELL_OVERVOLTAGE_ALERT_V = 3.60
 CELL_DELTA_TOP_OF_CHARGE_V = 3.45
@@ -27,10 +31,21 @@ class SupervisorSnapshot:
     ambient: AmbientTelemetry | None
     errors: list[str]
     status_conditions: list[str] = field(default_factory=list)
+    status_severity: str = STATUS_OK
+
+    def __post_init__(self) -> None:
+        if self.status_conditions and self.status_severity == STATUS_OK:
+            object.__setattr__(self, "status_severity", STATUS_WARNING)
 
     @property
     def ok(self) -> bool:
-        return not self.errors and not self.status_conditions
+        return not self.errors and self.status_severity != STATUS_ERROR
+
+    @property
+    def status_text(self) -> str:
+        if self.errors:
+            return STATUS_ERROR
+        return self.status_severity
 
 
 @dataclass(frozen=True)
@@ -38,6 +53,7 @@ class StatusConditionCandidate:
     key: str
     text: str
     required_samples: int = 1
+    severity: str = STATUS_WARNING
 
 
 AmbientClient = AmbientDhtClient | AmbientDs18b20Client
@@ -90,8 +106,10 @@ class Supervisor:
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Battery CAN read failed: {exc}")
 
-        status_conditions = charge_limit_status_conditions(classic_settings, battery)
-        status_conditions.extend(self._stable_status_conditions(cell_status_condition_candidates(battery)))
+        status_condition_candidates = charge_limit_status_condition_candidates(classic_settings, battery)
+        status_condition_candidates.extend(self._stable_status_condition_candidates(cell_status_condition_candidates(battery)))
+        status_conditions = [candidate.text for candidate in status_condition_candidates]
+        status_severity = status_condition_severity(status_condition_candidates)
 
         return SupervisorSnapshot(
             captured_at=datetime.now(timezone.utc),
@@ -102,9 +120,10 @@ class Supervisor:
             ambient=ambient,
             errors=errors,
             status_conditions=status_conditions,
+            status_severity=status_severity,
         )
 
-    def _stable_status_conditions(self, candidates: list[StatusConditionCandidate]) -> list[str]:
+    def _stable_status_condition_candidates(self, candidates: list[StatusConditionCandidate]) -> list[StatusConditionCandidate]:
         active_keys = {candidate.key for candidate in candidates}
         self._status_condition_counts = {
             key: count
@@ -117,7 +136,7 @@ class Supervisor:
             count = self._status_condition_counts.get(candidate.key, 0) + 1
             self._status_condition_counts[candidate.key] = count
             if count >= candidate.required_samples:
-                conditions.append(candidate.text)
+                conditions.append(candidate)
         return conditions
 
 
@@ -125,15 +144,25 @@ def charge_limit_status_conditions(
     classic_settings: ClassicChargeSettings | None,
     battery: PylonCanSnapshot | None,
 ) -> list[str]:
+    return [candidate.text for candidate in charge_limit_status_condition_candidates(classic_settings, battery)]
+
+
+def charge_limit_status_condition_candidates(
+    classic_settings: ClassicChargeSettings | None,
+    battery: PylonCanSnapshot | None,
+) -> list[StatusConditionCandidate]:
     if classic_settings is None or battery is None or battery.charge_limits is None:
         return []
 
-    conditions: list[str] = []
+    conditions: list[StatusConditionCandidate] = []
     limits = battery.charge_limits
     if classic_settings.battery_current_limit_a > limits.charge_current_limit_a:
         conditions.append(
-            "Charge controller 0 CCL exceeds battery CCL: "
-            f"{classic_settings.battery_current_limit_a:.1f}A > {limits.charge_current_limit_a:.1f}A"
+            StatusConditionCandidate(
+                "classic.0.ccl_exceeds_bms",
+                "Charge controller 0 CCL exceeds battery CCL: "
+                f"{classic_settings.battery_current_limit_a:.1f}A > {limits.charge_current_limit_a:.1f}A",
+            )
         )
 
     voltage_setpoints = [
@@ -149,10 +178,22 @@ def charge_limit_status_conditions(
     ]
     if exceeded:
         conditions.append(
-            "Charge controller 0 CVS exceeds battery CVL: "
-            f"{', '.join(exceeded)} > {limits.charge_voltage_limit_v:.1f}V"
+            StatusConditionCandidate(
+                "classic.0.cvs_exceeds_bms",
+                "Charge controller 0 CVS exceeds battery CVL: "
+                f"{', '.join(exceeded)} > {limits.charge_voltage_limit_v:.1f}V",
+                severity=STATUS_ERROR,
+            )
         )
     return conditions
+
+
+def status_condition_severity(candidates: list[StatusConditionCandidate]) -> str:
+    if any(candidate.severity == STATUS_ERROR for candidate in candidates):
+        return STATUS_ERROR
+    if candidates:
+        return STATUS_WARNING
+    return STATUS_OK
 
 
 def cell_status_condition_candidates(battery: PylonCanSnapshot | None) -> list[StatusConditionCandidate]:
@@ -170,6 +211,7 @@ def cell_status_condition_candidates(battery: PylonCanSnapshot | None) -> list[S
                 StatusConditionCandidate(
                     "battery.cell.overvoltage",
                     f"Battery cell overvoltage risk: max cell {max_cell_v:.3f}V >= {CELL_OVERVOLTAGE_ALERT_V:.3f}V",
+                    severity=STATUS_ERROR,
                 )
             )
         elif max_cell_v >= CELL_HIGH_VOLTAGE_WARNING_V:

@@ -235,7 +235,7 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_snapshot(snapshot)
 
-        self.assertIn("Status: ERROR", html)
+        self.assertIn("Status: WARNING", html)
         self.assertIn("<h2>Status Conditions</h2>", html)
         self.assertIn("Charge controller 0 CCL exceeds battery CCL: 80.0A &gt; 40.0A", html)
 

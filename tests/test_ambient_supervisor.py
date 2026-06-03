@@ -179,6 +179,18 @@ class FakeLimitedBatteryCanClient:
         )
 
 
+class FakeCurrentLimitedBatteryCanClient:
+    def read(self):
+        return PylonCanSnapshot(
+            charge_limits=PylonChargeLimits(
+                charge_voltage_limit_v=58.4,
+                charge_current_limit_a=40.0,
+                discharge_current_limit_a=200.0,
+                discharge_voltage_limit_v=44.8,
+            )
+        )
+
+
 class FakeCellSequenceBatteryCanClient:
     def __init__(self, readings: list[tuple[float, float]]) -> None:
         self.readings = readings
@@ -458,6 +470,19 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Status Conditions", rendered)
         self.assertIn("Charge controller 0 CCL exceeds battery CCL", rendered)
 
+    def test_supervisor_reports_current_limit_exceedance_as_warning(self) -> None:
+        snapshot = Supervisor(
+            classic=FakeClassicSettingsClient(),
+            battery=FakeCurrentLimitedBatteryCanClient(),
+        ).read_snapshot()
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertTrue(snapshot.ok)
+        self.assertEqual(snapshot.status_text, "WARNING")
+        self.assertIn("Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A", snapshot.status_conditions)
+        self.assertIn("Status:  WARNING", rendered)
+
     def test_supervisor_debounces_high_cell_and_delta_conditions(self) -> None:
         supervisor = Supervisor(
             classic=None,
@@ -474,7 +499,8 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         self.assertTrue(first.ok)
         self.assertEqual(first.status_conditions, [])
-        self.assertFalse(second.ok)
+        self.assertTrue(second.ok)
+        self.assertEqual(second.status_text, "WARNING")
         self.assertIn("Battery cell high: max cell 3.555V >= 3.550V", second.status_conditions)
         self.assertIn(
             "Battery cell delta high: 85mV >= 75mV while max cell 3.555V >= 3.450V",
@@ -488,6 +514,7 @@ class AmbientSupervisorTest(unittest.TestCase):
         ).read_snapshot()
 
         self.assertFalse(snapshot.ok)
+        self.assertEqual(snapshot.status_text, "ERROR")
         self.assertIn("Battery cell overvoltage risk: max cell 3.610V >= 3.600V", snapshot.status_conditions)
 
     def test_terminal_display_renders_charge_controller_zero_with_pv_first(self) -> None:

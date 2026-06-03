@@ -82,9 +82,9 @@ def render_kindle_snapshot(
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     load_summary: LoadSummary | None = None,
 ) -> str:
-    status = "OK" if snapshot.ok else "ERROR"
+    status = snapshot.status_text
     updated = format_time(snapshot.captured_at)
-    status_class = ' class="bad"' if not snapshot.ok else ""
+    status_class = ' class="bad"' if status == "ERROR" else ""
     status_text = _status_text(snapshot, status)
     lines = [
         "<!doctype html>",
