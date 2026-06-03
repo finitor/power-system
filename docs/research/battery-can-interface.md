@@ -238,6 +238,10 @@ Cubix 100 RS232 pinout from the protocol table:
 | 5 | GND |
 | 6 | 14 V |
 
+The short cable supplied with the Eco-Worthy ESM-100 remote display is RJ12 6P6C straight-through based on wire-color inspection at the connectors. Treat this as an observed cable fact, not yet a vendor specification.
+
+The Midnite Classic 200 remote/display cable should not be treated as interchangeable with the Cubix remote cable. It is also RJ12 6P6C, but it is reversed/rolled: the pin positions are mirrored end-to-end, so pin 1 maps to pin 6, pin 2 maps to pin 5, and so on.
+
 RS232 is useful for host-computer tools, but avoid it as the first Pi integration path unless the voltage and cable wiring are very carefully controlled. The 14 V pin must not be connected to a USB serial adapter.
 
 ## Decision

@@ -22,6 +22,13 @@ The system is moving toward multiple PV sources. Code and documentation should r
 | PV array 0 | Midnite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | Existing | 8 modules total; exact module ratings may vary around 295-305 W |
 | PV array 1 | Victron BlueSolar MPPT 150/85 CAN-bus | Canadian Solar CS6X-300-adjacent modules, 4s3p | Dry run before mount construction | 12 modules total; exact module ratings may vary around 295-305 W |
 
+## Existing Disconnects
+
+| Location | Installed device | Current rating | Poles | Notes |
+|---|---|---:|---:|---|
+| PV array 0 to Midnite Solar Classic 200 PV input | Array-side disconnect / breaker | 20 A | 2 | Existing installation. This is likely undersized if array 0 is reconfigured from 4s2p to 2s4p; confirm DC/PV voltage rating, load-break rating, and conductor ampacity before reuse. |
+| Midnite Solar Classic 200 battery output to 48 V battery bus | Battery-side disconnect / breaker | 100 A | 2 | Existing installation. This is a reasonable order of magnitude for the Classic output if the breaker, enclosure, wiring, and installation are DC-rated and correctly marked. |
+
 ## Telemetry Goals
 
 | Measurement | Source | Priority | Notes |

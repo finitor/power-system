@@ -21,10 +21,13 @@ Procurement status values:
 | on hand | Inverter/charger | MagnaSine 4448 | 1 | AC inversion / generator charging | Existing inverter/charger |
 | on hand | Temperature sensors | DS18B20 stainless waterproof probes | 10 | Battery cabinet / ambient temperature | Map sensor IDs during installation |
 | on hand | GPIO cobbler / ribbon breakout | Generic 40-pin Pi breakout | 1 | Bench prototyping | Pin breakout only |
-| ordered | Charge controller | Victron BlueSolar MPPT 150/85 CAN-bus | 1 | Second PV source | Manual says 150 V absolute PV limit; avoid 4s CS6X strings |
+| ordered | Charge controller | Victron BlueSolar MPPT 150/85 CAN-bus | 1 | Second PV source | Order appears in limbo; manual says 150 V absolute PV limit; avoid 4s CS6X strings |
+| ordered | Charge controller | EPEver TEP10425 | 1 | Candidate replacement/second solar controller | 100 A, 250 V max PV Voc at lowest temperature, 5,200 W at 48 V; manual saved as `~/Dropbox/manuals/solar/TEP-Manual-EN-V1.1.pdf`; bench-confirm writable RS485 Modbus registers and PV-input behavior |
+| ordered | PV array disconnect | Walfront Solar DC miniature circuit breaker, 1000 V 50 A, 2-pole DIN | 1 | Candidate combined PV disconnect | Confirm DC load-break suitability, polarity requirements, enclosure/dead-front fit, and conductor ampacity |
+| ordered | Charge-controller battery breaker | MOLLOM DC 1-pole miniature circuit breaker, 250 V 100 A | 1 | Candidate controller-to-battery disconnect/protection | Confirm DC interrupt rating, load-break suitability, conductor ampacity, enclosure/dead-front fit, and final output current limit |
 | to order | PV string protection | 15 A DC PV-rated fuse/breaker, 300-600 VDC | 3 | Array 1 4s3p string protection | One per string positive before paralleling; panel max series fuse rating is 15 A |
-| to order | PV array disconnect | 45-50 A DC PV-rated breaker/disconnect, 300-600 VDC | 1 | Array 1 combined PV output | Size for 3 parallel strings; use DC load-break rated equipment |
-| to order | Charge-controller battery breaker | 100 A DC breaker, 80/125 VDC or better | 1 | Classic battery-side protection | Natural size if Classic output limit remains about 80 A |
+| to order | PV array disconnect | 45-50 A DC PV-rated breaker/disconnect, 300-600 VDC | 1 | Array 1 combined PV output | Design target retained until the ordered Walfront part is verified |
+| to order | Charge-controller battery breaker | 100 A DC breaker, 80/125 VDC or better | 1 | Classic or EPEver battery-side protection | Design target retained until the ordered MOLLOM part is verified |
 | to order | Charge-controller battery breaker | 120-125 A DC breaker/fuse, 80/125 VDC or better | 1 | Victron 150/85 battery-side protection | Victron manual examples use 120 A for 85 A output; 125 A is common in North America |
 | to order | Outdoor PV combiner | 3-string combiner rated for selected DC voltage/current | 1 | Array 1 | Should accept selected string fuses/breakers and conductor sizes |
 | to order | Battery USB-to-RS485 adapter | Isolated USB-to-RS485/422, Waveshare candidate | 1 | Battery RS485 fallback | Keep as fallback if CAN telemetry is insufficient |
