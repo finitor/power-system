@@ -1,0 +1,20 @@
+[Unit]
+Description=Off-grid power terminal console
+After=network-online.target offgrid-supervisor.service
+Wants=network-online.target offgrid-supervisor.service
+
+[Service]
+Type=oneshot
+User=@OFFGRID_USER@
+Group=@OFFGRID_USER@
+WorkingDirectory=/home/@OFFGRID_USER@/power-system
+Environment=CLASSIC_HOST=192.168.0.10
+Environment=PYTHONPATH=/home/@OFFGRID_USER@/power-system/software/pi-controller/src
+EnvironmentFile=-/etc/offgrid-power.env
+ExecStartPre=-/usr/bin/tmux kill-session -t offgrid-console
+ExecStart=/usr/bin/tmux new-session -d -s offgrid-console '/bin/sh -lc "cd /home/@OFFGRID_USER@/power-system && exec /home/@OFFGRID_USER@/power-system/.venv/bin/python /home/@OFFGRID_USER@/power-system/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --interval 5"'
+ExecStop=/usr/bin/tmux kill-session -t offgrid-console
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
