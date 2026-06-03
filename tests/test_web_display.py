@@ -136,11 +136,12 @@ class WebDisplayTest(unittest.TestCase):
         html = render_kindle_snapshot(snapshot)
 
         self.assertIn("<h2>Charge Controller 0</h2>", html)
-        self.assertIn("<td>Battery</td><td>54.8V  7.1A  389W</td>", html)
-        self.assertLess(html.index("<td>PV</td>"), html.index("<td>Battery</td><td>54.8"))
-        self.assertLess(html.index("<td>Battery</td><td>54.8"), html.index("<td>Stage</td>"))
-        self.assertLess(html.index("<td>Stage</td>"), html.index("<td>Production Today</td>"))
-        self.assertIn("<td>Stage</td><td>Float  State: MPPT or regulating voltage</td>", html)
+        self.assertIn("<td>PV</td><td>91.2V  4.5A  Voc 101.0V</td>", html)
+        self.assertIn("<td>Output</td><td>54.8V  7.1A  389W</td>", html)
+        self.assertLess(html.index("<td>PV</td>"), html.index("<td>Output</td><td>54.8"))
+        self.assertLess(html.index("<td>Output</td><td>54.8"), html.index("<td>Charge Status</td>"))
+        self.assertLess(html.index("<td>Charge Status</td>"), html.index("<td>Production Today</td>"))
+        self.assertIn("<td>Charge Status</td><td>Stage: Float  State: MPPT or regulating voltage</td>", html)
         self.assertIn("<td>Production Today</td><td>5.8kWh  106Ah</td>", html)
         self.assertNotIn("<td>Temps</td>", html)
 
@@ -180,7 +181,7 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_snapshot(snapshot)
 
-        self.assertIn("<td>Stage</td><td>Resting</td>", html)
+        self.assertIn("<td>Charge Status</td><td>Stage: Resting</td>", html)
         self.assertNotIn("Resting / Resting", html)
 
     def test_renders_bms_protections_and_alarms(self) -> None:

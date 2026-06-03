@@ -607,13 +607,13 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
                 [
                     _row(
                         "PV",
-                        f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A",
+                        f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V",
                     ),
                     _row(
-                        "Battery",
+                        "Output",
                         f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W",
                     ),
-                    _row("Stage", _stage_value(classic.charge_stage, classic.state)),
+                    _row("Charge Status", _stage_value(classic.charge_stage, classic.state)),
                     _row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"),
                 ]
             )
@@ -714,9 +714,10 @@ def _battery_state(current_a: float) -> str:
 
 
 def _stage_value(charge_stage: str, state: str) -> str:
+    stage_value = f"Stage: {charge_stage}"
     if state == charge_stage:
-        return charge_stage
-    return f"{charge_stage}  State: {state}"
+        return stage_value
+    return f"{stage_value}  State: {state}"
 
 
 def _status_text(snapshot: SupervisorSnapshot, status: str) -> str:

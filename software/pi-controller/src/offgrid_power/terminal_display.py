@@ -223,12 +223,12 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
             lines.append("  No data")
             continue
 
-        lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A"))
-        lines.append(_row("Battery", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"))
-        stage_value = classic.charge_stage
+        lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V"))
+        lines.append(_row("Output", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"))
+        stage_value = f"Stage: {classic.charge_stage}"
         if classic.state != classic.charge_stage:
             stage_value += f"  State: {classic.state}"
-        lines.append(_row("Stage", stage_value))
+        lines.append(_row("Charge Status", stage_value))
         if classic.is_hypervoc:
             lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
         lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))

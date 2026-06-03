@@ -340,7 +340,7 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("Stage:                 HyperVoc  State: Resting", rendered)
+        self.assertIn("Charge Status:         Stage: HyperVoc  State: Resting", rendered)
         self.assertIn("PV input:              HyperVOC protection  Last Voc 201.0V  High 218.0V", rendered)
 
     def test_terminal_display_renders_refresh_age(self) -> None:
@@ -529,8 +529,10 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("Charge Controller 0", rendered)
         self.assertNotIn("MidNite Classic", rendered)
         self.assertLess(rendered.index("Battery Bank"), rendered.index("Charge Controller 0"))
-        self.assertLess(rendered.index("  PV:"), rendered.index("  Battery:"))
-        self.assertIn("  Stage:                 Float  State: MPPT or regulating voltage", rendered)
+        self.assertIn("PV:                    91.2V  4.5A  Voc 101.0V", rendered)
+        self.assertIn("Output:                54.8V  7.1A  389W", rendered)
+        self.assertLess(rendered.index("  PV:"), rendered.index("  Output:"))
+        self.assertIn("  Charge Status:         Stage: Float  State: MPPT or regulating voltage", rendered)
         self.assertIn("  Production Today:      5.8kWh  106Ah", rendered)
         self.assertNotIn("Flags:", rendered)
         self.assertNotIn("PV input lower than battery output", rendered)
@@ -565,12 +567,12 @@ class AmbientSupervisorTest(unittest.TestCase):
             classic_settings=ClassicChargeSettings(
                 captured_at=snapshot.captured_at,
                 battery_current_limit_a=80.0,
-                absorb_voltage_v=55.2,
-                float_voltage_v=54.0,
-                equalize_voltage_v=55.2,
+                absorb_voltage_v=55.6,
+                float_voltage_v=55.0,
+                equalize_voltage_v=55.6,
                 sliding_current_limit_a=0,
-                absorb_time_s=300,
-                max_temp_comp_voltage_v=56.0,
+                absorb_time_s=1950,
+                max_temp_comp_voltage_v=55.6,
                 min_temp_comp_voltage_v=52.0,
                 temp_comp_mv_per_c_cell=0.0,
                 mppt_mode_raw=0,
@@ -584,7 +586,7 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("  Charge Settings:       Limit 80.0A  Absorb 55.2V for 300s  Float 54.0V  EQ 55.2V", rendered)
+        self.assertIn("  Charge Settings:       Limit 80.0A  Absorb 55.6V for 1950s  Float 55.0V  EQ 55.6V", rendered)
         self.assertNotIn("Charge Controller 0 Settings", rendered)
         self.assertLess(rendered.index("Charge Controller 0"), rendered.index("  Charge Settings:"))
         self.assertLess(rendered.index("  Charge Settings:"), rendered.index("Temperatures"))
@@ -625,7 +627,7 @@ class AmbientSupervisorTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("  Stage:                 Resting", rendered)
+        self.assertIn("  Charge Status:         Stage: Resting", rendered)
         self.assertNotIn("State: Resting", rendered)
 
     def test_terminal_display_highlights_changed_values(self) -> None:
@@ -656,8 +658,8 @@ class AmbientSupervisorTest(unittest.TestCase):
 
     def test_terminal_display_adds_direction_arrows_to_changed_values(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Battery:  54.2V    3.6A    196W\nRefreshed: 1 second ago",
-            current="Battery:  54.1V    3.8A    190W\nRefreshed: 2 seconds ago",
+            previous="Output:  54.2V    3.6A    196W\nRefreshed: 1 second ago",
+            current="Output:  54.1V    3.8A    190W\nRefreshed: 2 seconds ago",
         )
 
         self.assertIn(DOWN_ARROW, highlighted)
@@ -675,8 +677,8 @@ class AmbientSupervisorTest(unittest.TestCase):
 
     def test_terminal_display_pads_unchanged_value_arrow_slots(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Battery:  54.2V    3.6A",
-            current="Battery:  54.2V    3.8A",
+            previous="Output:  54.2V    3.6A",
+            current="Output:  54.2V    3.8A",
         )
 
         self.assertIn("54.2V ", highlighted)
