@@ -31,6 +31,55 @@ The guard checks:
 
 This is a write-time guard only. Because BMS CCL can fall later during taper, the supervisor also continuously reports read-only status conditions when the current Classic settings exceed the current BMS limits.
 
+### Classic Modbus Write Modes
+
+The Classic has two different practical write modes over Modbus TCP:
+
+| Mode | Behavior | Use |
+|---|---|---|
+| Live / RAM-only | Changes take effect immediately but are lost when the Classic hard power-cycles | Short supervised experiments |
+| Persisted / EEPROM | Changes take effect immediately and are saved across Classic hard power-cycles | New baseline settings |
+
+The low-level Ethernet Modbus sequence is:
+
+1. Open a TCP connection to the Classic.
+2. Read the Classic serial number from registers `28673` and `28674`.
+3. Unlock Ethernet writes by writing those two serial-number words to registers `20492` and `20493`.
+4. Write the desired charge-setting registers, such as:
+   - `4148`: battery output current limit, scaled by 10.
+   - `4149`: absorb voltage, scaled by 10.
+   - `4150`: float voltage, scaled by 10.
+   - `4151`: equalize voltage, scaled by 10.
+   - `4154`: absorb time in seconds.
+   - `4155`: maximum temperature-compensated charge voltage, scaled by 10.
+5. For a live / RAM-only change, stop here and close the TCP connection.
+6. For a persisted / EEPROM change, write `0x0004` to register `4160` to set `ForceEEpromUpdateWriteF`.
+7. Read back the charge settings and check that the Classic info flags do not include the EEPROM error bit `0x00000002`.
+
+`scripts/classic-charge-settings.py` implements this sequence. By default it persists changes to EEPROM:
+
+```sh
+python scripts/classic-charge-settings.py \
+  --classic-host 192.168.0.10 \
+  --battery-current-limit 80.0 \
+  --absorb-voltage 55.6 \
+  --float-voltage 55.0 \
+  --equalize-voltage 55.6 \
+  --absorb-time 1950 \
+  --max-temp-comp-voltage 55.6
+```
+
+For a temporary live-only experiment, add `--no-persist`:
+
+```sh
+python scripts/classic-charge-settings.py \
+  --classic-host 192.168.0.10 \
+  --absorb-time 1950 \
+  --no-persist
+```
+
+Use `--dry-run` to print the planned settings and BMS guard result without writing anything. Use `--force` only when deliberately overriding a CVL/CCL guard refusal.
+
 ## Supervisor Status Conditions
 
 The supervisor reports status conditions but does not autonomously act on them. Any active status condition makes the top display status `ERROR`, appears in terminal and web displays, and is logged in SQLite as `supervisor.status_condition`.

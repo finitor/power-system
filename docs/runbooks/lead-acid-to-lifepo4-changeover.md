@@ -94,15 +94,17 @@ Use this only if the old lead-acid bank is reinstalled or the LiFePO4 changeover
 
 5. Confirm the readback matches the lead-acid baseline or the updated documented lead-acid target.
 
-## Future Modbus Writer Requirements
+## Modbus Writer Requirements
 
-A future script may write charge settings over Modbus, but it must be a separate tool from `classic-probe.py` and must include these guardrails:
+Charge-setting writes over Modbus must use `scripts/classic-charge-settings.py`, not `classic-probe.py` or ad hoc snippets. The writer must keep these guardrails:
 
-- Dry-run mode by default.
-- Explicit battery profile name, such as `eco-worthy-cubix-100`.
+- Dry-run mode available.
 - Allowlist only the intended registers.
 - Conservative min/max validation for every written value.
-- Required operator confirmation showing old value, new value, raw register, and scaled value.
+- Operator-visible output showing planned settings and BMS CVL/CCL guard results.
 - Readback verification after every write.
-- Separate `--persist` flag before issuing any EEPROM-save force flag.
+- Default persisted writes only after Ethernet Modbus unlock and EEPROM-save force flag.
+- Separate `--no-persist` flag for temporary live-only experiments.
 - No force-bulk, force-float, force-equalize, or reset-fault commands in the same tool.
+
+See [Charge Management](../charge-management.md) for the exact Classic Modbus primitive sequence and script flags.

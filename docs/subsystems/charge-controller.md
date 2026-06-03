@@ -51,7 +51,9 @@ source .venv/bin/activate
 python scripts/classic-probe.py --host 192.168.0.10 --raw
 ```
 
-The script reads live telemetry and selected charge configuration registers. It must remain read-only unless a separate, reviewed control procedure is added.
+`classic-probe.py` reads live telemetry and selected charge configuration registers. Keep it read-only.
+
+For charge-setting writes, use `scripts/classic-charge-settings.py` and the policy in [Charge Management](../charge-management.md). The guarded writer performs the Classic Ethernet Modbus unlock, checks planned settings against BMS CVL/CCL, and can either make a live-only change with `--no-persist` or persist the setting to EEPROM by default.
 
 ## Changeover Runbook
 
