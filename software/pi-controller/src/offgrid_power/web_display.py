@@ -85,7 +85,8 @@ def render_kindle_snapshot(
     status = snapshot.status_text
     updated = format_time(snapshot.captured_at)
     status_class = ' class="bad"' if status == "ERROR" else ""
-    status_text = _status_text(snapshot, status)
+    status_class_attr = f' class="meta-cell {status_class[8:-1]}"' if status_class else ' class="meta-cell"'
+    soc_text = _soc_text(snapshot)
     lines = [
         "<!doctype html>",
         "<html>",
@@ -94,20 +95,23 @@ def render_kindle_snapshot(
         f'<meta http-equiv="refresh" content="{refresh_seconds}">',
         "<title>Off-Grid Power</title>",
         "<style>",
-        "body{font-family:serif;color:#000;background:#fff;margin:6px;font-size:18px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        "h2{font-size:20px;margin:10px 0 3px 0;border-bottom:1px solid #000;}",
+        "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "table{border-collapse:collapse;width:100%;}",
-        "td{font-size:18px;line-height:1.25;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
-        "td:first-child{font-size:18px;font-weight:bold;width:35%;}",
+        "td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
+        "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
         ".bad{font-weight:bold;}",
         ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
-        ".summary-table td{font-size:20px;font-weight:bold;border-bottom:0;padding-bottom:3px;}",
-        ".small{font-size:14px;}",
+        ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding-bottom:2px;}",
+        ".summary-table .soc-cell{font-size:36px;line-height:1;text-align:left;vertical-align:middle;width:32%;}",
+        ".summary-table .meta-cell{font-size:17px;line-height:1.15;text-align:left;width:68%;}",
+        ".small{font-size:13px;}",
         "</style>",
         "</head>",
         "<body>",
         '<table class="summary-table">',
-        f"<tr><td{status_class}>{escape(status_text)}</td><td>Updated: {escape(updated)}</td></tr>",
+        f'<tr><td class="soc-cell" rowspan="2">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}</td></tr>',
+        f"<tr><td{status_class_attr}>Status: {escape(status)}</td></tr>",
         "</table>",
     ]
     lines.extend(_load_section(load_summary))
@@ -179,9 +183,9 @@ def run_display_server(
             try:
                 snapshot = provider()
             except Exception as exc:  # noqa: BLE001 - HTTP display should show readiness errors.
-                body = f"snapshot unavailable: {exc}\n".encode("utf-8")
+                body = render_snapshot_unavailable(exc).encode("utf-8")
                 self.send_response(HTTPStatus.SERVICE_UNAVAILABLE.value)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -441,10 +445,10 @@ class LoadSampleBuffer:
                 captured_at=captured_at,
                 current_a=float(row["current_a"]),
                 power_w=int(row["power_w"]),
-                soc_percent=None if soc_text == "" else int(soc_text),
-                voltage_v=None if voltage_text == "" else float(voltage_text),
+                soc_percent=None if not soc_text else int(soc_text),
+                voltage_v=None if not voltage_text else float(voltage_text),
             )
-        except (KeyError, ValueError):
+        except (KeyError, TypeError, ValueError):
             return None
 
 
@@ -614,9 +618,31 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
                         f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W",
                     ),
                     _row("Charge Status", _stage_value(classic.charge_stage, classic.state)),
+                    *(
+                        [
+                            _row(
+                                "PV input",
+                                f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V",
+                            )
+                        ]
+                        if classic.is_hypervoc
+                        else []
+                    ),
                     _row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"),
+                    _row("Temps", f"batt {classic.battery_temp_c:.1f}C  FET {classic.fet_temp_c:.1f}C  PCB {classic.pcb_temp_c:.1f}C"),
                 ]
             )
+            if index == 0 and snapshot.classic_settings is not None:
+                settings = snapshot.classic_settings
+                lines.append(
+                    _row(
+                        "Charge Settings",
+                        f"Limit {settings.battery_current_limit_a:.1f}A  "
+                        f"Absorb {settings.absorb_voltage_v:.1f}V for {settings.absorb_time_s}s  "
+                        f"Float {settings.float_voltage_v:.1f}V  "
+                        f"EQ {settings.equalize_voltage_v:.1f}V",
+                    )
+                )
         lines.append("</table>")
     return lines
 
@@ -641,7 +667,8 @@ def _battery_section(snapshot: SupervisorSnapshot) -> list[str]:
     lines = ["<h2>Battery Bank</h2>", "<table>"]
     battery = snapshot.battery
     if battery is None:
-        lines.append(_row("State", "No CAN data"))
+        for label, value in _missing_battery_rows(snapshot):
+            lines.append(_row(label, value))
         lines.append("</table>")
         return lines
 
@@ -678,26 +705,85 @@ def _battery_section(snapshot: SupervisorSnapshot) -> list[str]:
             extra_requests.append("full charge")
         suffix = f"  Request: {', '.join(extra_requests)}" if extra_requests else ""
         lines.append(_row("Enable", f"charge {charge}  discharge {discharge}{suffix}"))
+    if battery.charge_limits is not None:
+        limits = battery.charge_limits
+        lines.append(
+            _row(
+                "Limits",
+                f"charge {limits.charge_voltage_limit_v:.1f}V/{limits.charge_current_limit_a:.1f}A  "
+                f"discharge {limits.discharge_current_limit_a:.1f}A",
+            )
+        )
     lines.append("</table>")
     return lines
 
 
 def _temperature_section(snapshot: SupervisorSnapshot) -> list[str]:
     lines = ["<h2>Temperatures</h2>", "<table>"]
-    if snapshot.battery is not None and snapshot.battery.measurements is not None:
-        lines.append(_row("Battery", f"{snapshot.battery.measurements.temperature_c:.1f} C"))
+    if (
+        snapshot.battery is not None
+        and snapshot.battery.extended_measurements is not None
+        and snapshot.battery.extended_measurements.min_cell_temperature_c is not None
+        and snapshot.battery.extended_measurements.max_cell_temperature_c is not None
+    ):
+        extended = snapshot.battery.extended_measurements
+        lines.append(_row("Battery cells", f"{extended.min_cell_temperature_c:.1f}-{extended.max_cell_temperature_c:.1f}C"))
     if snapshot.classic is not None:
         classic = snapshot.classic
-        lines.append(_row("Controller 0 FET", f"{classic.fet_temp_c:.1f} C"))
-        lines.append(_row("Controller 0 PCB", f"{classic.pcb_temp_c:.1f} C"))
+        lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
+        lines.append(_row("Charge controller FET", f"{classic.fet_temp_c:.1f}C"))
+        lines.append(_row("Charge controller PCB", f"{classic.pcb_temp_c:.1f}C"))
     if snapshot.ambient is None:
-        lines.append(_row("Ambient", "disconnected"))
+        lines.append(_row("Sensor 0 ambient temp", "disconnected"))
     else:
-        lines.append(_row("Ambient", f"{snapshot.ambient.temperature_c:.1f} C"))
+        lines.append(_row("Sensor 0 ambient temp", f"{snapshot.ambient.temperature_c:.1f}C"))
         if snapshot.ambient.humidity_percent is not None:
             lines.append(_row("Humidity", f"{snapshot.ambient.humidity_percent:.1f}%"))
     lines.append("</table>")
     return lines
+
+
+def _missing_battery_rows(snapshot: SupervisorSnapshot) -> list[tuple[str, str]]:
+    if snapshot.battery_can_health is None:
+        return [("State", "No CAN data")]
+    if snapshot.battery_can_health.dfu_devices:
+        devices = []
+        for device in snapshot.battery_can_health.dfu_devices[:2]:
+            product = device.product or "STM32 DFU"
+            serial = f" serial {device.serial}" if device.serial else ""
+            devices.append(f"{product}{serial}")
+        return [
+            ("CAN adapter", "DFU/bootloader mode"),
+            ("DFU devices", "; ".join(devices)),
+            ("Action", "replug USB-CAN adapter without BOOT/DFU pressed"),
+        ]
+    if not snapshot.battery_can_health.socketcan_present:
+        return [("CAN adapter", f"interface {snapshot.battery_can_health.interface} not present")]
+    return [("State", "No CAN frames received")]
+
+
+def render_snapshot_unavailable(exc: Exception, refresh_seconds: int = 10) -> str:
+    return "\n".join(
+        [
+            "<!doctype html>",
+            "<html>",
+            "<head>",
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+            f'<meta http-equiv="refresh" content="{refresh_seconds}">',
+            "<title>Off-Grid Power</title>",
+            "<style>",
+            "body{font-family:serif;color:#000;background:#fff;margin:8px;font-size:16px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+            ".small{font-size:12px;}",
+            "</style>",
+            "</head>",
+            "<body>",
+            "<h2>Snapshot unavailable</h2>",
+            f"<p>{escape(str(exc))}</p>",
+            f'<p class="small">Retrying every {refresh_seconds} seconds.</p>',
+            "</body>",
+            "</html>",
+        ]
+    )
 
 
 def _row(label: str, value: str, css_class: str = "") -> str:
@@ -724,6 +810,12 @@ def _status_text(snapshot: SupervisorSnapshot, status: str) -> str:
     if snapshot.battery is None or snapshot.battery.state_of_charge is None:
         return f"Status: {status}"
     return f"SOC: {snapshot.battery.state_of_charge.soc_percent}%  Status: {status}"
+
+
+def _soc_text(snapshot: SupervisorSnapshot) -> str:
+    if snapshot.battery is None or snapshot.battery.state_of_charge is None:
+        return "SOC --"
+    return f"{snapshot.battery.state_of_charge.soc_percent}%"
 
 
 def _row_lines(label: str, values: list[str]) -> str:

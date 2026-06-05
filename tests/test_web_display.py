@@ -27,6 +27,7 @@ from offgrid_power.web_display import (
     load_today_text,
     is_kindle_user_agent,
     render_kindle_snapshot,
+    render_snapshot_unavailable,
     route_display_request,
 )
 
@@ -71,10 +72,16 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn('<meta http-equiv="refresh" content="60">', html)
         self.assertNotIn('<meta name="viewport"', html)
         self.assertIn("-webkit-text-size-adjust:100%", html)
-        self.assertIn("td{font-size:18px;line-height:1.25;", html)
+        self.assertIn("td{font-size:17px;line-height:1.18;", html)
+        self.assertIn(".summary-table .soc-cell{font-size:36px;line-height:1;text-align:left;vertical-align:middle;width:32%;}", html)
+        self.assertIn(".summary-table .meta-cell{font-size:17px;line-height:1.15;text-align:left;width:68%;}", html)
         self.assertNotIn("<h1>", html)
         self.assertIn('<table class="summary-table">', html)
-        self.assertIn("<tr><td>SOC: 97%  Status: OK</td><td>Updated:", html)
+        self.assertIn('<td class="soc-cell" rowspan="2">SOC 97%</td>', html)
+        self.assertIn('<td class="meta-cell">Updated:', html)
+        self.assertIn('<td class="meta-cell">Status: OK</td>', html)
+        self.assertNotIn("SOC: 97%  Status: OK", html)
+        self.assertNotIn("Refreshed:", html)
         self.assertNotIn('class="updated"', html)
         self.assertIn("<h2>Load</h2>", html)
         self.assertIn("<td>Now</td><td>5.1A  272W</td>", html)
@@ -91,12 +98,11 @@ class WebDisplayTest(unittest.TestCase):
         self.assertLess(battery_section.index("<td>Cells</td>"), battery_section.index("<td>Protection/Alarms</td>"))
         self.assertLess(battery_section.index("<td>Protection/Alarms</td>"), battery_section.index("<td>Enable</td>"))
         self.assertNotIn("<td>SOH</td>", html)
-        self.assertNotIn("<td>Limits</td>", html)
+        self.assertIn("<td>Limits</td><td>charge 58.4V/200.0A  discharge 200.0A</td>", html)
         self.assertIn("<td>Protection/Alarms</td><td>none</td>", html)
         self.assertNotIn("<td>Alarms</td>", html)
         self.assertIn("<h2>Temperatures</h2>", html)
-        self.assertIn("<td>Battery</td><td>16.7 C</td>", html)
-        self.assertNotIn("Classic batt", html)
+        self.assertIn("<td>Battery cells</td><td>15.9-16.9C</td>", html)
         self.assertNotIn("<script", html)
 
     def test_renders_charge_controller_zero_rows_in_kindle_html(self) -> None:
@@ -143,7 +149,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertLess(html.index("<td>Charge Status</td>"), html.index("<td>Production Today</td>"))
         self.assertIn("<td>Charge Status</td><td>Stage: Float  State: MPPT or regulating voltage</td>", html)
         self.assertIn("<td>Production Today</td><td>5.8kWh  106Ah</td>", html)
-        self.assertNotIn("<td>Temps</td>", html)
+        self.assertIn("<td>Temps</td><td>batt 17.0C  FET 31.0C  PCB 29.0C</td>", html)
+        self.assertIn("<td>Battery terminal</td><td>17.0C</td>", html)
+        self.assertIn("<td>Charge controller FET</td><td>31.0C</td>", html)
+        self.assertIn("<td>Charge controller PCB</td><td>29.0C</td>", html)
 
     def test_renders_redundant_charge_controller_state_only_once(self) -> None:
         captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
@@ -247,6 +256,13 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 200)
         self.assertEqual(response.content_type, "text/html; charset=utf-8")
         self.assertIn(b"Off-Grid Power", response.body)
+
+    def test_snapshot_unavailable_page_auto_refreshes(self) -> None:
+        html = render_snapshot_unavailable(RuntimeError("CAN bus warming up"), refresh_seconds=10)
+
+        self.assertIn('<meta http-equiv="refresh" content="10">', html)
+        self.assertIn("Snapshot unavailable", html)
+        self.assertIn("CAN bus warming up", html)
 
     def test_snapshot_cache_returns_latest_snapshot(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()
@@ -443,6 +459,25 @@ class WebDisplayTest(unittest.TestCase):
             self.assertEqual([sample.current_a for sample in samples], [4.0, 6.0])
             self.assertEqual(buffer.rolling_average(now=now_snapshot.captured_at, window=timedelta(minutes=2)), (5.0, 250.0))
             self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 3)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_load_sample_buffer_ignores_rows_with_missing_numeric_fields(self) -> None:
+        path = REPO_ROOT / ".tmp-test-load-samples.csv"
+        path.write_text(
+            "captured_at,current_a,power_w,soc_percent,voltage_v\n"
+            "2026-05-31T11:59:00+00:00,4.000,212,92\n"
+            "2026-05-31T12:00:00+00:00,6.000,318,92,53.000\n"
+            "2026-05-31T12:01:00+00:00,,318,92,53.000\n",
+            encoding="utf-8",
+        )
+        buffer = LoadSampleBuffer(str(path))
+        try:
+            samples = buffer.samples(now=datetime(2026, 5, 31, 12, 1, tzinfo=timezone.utc))
+
+            self.assertEqual([sample.current_a for sample in samples], [4.0, 6.0])
+            self.assertEqual(samples[0].voltage_v, None)
+            self.assertEqual(samples[1].voltage_v, 53.0)
         finally:
             path.unlink(missing_ok=True)
 

@@ -1,5 +1,6 @@
 category,item,manufacturer,model_or_description,quantity,status,voltage_or_rating,interface_or_package,vendor_url,notes
 controller,Raspberry Pi,Raspberry Pi,3 Model B v1.2,1,on hand,5 V,GPIO/USB/Ethernet/Wi-Fi/Bluetooth,,Primary controller candidate
+controller,Powered USB hub,Waveshare,USB 3.2-Gen1-HUB-4U,1,on hand,TBD external power / USB bus,USB 3.2 Gen 1 upstream / 4 USB downstream ports,,Candidate powered hub for Pi telemetry adapters and bench/service USB expansion
 storage,Rack battery,Eco-Worthy,Cubix 100,2,on hand,48 V 100 Ah each,Bluetooth/Wi-Fi/RS485/CAN/RS232,,Rack-mount LiFePO4 batteries with built-in BMS
 monitoring,Battery remote monitor,Eco-Worthy,ESM-100,1,on hand,Battery accessory powered,Battery monitor link,,Displays voltage current and SOC
 monitoring,RJ45 female screw-terminal breakout,Poyiccot,RJ45 8P8C female jack to 8 pin screw terminal connector,2,on hand,RJ45 low-voltage comms,RJ45 female / screw terminal,,Bench wiring and adapter-side breakout for Eco-Worthy battery CAN and RS485 instrumentation

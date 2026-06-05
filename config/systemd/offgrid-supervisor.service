@@ -14,7 +14,7 @@ EnvironmentFile=-/etc/offgrid-power.env
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up
-ExecStart=/home/@OFFGRID_USER@/power-system/.venv/bin/python /home/@OFFGRID_USER@/power-system/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --web-display --web-port 8080 --interval 5
+ExecStart=/home/@OFFGRID_USER@/power-system/.venv/bin/python /home/@OFFGRID_USER@/power-system/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --web-display --web-port 8080 --interval 5 --no-terminal-display
 Restart=on-failure
 RestartSec=5
 

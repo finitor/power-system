@@ -62,6 +62,11 @@ def parse_args() -> argparse.Namespace:
         default=not config.display.clear_screen,
         help="Do not clear the terminal before each redraw",
     )
+    parser.add_argument(
+        "--no-terminal-display",
+        action="store_true",
+        help="Collect snapshots, metrics, and optional web display data without printing the terminal UI",
+    )
     parser.add_argument("--once", action="store_true", help="Render one snapshot and exit")
     return parser.parse_args()
 
@@ -202,6 +207,14 @@ def main() -> int:
             snapshot_cache.set(snapshot, load_summary)
             append_ambient_log(args.ambient_log_path, snapshot)
             next_read = time.monotonic() + args.interval
+            if args.no_terminal_display:
+                if args.once:
+                    return 0 if snapshot.ok else 1
+                remaining = next_read - time.monotonic()
+                if remaining > 0:
+                    time.sleep(remaining)
+                previous_poll_render = None
+                continue
             rendered = ""
             while True:
                 rendered = render_snapshot(

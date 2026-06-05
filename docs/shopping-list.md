@@ -11,6 +11,7 @@ Procurement status values:
 | Status | Component | Spec / Model | Qty | For | Notes |
 |---|---|---|---:|---|---|
 | on hand | Raspberry Pi | 3 Model B v1.2 | 1 | Supervisor | Existing controller/logger |
+| on hand | Powered USB hub | Waveshare USB 3.2-Gen1-HUB-4U | 1 | Supervisor USB expansion | Candidate powered hub for Pi telemetry adapters and bench/service USB |
 | on hand | USB-to-CAN adapter | DSD TECH SH-C31G | 1 | Battery CAN telemetry | Flashed to CANable/Candlelight-compatible firmware |
 | on hand | RJ45 screw-terminal breakouts | Poyiccot RJ45 8P8C female to screw terminal | 2 | Battery comms bench wiring | Used for CAN/RS485 probing |
 | on hand | Rack batteries | Eco-Worthy Cubix 100, 48 V 100 Ah | 2 | Battery bank | Installed as 200 Ah nominal LiFePO4 bank |
