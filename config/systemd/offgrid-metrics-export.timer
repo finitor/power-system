@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily off-grid power metrics export
+
+[Timer]
+OnCalendar=*-*-* 12:05:00
+Persistent=true
+RandomizedDelaySec=0
+Unit=offgrid-metrics-export.service
+
+[Install]
+WantedBy=timers.target

@@ -57,6 +57,18 @@ def parse_args() -> argparse.Namespace:
         help="Append all supervisor metrics to this SQLite database; use an empty string to disable",
     )
     parser.add_argument(
+        "--metrics-snapshot-interval",
+        type=float,
+        default=60,
+        help="Seconds between durable supervisor snapshot records",
+    )
+    parser.add_argument(
+        "--metrics-settings-interval",
+        type=float,
+        default=3600,
+        help="Seconds between unchanged device-settings heartbeat records",
+    )
+    parser.add_argument(
         "--no-clear",
         action="store_true",
         default=not config.display.clear_screen,
@@ -192,7 +204,11 @@ def main() -> int:
         retention=timedelta(hours=args.load_sample_retention_hours),
     )
     load_summary_tracker = LoadTracker(sample_buffer=load_sample_buffer)
-    metric_recorder = MetricRecorder(args.metrics_db_path or None)
+    metric_recorder = MetricRecorder(
+        args.metrics_db_path or None,
+        snapshot_interval_s=args.metrics_snapshot_interval,
+        settings_interval_s=args.metrics_settings_interval,
+    )
     snapshot_cache = SnapshotCache()
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache)
@@ -203,8 +219,8 @@ def main() -> int:
             snapshot = supervisor.read_snapshot()
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
-            record_metrics(metric_recorder, snapshot, load_summary)
             snapshot_cache.set(snapshot, load_summary)
+            record_metrics(metric_recorder, snapshot, load_summary)
             append_ambient_log(args.ambient_log_path, snapshot)
             next_read = time.monotonic() + args.interval
             if args.no_terminal_display:

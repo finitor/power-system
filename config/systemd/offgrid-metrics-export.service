@@ -1,0 +1,14 @@
+[Unit]
+Description=Export off-grid power metrics to object storage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@OFFGRID_USER@
+Group=@OFFGRID_USER@
+WorkingDirectory=/home/@OFFGRID_USER@/power-system
+Environment=PYTHONPATH=/home/@OFFGRID_USER@/power-system/software/pi-controller/src
+EnvironmentFile=-/etc/offgrid-power.env
+ExecStart=/home/@OFFGRID_USER@/power-system/.venv/bin/python -m offgrid_power.cli.r2_export --max-batches 0
+TimeoutStartSec=20min

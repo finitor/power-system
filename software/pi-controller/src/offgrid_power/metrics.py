@@ -1,16 +1,17 @@
-"""Append-only SQLite metric storage for supervisor snapshots."""
+"""Cadenced SQLite storage for supervisor snapshots and device settings."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
 from typing import Iterable
 
 from .supervisor import SupervisorSnapshot
-from .web_display import LoadSummary
+from .web_display import LoadSummary, snapshot_api_payload
 
 
 @dataclass(frozen=True)
@@ -23,11 +24,34 @@ class MetricSample:
     unit: str | None = None
     tags: dict[str, str] | None = None
 
+    def sample_id(self) -> str:
+        payload = {
+            "captured_at": self.captured_at.isoformat(),
+            "source": self.source,
+            "metric": self.metric,
+            "value": self.value,
+            "text": self.text,
+            "unit": self.unit,
+            "tags": self.tags or {},
+        }
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
 
 class MetricRecorder:
-    def __init__(self, path: str | None = "data/metrics.sqlite") -> None:
+    def __init__(
+        self,
+        path: str | None = "data/metrics.sqlite",
+        snapshot_interval_s: float = 60,
+        settings_interval_s: float = 3600,
+    ) -> None:
         self.path = Path(path) if path else None
         self._initialized = False
+        self.snapshot_interval = timedelta(seconds=snapshot_interval_s)
+        self.settings_interval = timedelta(seconds=settings_interval_s)
+        self._last_snapshot_recorded_at: datetime | None = None
+        self._last_settings_hash_by_device: dict[str, str] = {}
+        self._last_settings_recorded_at_by_device: dict[str, datetime] = {}
 
     def record_snapshot(
         self,
@@ -37,49 +61,149 @@ class MetricRecorder:
         if self.path is None:
             return
 
-        samples = list(snapshot_metric_samples(snapshot, load_summary))
-        if not samples:
-            return
-
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as connection:
+        with sqlite3.connect(self.path, timeout=60) as connection:
+            connection.execute("PRAGMA busy_timeout = 60000")
             if not self._initialized:
                 initialize_metrics_db(connection)
                 self._initialized = True
-            connection.executemany(
-                """
-                INSERT INTO metric_samples (
-                    captured_at, source, metric, value, text, unit, tags_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                [
-                    (
-                        sample.captured_at.isoformat(),
-                        sample.source,
-                        sample.metric,
-                        sample.value,
-                        sample.text,
-                        sample.unit,
-                        json.dumps(sample.tags or {}, sort_keys=True),
-                    )
-                    for sample in samples
-                ],
-            )
+            if self._should_record_snapshot(snapshot.captured_at):
+                record_supervisor_snapshot(connection, snapshot, load_summary)
+                self._last_snapshot_recorded_at = snapshot.captured_at
+            if snapshot.classic_settings is not None:
+                self._record_settings_if_needed(connection, "classic.0", snapshot.classic_settings)
+
+    def _should_record_snapshot(self, captured_at: datetime) -> bool:
+        if self._last_snapshot_recorded_at is None:
+            return True
+        return captured_at - self._last_snapshot_recorded_at >= self.snapshot_interval
+
+    def _record_settings_if_needed(self, connection: sqlite3.Connection, device_id: str, settings) -> None:
+        captured_at = settings.captured_at
+        settings_payload = classic_settings_payload(settings)
+        settings_json = json.dumps(settings_payload, sort_keys=True, separators=(",", ":"))
+        settings_hash = hashlib.sha256(settings_json.encode("utf-8")).hexdigest()
+        last_hash = self._last_settings_hash_by_device.get(device_id)
+        last_recorded_at = self._last_settings_recorded_at_by_device.get(device_id)
+
+        reason = None
+        if last_hash is None:
+            reason = "startup"
+        elif settings_hash != last_hash:
+            reason = "changed"
+        elif last_recorded_at is None or captured_at - last_recorded_at >= self.settings_interval:
+            reason = "hourly"
+
+        if reason is None:
+            return
+
+        record_device_settings_snapshot(
+            connection,
+            captured_at=captured_at,
+            device_id=device_id,
+            settings_hash=settings_hash,
+            reason=reason,
+            settings_json=settings_json,
+        )
+        self._last_settings_hash_by_device[device_id] = settings_hash
+        self._last_settings_recorded_at_by_device[device_id] = captured_at
 
 
 def initialize_metrics_db(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
+        CREATE TABLE IF NOT EXISTS supervisor_snapshots (
+            id INTEGER PRIMARY KEY,
+            captured_at TEXT NOT NULL,
+            ok INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            snapshot_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS supervisor_snapshots_time_idx
+        ON supervisor_snapshots (captured_at)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS supervisor_snapshots_status_time_idx
+        ON supervisor_snapshots (status, captured_at)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS device_settings_snapshots (
+            id INTEGER PRIMARY KEY,
+            captured_at TEXT NOT NULL,
+            device_id TEXT NOT NULL,
+            settings_hash TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            settings_json TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS device_settings_time_idx
+        ON device_settings_snapshots (device_id, captured_at)
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS export_batches (
+            batch_id TEXT PRIMARY KEY,
+            created_at TEXT NOT NULL,
+            uploaded_at TEXT,
+            object_key TEXT NOT NULL,
+            record_count INTEGER NOT NULL,
+            status TEXT NOT NULL
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS export_batch_records (
+            batch_id TEXT NOT NULL,
+            record_type TEXT NOT NULL,
+            record_id INTEGER NOT NULL,
+            PRIMARY KEY (record_type, record_id),
+            FOREIGN KEY (batch_id) REFERENCES export_batches(batch_id)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS export_batch_records_batch_idx
+        ON export_batch_records (batch_id)
+        """
+    )
+    create_export_status_views(connection)
+    connection.execute(
+        """
         CREATE TABLE IF NOT EXISTS metric_samples (
             id INTEGER PRIMARY KEY,
+            sample_id TEXT,
             captured_at TEXT NOT NULL,
             source TEXT NOT NULL,
             metric TEXT NOT NULL,
             value REAL,
             text TEXT,
             unit TEXT,
-            tags_json TEXT NOT NULL DEFAULT '{}'
+            tags_json TEXT NOT NULL DEFAULT '{}',
+            exported_at TEXT,
+            export_batch_id TEXT
         )
+        """
+    )
+    _ensure_metric_export_columns(connection)
+    _backfill_sample_ids(connection)
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS metric_samples_sample_id_idx
+        ON metric_samples (sample_id)
         """
     )
     connection.execute(
@@ -92,6 +216,131 @@ def initialize_metrics_db(connection: sqlite3.Connection) -> None:
         """
         CREATE INDEX IF NOT EXISTS metric_samples_time_idx
         ON metric_samples (captured_at)
+        """
+    )
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS metric_samples_export_idx
+        ON metric_samples (exported_at, id)
+        """
+    )
+
+
+def create_export_status_views(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        CREATE VIEW IF NOT EXISTS supervisor_snapshots_export_status AS
+        SELECT
+            snapshots.id,
+            snapshots.captured_at,
+            snapshots.ok,
+            snapshots.status,
+            records.batch_id AS export_batch_id,
+            batches.uploaded_at AS exported_at,
+            batches.object_key AS export_object_key,
+            snapshots.snapshot_json
+        FROM supervisor_snapshots snapshots
+        LEFT JOIN export_batch_records records
+          ON records.record_type = 'supervisor_snapshot'
+         AND records.record_id = snapshots.id
+        LEFT JOIN export_batches batches
+          ON batches.batch_id = records.batch_id
+        """
+    )
+    connection.execute(
+        """
+        CREATE VIEW IF NOT EXISTS device_settings_export_status AS
+        SELECT
+            settings.id,
+            settings.captured_at,
+            settings.device_id,
+            settings.settings_hash,
+            settings.reason,
+            records.batch_id AS export_batch_id,
+            batches.uploaded_at AS exported_at,
+            batches.object_key AS export_object_key,
+            settings.settings_json
+        FROM device_settings_snapshots settings
+        LEFT JOIN export_batch_records records
+          ON records.record_type = 'device_settings'
+         AND records.record_id = settings.id
+        LEFT JOIN export_batches batches
+          ON batches.batch_id = records.batch_id
+        """
+    )
+
+
+def record_supervisor_snapshot(
+    connection: sqlite3.Connection,
+    snapshot: SupervisorSnapshot,
+    load_summary: LoadSummary | None = None,
+) -> None:
+    payload = snapshot_api_payload(snapshot, load_summary=load_summary, now=snapshot.captured_at)
+    connection.execute(
+        """
+        INSERT INTO supervisor_snapshots (captured_at, ok, status, snapshot_json)
+        VALUES (?, ?, ?, ?)
+        """,
+        (
+            snapshot.captured_at.isoformat(),
+            1 if snapshot.ok else 0,
+            snapshot.status_text,
+            json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        ),
+    )
+
+
+def record_device_settings_snapshot(
+    connection: sqlite3.Connection,
+    captured_at: datetime,
+    device_id: str,
+    settings_hash: str,
+    reason: str,
+    settings_json: str,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO device_settings_snapshots (
+            captured_at, device_id, settings_hash, reason, settings_json
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        (captured_at.isoformat(), device_id, settings_hash, reason, settings_json),
+    )
+
+
+def classic_settings_payload(settings) -> dict:
+    return {
+        "battery_current_limit_a": settings.battery_current_limit_a,
+        "absorb_voltage_v": settings.absorb_voltage_v,
+        "float_voltage_v": settings.float_voltage_v,
+        "equalize_voltage_v": settings.equalize_voltage_v,
+        "sliding_current_limit_a": settings.sliding_current_limit_a,
+        "absorb_time_s": settings.absorb_time_s,
+        "max_temp_comp_voltage_v": settings.max_temp_comp_voltage_v,
+        "min_temp_comp_voltage_v": settings.min_temp_comp_voltage_v,
+        "temp_comp_mv_per_c_cell": settings.temp_comp_mv_per_c_cell,
+        "mppt_mode_raw": settings.mppt_mode_raw,
+        "aux_function_word": settings.aux_function_word,
+    }
+
+
+def _ensure_metric_export_columns(connection: sqlite3.Connection) -> None:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(metric_samples)")}
+    for name, definition in [
+        ("sample_id", "TEXT"),
+        ("exported_at", "TEXT"),
+        ("export_batch_id", "TEXT"),
+    ]:
+        if name not in columns:
+            connection.execute(f"ALTER TABLE metric_samples ADD COLUMN {name} {definition}")
+
+
+def _backfill_sample_ids(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        UPDATE metric_samples
+        SET sample_id = 'legacy-local-row-' || id
+        WHERE sample_id IS NULL
         """
     )
 

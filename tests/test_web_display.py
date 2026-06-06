@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -29,6 +30,7 @@ from offgrid_power.web_display import (
     render_kindle_snapshot,
     render_snapshot_unavailable,
     route_display_request,
+    snapshot_api_payload,
 )
 
 
@@ -256,6 +258,76 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 200)
         self.assertEqual(response.content_type, "text/html; charset=utf-8")
         self.assertIn(b"Off-Grid Power", response.body)
+
+    def test_routes_api_snapshot_as_json(self) -> None:
+        snapshot = self._snapshot_with_classic_and_battery(
+            captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc),
+            classic_daily_ah=108,
+            current_soc=92,
+        )
+
+        response = route_display_request(
+            snapshot,
+            "/api/v1/snapshot",
+            "curl/8.0",
+            load_summary=LoadSummary(
+                current_a=4.0,
+                power_w=212,
+                remaining_text="46.0h",
+                rolling_average_a=3.5,
+                rolling_average_w=184.0,
+            ),
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(response.content_type, "application/json; charset=utf-8")
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["site_id"], "cabin")
+        self.assertEqual(payload["status"]["severity"], "OK")
+        self.assertEqual(payload["battery"]["soc_percent"], 92)
+        self.assertAlmostEqual(payload["battery"]["voltage_v"], 53.04)
+        self.assertEqual(payload["solar"][0]["id"], "classic.0")
+        self.assertEqual(payload["solar"][0]["daily_amp_hours_ah"], 108)
+        self.assertEqual(payload["load"]["estimated_autonomy_hours"], 46.0)
+
+    def test_routes_api_health_uses_service_unavailable_for_error_snapshot(self) -> None:
+        snapshot = SupervisorSnapshot(
+            captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc),
+            classic=None,
+            classic_settings=None,
+            battery=None,
+            battery_can_health=None,
+            ambient=None,
+            errors=["Classic read failed: timeout"],
+        )
+
+        response = route_display_request(snapshot, "/api/v1/health", "curl/8.0")
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 503)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["status"], "ERROR")
+        self.assertEqual(payload["errors"], ["Classic read failed: timeout"])
+
+    def test_snapshot_api_payload_includes_status_conditions(self) -> None:
+        snapshot = SupervisorSnapshot(
+            captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc),
+            classic=None,
+            classic_settings=None,
+            battery=None,
+            battery_can_health=None,
+            ambient=None,
+            errors=[],
+            status_conditions=["Battery cell delta high"],
+        )
+
+        payload = snapshot_api_payload(snapshot)
+
+        self.assertEqual(payload["status"]["severity"], "WARNING")
+        self.assertEqual(payload["status"]["conditions"], ["Battery cell delta high"])
+        self.assertIsNone(payload["battery"])
+        self.assertEqual(payload["solar"], [])
 
     def test_snapshot_unavailable_page_auto_refreshes(self) -> None:
         html = render_snapshot_unavailable(RuntimeError("CAN bus warming up"), refresh_seconds=10)

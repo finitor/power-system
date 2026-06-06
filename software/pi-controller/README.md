@@ -8,10 +8,15 @@ Read-only supervisory monitoring and future control orchestration for the Raspbe
 - `src/offgrid_power/ambient.py`: AM2302/DHT22 ambient temperature and humidity adapter.
 - `src/offgrid_power/canbus.py`: SocketCAN discovery and battery CAN decoding helpers.
 - `src/offgrid_power/supervisor.py`: combines adapter reads into a single snapshot.
+- `src/offgrid_power/metrics.py`: append-only SQLite metric storage.
+- `src/offgrid_power/r2_export.py`: store-and-forward metric batch export to R2/S3-compatible object storage.
+- `src/offgrid_power/api_terminal_display.py`: terminal renderer for supervisor API snapshots.
 - `src/offgrid_power/terminal_display.py`: renders a compact terminal status view.
 - `src/offgrid_power/web_display.py`: renders and serves primitive HTML status pages.
 - `src/offgrid_power/cli/can_decode.py`: live or log-based battery CAN decoder.
-- `src/offgrid_power/cli/supervisor_display.py`: production entry point for the live terminal display.
+- `src/offgrid_power/cli/r2_export.py`: uploads unexported SQLite metric batches to R2.
+- `src/offgrid_power/cli/api_terminal_display.py`: read-only terminal display client for `/api/v1/snapshot`.
+- `src/offgrid_power/cli/supervisor_display.py`: production entry point for hardware polling, metrics, and web/API serving.
 - `src/offgrid_power/cli/web_display.py`: local HTTP display server for wall displays.
 - `../../scripts/supervisor-display.py`: compatibility wrapper for local repo runs.
 
@@ -25,10 +30,24 @@ offgrid-supervisor --classic-host 192.168.0.10
 
 Use `--once` for a single snapshot. The current scaffold is read-only and performs no control writes.
 
+Supervisor metrics are appended to `data/metrics.sqlite` by default. To upload unexported metric batches during a WAN window, configure the R2 environment variables from `.env.example` and run:
+
+```sh
+offgrid-r2-export
+```
+
+See [Store-And-Forward Metrics](../../docs/telemetry/store-and-forward.md) for the object format and delivery contract.
+
 To serve the same snapshots that the terminal supervisor is rendering over local HTTP:
 
 ```sh
 offgrid-supervisor --classic-host 192.168.0.10 --web-display --web-port 8080
+```
+
+To render the supervisor's latest API snapshot in a terminal without polling hardware or writing metrics:
+
+```sh
+offgrid-terminal-display --url http://127.0.0.1:8080/api/v1/snapshot
 ```
 
 The standalone web server is still useful for quick tests:

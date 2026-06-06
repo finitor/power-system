@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
 from pathlib import Path
 from threading import Lock
 from typing import Callable
@@ -149,6 +150,8 @@ def route_display_request(
     load_summary: LoadSummary | None = None,
 ) -> DisplayResponse:
     parsed_path = urlparse(path).path
+    if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
+        return route_api_request(snapshot, parsed_path, load_summary=load_summary)
     if parsed_path not in {"/", "/kindle", "/display", "/healthz"}:
         return DisplayResponse(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"not found\n")
     if parsed_path == "/healthz":
@@ -161,6 +164,179 @@ def route_display_request(
     if parsed_path == "/kindle" or is_kindle_user_agent(user_agent):
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
+
+
+def route_api_request(
+    snapshot: SupervisorSnapshot,
+    path: str,
+    load_summary: LoadSummary | None = None,
+    now: datetime | None = None,
+) -> DisplayResponse:
+    if path == "/api/v1/health":
+        payload = health_api_payload(snapshot, now=now)
+        status = HTTPStatus.OK if snapshot.ok else HTTPStatus.SERVICE_UNAVAILABLE
+        return _json_response(status, payload)
+    if path == "/api/v1/snapshot":
+        return _json_response(HTTPStatus.OK, snapshot_api_payload(snapshot, load_summary=load_summary, now=now))
+    return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
+
+
+def health_api_payload(snapshot: SupervisorSnapshot, now: datetime | None = None) -> dict:
+    return {
+        "schema_version": 1,
+        "ok": snapshot.ok,
+        "status": snapshot.status_text,
+        "captured_at": snapshot.captured_at.isoformat(),
+        "age_seconds": _age_seconds(snapshot.captured_at, now=now),
+        "errors": list(snapshot.errors),
+    }
+
+
+def snapshot_api_payload(
+    snapshot: SupervisorSnapshot,
+    load_summary: LoadSummary | None = None,
+    now: datetime | None = None,
+    site_id: str = "cabin",
+) -> dict:
+    return {
+        "schema_version": 1,
+        "site_id": site_id,
+        "captured_at": snapshot.captured_at.isoformat(),
+        "age_seconds": _age_seconds(snapshot.captured_at, now=now),
+        "status": {
+            "ok": snapshot.ok,
+            "severity": snapshot.status_text,
+            "errors": list(snapshot.errors),
+            "conditions": list(snapshot.status_conditions),
+        },
+        "battery": _battery_api_payload(snapshot),
+        "solar": _solar_api_payload(snapshot),
+        "load": _load_api_payload(load_summary),
+        "ambient": _ambient_api_payload(snapshot),
+    }
+
+
+def _json_response(status: HTTPStatus, payload: dict) -> DisplayResponse:
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
+    return DisplayResponse(status, "application/json; charset=utf-8", body)
+
+
+def _age_seconds(captured_at: datetime, now: datetime | None = None) -> int:
+    now = now or datetime.now(captured_at.tzinfo)
+    return max(0, int((now - captured_at).total_seconds()))
+
+
+def _battery_api_payload(snapshot: SupervisorSnapshot) -> dict | None:
+    battery = snapshot.battery
+    if battery is None:
+        return None
+
+    state = battery.state_of_charge
+    measurements = battery.measurements
+    extended = battery.extended_measurements
+    limits = battery.charge_limits
+    flags = battery.request_flags
+    status = battery.status
+    payload: dict = {
+        "soc_percent": state.soc_percent if state is not None else None,
+        "soh_percent": state.soh_percent if state is not None else None,
+        "voltage_v": measurements.voltage_v if measurements is not None else None,
+        "current_a": measurements.current_a if measurements is not None else None,
+        "power_w": (measurements.voltage_v * measurements.current_a) if measurements is not None else None,
+        "temperature_c": measurements.temperature_c if measurements is not None else None,
+        "cell_min_v": extended.min_cell_voltage_v if extended is not None else None,
+        "cell_max_v": extended.max_cell_voltage_v if extended is not None else None,
+        "cell_delta_mv": None,
+        "cell_temperature_min_c": extended.min_cell_temperature_c if extended is not None else None,
+        "cell_temperature_max_c": extended.max_cell_temperature_c if extended is not None else None,
+        "installed_capacity_ah": extended.installed_capacity_ah if extended is not None else None,
+        "charge_enabled": flags.charge_enable if flags is not None else None,
+        "discharge_enabled": flags.discharge_enable if flags is not None else None,
+        "force_charge_1": flags.force_charge_1 if flags is not None else None,
+        "force_charge_2": flags.force_charge_2 if flags is not None else None,
+        "full_charge_request": flags.full_charge_request if flags is not None else None,
+        "charge_voltage_limit_v": limits.charge_voltage_limit_v if limits is not None else None,
+        "charge_current_limit_a": limits.charge_current_limit_a if limits is not None else None,
+        "discharge_current_limit_a": limits.discharge_current_limit_a if limits is not None else None,
+        "discharge_voltage_limit_v": limits.discharge_voltage_limit_v if limits is not None else None,
+        "module_count": status.module_count if status is not None else None,
+        "protection_flags": list(status.protection_flags) if status is not None else [],
+        "alarm_flags": list(status.alarm_flags) if status is not None else [],
+        "manufacturer": battery.manufacturer,
+        "manufacturer_marker": status.manufacturer_marker if status is not None else None,
+    }
+    if extended is not None and extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
+        payload["cell_delta_mv"] = round((extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000)
+    return payload
+
+
+def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
+    if snapshot.classic is None:
+        return []
+    classic = snapshot.classic
+    return [
+        {
+            "id": "classic.0",
+            "label": "Classic 200",
+            "captured_at": classic.captured_at.isoformat(),
+            "battery_voltage_v": classic.battery_voltage_v,
+            "battery_current_a": classic.battery_current_a,
+            "battery_power_w": classic.battery_power_w,
+            "pv_voltage_v": classic.pv_voltage_v,
+            "pv_current_a": classic.pv_current_a,
+            "daily_energy_kwh": classic.daily_energy_kwh,
+            "daily_amp_hours_ah": classic.daily_amp_hours_ah,
+            "lifetime_energy_kwh": classic.lifetime_energy_kwh,
+            "lifetime_amp_hours_ah": classic.lifetime_amp_hours_ah,
+            "last_voc_v": classic.last_voc_v,
+            "highest_input_voltage_v": classic.highest_input_voltage_v,
+            "charge_stage_code": classic.charge_stage_code,
+            "charge_stage": classic.charge_stage,
+            "state_code": classic.state_code,
+            "state": classic.state,
+            "info_flags": classic.info_flags,
+            "active_flags": list(classic.active_flags),
+            "temperatures_c": {
+                "battery": classic.battery_temp_c,
+                "fet": classic.fet_temp_c,
+                "pcb": classic.pcb_temp_c,
+            },
+        }
+    ]
+
+
+def _load_api_payload(load_summary: LoadSummary | None) -> dict | None:
+    if load_summary is None:
+        return None
+    return {
+        "current_a": load_summary.current_a,
+        "power_w": load_summary.power_w,
+        "average_today_text": load_summary.average_today_text,
+        "today_text": load_summary.today_text,
+        "remaining_text": load_summary.remaining_text,
+        "rolling_average_a": load_summary.rolling_average_a,
+        "rolling_average_w": load_summary.rolling_average_w,
+        "estimated_autonomy_hours": _hours_text_value(load_summary.remaining_text),
+    }
+
+
+def _hours_text_value(text: str | None) -> float | None:
+    if text is None or not text.endswith("h"):
+        return None
+    try:
+        return float(text[:-1])
+    except ValueError:
+        return None
+
+
+def _ambient_api_payload(snapshot: SupervisorSnapshot) -> dict | None:
+    if snapshot.ambient is None:
+        return None
+    return {
+        "captured_at": snapshot.ambient.captured_at.isoformat(),
+        "temperature_c": snapshot.ambient.temperature_c,
+        "humidity_percent": snapshot.ambient.humidity_percent,
+    }
 
 
 def run_display_server(
@@ -183,6 +359,30 @@ def run_display_server(
             try:
                 snapshot = provider()
             except Exception as exc:  # noqa: BLE001 - HTTP display should show readiness errors.
+                if urlparse(self.path).path.startswith("/api/"):
+                    body = json.dumps(
+                        {
+                            "schema_version": 1,
+                            "ok": False,
+                            "status": "UNAVAILABLE",
+                            "error": str(exc),
+                        },
+                        sort_keys=True,
+                        separators=(",", ":"),
+                    ).encode("utf-8") + b"\n"
+                    self.send_response(HTTPStatus.SERVICE_UNAVAILABLE.value)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Cache-Control", "no-store")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    logger.log(
+                        self.client_address[0],
+                        self.path,
+                        self.headers.get("User-Agent", ""),
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                    )
+                    return
                 body = render_snapshot_unavailable(exc).encode("utf-8")
                 self.send_response(HTTPStatus.SERVICE_UNAVAILABLE.value)
                 self.send_header("Content-Type", "text/html; charset=utf-8")

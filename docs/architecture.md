@@ -39,16 +39,17 @@ flowchart LR
 | Inverter/charger | Converts 48 V DC to AC and charges from AC input when available | MagnaSine 4448 |
 | Battery temperature control | Keeps batteries inside a safe temperature window | 48 V ceramic heater, insulated/ventilatable enclosure, thermostat, Pi permissive, thermal cutoffs |
 | Supervisory controller | Reads telemetry, logs state, displays dashboard, and coordinates non-critical control | Raspberry Pi |
-| Data services | Telemetry transport, database, dashboard, logs | Local-first; MQTT is an option but not yet a committed dependency |
+| Data services | Telemetry transport, database, dashboard, logs | Local-first SQLite with R2 store-and-forward; MQTT remains an optional live transport |
 
 ## Data Flow
 
 1. Subsystem adapters read battery, charge controller, inverter/charger, and Pi health telemetry.
 2. Measurements are normalized into named telemetry points.
-3. Telemetry is published locally, stored, and displayed.
-4. Alert rules evaluate measurements and notify operators.
-5. Control policies evaluate state and request actuator changes only where explicitly documented.
-6. Safety checks approve, reject, or force outputs to conservative states.
+3. Telemetry is stored locally, displayed, and optionally published to local transports.
+4. During WAN windows, unsent metric samples are exported to object storage for later downstream import.
+5. Alert rules evaluate measurements and notify operators.
+6. Control policies evaluate state and request actuator changes only where explicitly documented.
+7. Safety checks approve, reject, or force outputs to conservative states.
 
 ## Control Boundaries
 

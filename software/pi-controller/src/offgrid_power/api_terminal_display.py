@@ -1,0 +1,230 @@
+"""Terminal rendering for supervisor API snapshots."""
+
+from __future__ import annotations
+
+from datetime import datetime
+import shutil
+
+from .terminal_display import format_refresh_age
+
+
+ROW_LABEL_WIDTH = 21
+
+
+def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
+    lines: list[str] = []
+    width = min(shutil.get_terminal_size((100, 30)).columns, 120)
+    captured_at = _parse_datetime(payload.get("captured_at"))
+    status = payload.get("status") or {}
+    battery = payload.get("battery") or {}
+
+    lines.append("Off-Grid Power Supervisor".ljust(width))
+    if captured_at is None:
+        lines.append("Refreshed: unavailable")
+    else:
+        lines.append(f"Refreshed: {format_refresh_age(captured_at, now)}")
+    lines.append(_status_line(status, battery))
+    lines.append("")
+
+    lines.append("Load")
+    load = payload.get("load")
+    if load is None:
+        lines.append("  No data")
+    else:
+        lines.append(_row("Now", f"{_fmt(load.get('current_a'), 1)}A  {_fmt(load.get('power_w'), 0)}W"))
+        if load.get("average_today_text") is not None:
+            lines.append(_row("3hr Rolling Avg", str(load["average_today_text"])))
+        if load.get("today_text") is not None:
+            lines.append(_row("Cumulative Today", str(load["today_text"])))
+        if load.get("remaining_text") is not None:
+            lines.append(_row("Estimated Autonomy", str(load["remaining_text"])))
+
+    lines.append("")
+    lines.extend(_battery_lines(battery if payload.get("battery") is not None else None))
+
+    lines.append("")
+    lines.extend(_solar_lines(payload.get("solar") or []))
+
+    lines.append("")
+    lines.extend(_temperature_lines(payload))
+
+    errors = status.get("errors") or []
+    conditions = status.get("conditions") or []
+    if errors:
+        lines.append("")
+        lines.append("Errors")
+        for error in errors:
+            lines.append(f"  - {error}")
+    if conditions:
+        lines.append("")
+        lines.append("Status Conditions")
+        for condition in conditions:
+            lines.append(f"  - {condition}")
+
+    lines.append("")
+    lines.append("Press Ctrl-C to exit. Read-only monitor; no control writes are performed.")
+    return "\n".join(lines)
+
+
+def render_api_unavailable(error: str) -> str:
+    width = min(shutil.get_terminal_size((100, 30)).columns, 120)
+    return "\n".join(
+        [
+            "Off-Grid Power Supervisor".ljust(width),
+            "Refreshed: unavailable",
+            "Status:  UNAVAILABLE",
+            "",
+            "API snapshot unavailable",
+            f"  - {error}",
+            "",
+            "Press Ctrl-C to exit. Read-only monitor; no control writes are performed.",
+        ]
+    )
+
+
+def _status_line(status: dict, battery: dict) -> str:
+    severity = status.get("severity") or status.get("status") or "UNKNOWN"
+    soc = battery.get("soc_percent")
+    if soc is None:
+        return f"Status:  {severity}"
+    return f"SOC: {int(soc):3d}%  Status:  {severity}"
+
+
+def _battery_lines(battery: dict | None) -> list[str]:
+    lines = ["Battery Bank"]
+    if battery is None:
+        lines.append("  No data")
+        return lines
+
+    voltage = battery.get("voltage_v")
+    current = battery.get("current_a")
+    power = battery.get("power_w")
+    if voltage is not None and current is not None and power is not None:
+        lines.append(_row("Flow", f"{_fmt(voltage, 2)}V  {_fmt(current, 1)}A  {_fmt(power, 0)}W  {_battery_state(float(current))}"))
+
+    min_cell = battery.get("cell_min_v")
+    max_cell = battery.get("cell_max_v")
+    delta = battery.get("cell_delta_mv")
+    if min_cell is not None and max_cell is not None and delta is not None:
+        lines.append(_row("Cells", f"{_fmt(min_cell, 3)}-{_fmt(max_cell, 3)}V ({_fmt(delta, 0)}mV delta)"))
+
+    protections = [*(battery.get("protection_flags") or []), *(battery.get("alarm_flags") or [])]
+    lines.append(_row("Protection/Alarms", "none" if not protections else ", ".join(protections)))
+
+    charge = _yes_no(battery.get("charge_enabled"))
+    discharge = _yes_no(battery.get("discharge_enabled"))
+    if charge is not None or discharge is not None:
+        lines.append(_row("Enable", f"charge {charge or 'unknown'}  discharge {discharge or 'unknown'}"))
+
+    cvl = battery.get("charge_voltage_limit_v")
+    ccl = battery.get("charge_current_limit_a")
+    dcl = battery.get("discharge_current_limit_a")
+    if cvl is not None and ccl is not None and dcl is not None:
+        lines.append(_row("Limits", f"charge {_fmt(cvl, 1)}V/{_fmt(ccl, 1)}A  discharge {_fmt(dcl, 1)}A"))
+    return lines
+
+
+def _solar_lines(solar: list[dict]) -> list[str]:
+    lines: list[str] = []
+    if not solar:
+        return ["Charge Controller 0", "  No data"]
+    for index, controller in enumerate(solar):
+        lines.append(f"Charge Controller {index}")
+        lines.append(
+            _row(
+                "PV",
+                f"{_fmt(controller.get('pv_voltage_v'), 1)}V  "
+                f"{_fmt(controller.get('pv_current_a'), 1)}A  "
+                f"Voc {_fmt(controller.get('last_voc_v'), 1)}V",
+            )
+        )
+        lines.append(
+            _row(
+                "Output",
+                f"{_fmt(controller.get('battery_voltage_v'), 1)}V  "
+                f"{_fmt(controller.get('battery_current_a'), 1)}A  "
+                f"{_fmt(controller.get('battery_power_w'), 0)}W",
+            )
+        )
+        stage = controller.get("charge_stage")
+        state = controller.get("state")
+        stage_value = f"Stage: {stage or 'unknown'}"
+        if state is not None and state != stage:
+            stage_value += f"  State: {state}"
+        lines.append(_row("Charge Status", stage_value))
+        lines.append(
+            _row(
+                "Production Today",
+                f"{_fmt(controller.get('daily_energy_kwh'), 1)}kWh  "
+                f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah",
+            )
+        )
+        temps = controller.get("temperatures_c") or {}
+        lines.append(
+            _row(
+                "Temps",
+                f"batt {_fmt(temps.get('battery'), 1)}C  "
+                f"FET {_fmt(temps.get('fet'), 1)}C  "
+                f"PCB {_fmt(temps.get('pcb'), 1)}C",
+            )
+        )
+    return lines
+
+
+def _temperature_lines(payload: dict) -> list[str]:
+    lines = ["Temperatures"]
+    battery = payload.get("battery") or {}
+    ambient = payload.get("ambient") or {}
+    solar = payload.get("solar") or []
+    cell_min = battery.get("cell_temperature_min_c")
+    cell_max = battery.get("cell_temperature_max_c")
+    if cell_min is not None and cell_max is not None:
+        lines.append(_row("Battery cells", f"{_fmt(cell_min, 1)}-{_fmt(cell_max, 1)}C"))
+    if solar:
+        temps = (solar[0].get("temperatures_c") or {})
+        if temps.get("battery") is not None:
+            lines.append(_row("Battery terminal", f"{_fmt(temps.get('battery'), 1)}C"))
+        if temps.get("fet") is not None:
+            lines.append(_row("Charge controller FET", f"{_fmt(temps.get('fet'), 1)}C"))
+        if temps.get("pcb") is not None:
+            lines.append(_row("Charge controller PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
+    if ambient.get("temperature_c") is None:
+        lines.append(_row("Sensor 0 ambient temp", "disconnected"))
+    else:
+        lines.append(_row("Sensor 0 ambient temp", f"{_fmt(ambient.get('temperature_c'), 1)}C"))
+        if ambient.get("humidity_percent") is not None:
+            lines.append(_row("Humidity", f"{_fmt(ambient.get('humidity_percent'), 1)}%"))
+    return lines
+
+
+def _row(label: str, value: str) -> str:
+    return f"  {label:<{ROW_LABEL_WIDTH}} {value}"
+
+
+def _fmt(value, decimals: int) -> str:
+    if value is None:
+        return "?"
+    return f"{float(value):.{decimals}f}"
+
+
+def _yes_no(value) -> str | None:
+    if value is None:
+        return None
+    return "yes" if value else "no"
+
+
+def _battery_state(current_a: float) -> str:
+    if current_a > 0.5:
+        return "charging"
+    if current_a < -0.5:
+        return "discharging"
+    return "idle"
+
+
+def _parse_datetime(value) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
