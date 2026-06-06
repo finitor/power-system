@@ -68,6 +68,28 @@ Add for pilot testing:
 
 Do not connect the Magnum RJ45 stack/router port to Ethernet. It is not an Ethernet port.
 
+## Bench RJ45 Breakout Wiring
+
+Current bench cable path: straight-through 4-wire RJ11 cable from the MagnaSine network port, into an RJ45 straight-through coupler, then Cat-6 patch cable to an RJ45 screw-terminal breakout.
+
+Measured on 2026-06-05:
+
+| RJ45 breakout pin | Expected signal | Measurement / note |
+|---:|---|---|
+| 3 | RS485 B / D- | 0.52-0.57 V to pin 5 |
+| 4 | +14 V accessory power | 14.14 V to pin 5 |
+| 5 | GND | Reference |
+| 6 | RS485 A / D+ | 3.85-3.91 V to pin 5; 3.28-3.37 V to pin 3 |
+
+Expected USB-RS485 adapter wiring for the first bench attempt:
+
+| RJ45 breakout | USB-RS485 adapter |
+|---|---|
+| Pin 6 | A / D+ / 485+ |
+| Pin 3 | B / D- / 485- |
+
+Leave RJ45 pin 4 (+14 V) and pin 5 (GND) disconnected from the USB adapter. If no packets decode, swap pins 3 and 6 at the adapter before assuming a protocol or software problem, since some adapters label A/B backward.
+
 ## Control Policy
 
 For inverter on/off, use a state-aware command path:

@@ -37,7 +37,7 @@ Use [Shopping List](shopping-list.md) for the one-view procurement status across
 |---|---|---|---|
 | DSD TECH SH-C31G | USB / CAN | CAN RJ45 pins 4/5/3/6 via adapter cable | Candidate Pi CAN interface; confirm firmware mode and Linux device name |
 | Waveshare USB TO RS485/422 | USB / RS485 | RS485-1 RJ45 pins 1/8 B1, 2/7 A1, 3/6 GND via adapter cable | Fallback Pi RS485 interface |
-| Magnum network RS485 adapter | USB / RS485 | RJ11 pin 1 Data+, pin 4 Data- per `magnum-pi` prior art | Listen-only first; do not transmit commands until passive decoding is proven |
+| Magnum network RS485 adapter | USB / RS485 | RJ45 breakout pin 6 to adapter A/D+, pin 3 to adapter B/D-; leave pin 4 +14 V and pin 5 GND disconnected from adapter | Listen-only first; bench measurements showed 14.14 V across pins 4/5 and about 3.3 V differential from pin 6 to pin 3 |
 | Eco-Worthy Cubix 100 battery 1 | CAN / RS485 TBD | TBD | Confirm BMS communication options |
 | Eco-Worthy Cubix 100 battery 2 | CAN / RS485 TBD | TBD | Confirm whether batteries expose individual telemetry |
 | Midnite Solar Classic 200 | TBD | TBD | Confirm Ethernet, Modbus, or other supported interface |

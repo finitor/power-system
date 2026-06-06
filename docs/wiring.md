@@ -28,6 +28,7 @@ Use this file as the canonical wiring record. Update it whenever a physical conn
 |---|---|---|---|---|
 | Raspberry Pi USB | Eco-Worthy Cubix 100 CAN port | CAN | DSD TECH SH-C31G, Cat-6 cable, RJ45 battery-side plug | Battery RJ45 pin 4 CANH1, pin 5 CANL1, pin 3 or 6 GND |
 | Raspberry Pi USB | Eco-Worthy Cubix 100 RS485-1 port | RS485 | Waveshare isolated USB-RS485/422, Cat-6 cable, RJ45 battery-side plug | Battery RJ45 pins 1/8 B1, pins 2/7 A1, pins 3/6 GND |
+| Raspberry Pi USB | MagnaSine 4448 network port | RS485 | Waveshare isolated USB-RS485/422, 4-wire RJ11 cable, RJ45 straight-through coupler, Cat-6 patch, RJ45 screw-terminal breakout | Bench-measured breakout mapping: RJ45 pin 4 +14 V, pin 5 GND, pin 6 RS485 A / D+, pin 3 RS485 B / D-. Connect only pin 6 to adapter A/D+ and pin 3 to adapter B/D- for first try; leave pins 4 and 5 disconnected from the USB adapter. |
 | Eco-Worthy Cubix 100 RS232 port | Eco-Worthy ESM-100 remote display | RS232 / accessory power | Native short cable is RJ12 6P6C straight-through by wire-color inspection | Do not substitute Midnite Classic remote cable; it is RJ12 6P6C reversed/rolled with pin positions mirrored end-to-end |
 | Raspberry Pi | Midnite Solar Classic 200 | TBD | TBD | Confirm supported telemetry path before wiring |
 | Raspberry Pi | MagnaSine 4448 | TBD | TBD | Confirm Magnum interface accessory requirements |
