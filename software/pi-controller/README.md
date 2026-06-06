@@ -30,7 +30,7 @@ offgrid-supervisor --classic-host 192.168.0.10
 
 Use `--once` for a single snapshot. The current scaffold is read-only and performs no control writes.
 
-Supervisor metrics are appended to `data/metrics.sqlite` by default. To upload unexported metric batches during a WAN window, configure the R2 environment variables from `.env.example` and run:
+Supervisor metrics are appended to `data/metrics.sqlite` by default. On blueberry, mutable telemetry is SSD-backed under `/srv/offgrid`; the production service writes metrics to `/srv/offgrid/data/metrics.sqlite`. To upload unexported metric batches during a WAN window, configure the object-storage environment variables from `.env.example` and run:
 
 ```sh
 offgrid-r2-export
@@ -50,13 +50,15 @@ To render the supervisor's latest API snapshot in a terminal without polling har
 offgrid-terminal-display --url http://127.0.0.1:8080/api/v1/snapshot
 ```
 
+The production supervisor can also serve a Kindle-safe weather page at `/weather`. It uses Open-Meteo server-side, caches the last successful response, and links back to the power display.
+
 The standalone web server is still useful for quick tests:
 
 ```sh
 offgrid-web-display --host 0.0.0.0 --port 8080 --classic-host 192.168.0.10
 ```
 
-Open `http://blueberry.local:8080/` from the Kindle browser. The page is plain HTML/CSS, uses a 60 second meta refresh, and performs no control writes. Rendering is selected from the browser user agent; `/kindle` remains as a compatibility alias while testing. Access logs are written to `data/web-display-access.log` by default; try `http://blueberry.local:8080/healthz` when debugging old browsers or Wi-Fi reachability.
+Open `http://blueberry.local:8080/` from the Kindle browser. The page is plain HTML/CSS, uses a 60 second meta refresh, and performs no control writes. Rendering is selected from the browser user agent; `/kindle` remains as a compatibility alias while testing. Access logs are written to `data/web-display-access.log` by default and to `/srv/offgrid/logs/web-display-access.log` in the production service; try `http://blueberry.local:8080/healthz` when debugging old browsers or Wi-Fi reachability.
 
 To inspect the Eco-Worthy/Pylon-style battery CAN bus from the Pi:
 
@@ -141,7 +143,7 @@ offgrid-supervisor \
   --no-classic \
   --ambient-kind dht22 \
   --ambient-gpio 4 \
-  --ambient-log-path /var/log/offgrid-power/ambient.csv
+  --ambient-log-path /srv/offgrid/logs/ambient.csv
 ```
 
 Use `--no-ambient` for development runs without the sensor attached. Use `--no-classic` for ambient-only bench runs before the charge controller network is available.
@@ -159,7 +161,13 @@ AMBIENT_SENSOR_ENABLED=true
 AMBIENT_SENSOR_KIND=ds18b20
 AMBIENT_DHT22_GPIO=4
 AMBIENT_DS18B20_DEVICE_ID=
-AMBIENT_LOG_PATH=/var/log/offgrid-power/ambient.csv
+AMBIENT_LOG_PATH=/srv/offgrid/logs/ambient.csv
+WEATHER_ENABLED=true
+WEATHER_LATITUDE=48.000000
+WEATHER_LONGITUDE=-84.000000
+WEATHER_LABEL=cabin
+WEATHER_REFRESH_MINUTES=30
+WEATHER_CACHE_PATH=/srv/offgrid/data/weather-cache.json
 ```
 
 Design intent: keep device adapters, snapshot assembly, display rendering, and future control policy separate. That lets the terminal display be the first production view without making it the only interface.

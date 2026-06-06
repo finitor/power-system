@@ -1,0 +1,402 @@
+"""Open-Meteo weather fetch and formatting helpers."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+import json
+from pathlib import Path
+from threading import Lock
+from typing import Any
+from urllib.parse import urlencode
+from urllib.request import urlopen
+
+
+OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+NOAA_AURORA_URL = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
+NOAA_KP_FORECAST_URL = "https://services.swpc.noaa.gov/products/noaa-planetary-k-index-forecast.json"
+REQUIRED_CURRENT_FIELDS = {
+    "temperature_2m",
+    "cloud_cover",
+    "shortwave_radiation",
+    "direct_radiation",
+    "diffuse_radiation",
+    "direct_normal_irradiance",
+}
+
+
+@dataclass(frozen=True)
+class WeatherConfig:
+    latitude: float
+    longitude: float
+    label: str = "Cabin"
+    refresh: timedelta = timedelta(minutes=30)
+    cache_path: str | None = None
+    timeout_s: float = 8
+    aurora_enabled: bool = True
+
+
+@dataclass(frozen=True)
+class WeatherReport:
+    label: str
+    fetched_at: datetime
+    data: dict[str, Any]
+    stale: bool = False
+    error: str | None = None
+
+
+class WeatherService:
+    def __init__(self, config: WeatherConfig) -> None:
+        self.config = config
+        self._report: WeatherReport | None = None
+        self._lock = Lock()
+
+    def get(self, now: datetime | None = None) -> WeatherReport:
+        reference = (now or datetime.now().astimezone()).astimezone()
+        with self._lock:
+            cached = self._report or self._read_cache()
+            if (
+                cached is not None
+                and cached.label == self.config.label
+                and report_has_required_current_fields(cached)
+                and reference - cached.fetched_at.astimezone() < self.config.refresh
+            ):
+                self._report = cached
+                return cached
+
+        try:
+            data = fetch_open_meteo(self.config, timeout_s=self.config.timeout_s)
+            if self.config.aurora_enabled:
+                try:
+                    data["aurora"] = fetch_noaa_aurora_probability(
+                        self.config.latitude,
+                        self.config.longitude,
+                        timeout_s=self.config.timeout_s,
+                    )
+                    data["aurora"]["tonight"] = fetch_noaa_kp_tonight_forecast(data, timeout_s=self.config.timeout_s)
+                except Exception as exc:  # noqa: BLE001 - aurora is advisory to the weather report.
+                    data["aurora"] = {"error": str(exc)}
+            report = WeatherReport(label=self.config.label, fetched_at=reference, data=data)
+            self._write_cache(report)
+            with self._lock:
+                self._report = report
+            return report
+        except Exception as exc:  # noqa: BLE001 - weather is advisory and should degrade to stale cache.
+            stale = cached or self._read_cache()
+            if stale is not None:
+                report = WeatherReport(
+                    label=stale.label,
+                    fetched_at=stale.fetched_at,
+                    data=stale.data,
+                    stale=True,
+                    error=str(exc),
+                )
+                with self._lock:
+                    self._report = report
+                return report
+            return WeatherReport(
+                label=self.config.label,
+                fetched_at=reference,
+                data={},
+                stale=True,
+                error=str(exc),
+            )
+
+    def _read_cache(self) -> WeatherReport | None:
+        if not self.config.cache_path:
+            return None
+        path = Path(self.config.cache_path)
+        if not path.exists():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return WeatherReport(
+                label=str(payload["label"]),
+                fetched_at=datetime.fromisoformat(payload["fetched_at"]),
+                data=payload["data"],
+            )
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _write_cache(self, report: WeatherReport) -> None:
+        if not self.config.cache_path:
+            return
+        path = Path(self.config.cache_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "label": report.label,
+            "fetched_at": report.fetched_at.isoformat(),
+            "data": report.data,
+        }
+        path.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+
+
+def fetch_open_meteo(config: WeatherConfig, timeout_s: float = 8) -> dict[str, Any]:
+    params = {
+        "latitude": f"{config.latitude:.7f}",
+        "longitude": f"{config.longitude:.7f}",
+        "current": ",".join(
+            [
+                "temperature_2m",
+                "relative_humidity_2m",
+                "apparent_temperature",
+                "precipitation",
+                "rain",
+                "snowfall",
+                "weather_code",
+                "cloud_cover",
+                "wind_speed_10m",
+                "wind_gusts_10m",
+                "wind_direction_10m",
+                "shortwave_radiation",
+                "direct_radiation",
+                "diffuse_radiation",
+                "direct_normal_irradiance",
+            ]
+        ),
+        "hourly": ",".join(
+            [
+                "temperature_2m",
+                "precipitation_probability",
+                "precipitation",
+                "weather_code",
+                "wind_speed_10m",
+                "wind_gusts_10m",
+                "shortwave_radiation",
+                "direct_radiation",
+                "diffuse_radiation",
+                "direct_normal_irradiance",
+            ]
+        ),
+        "daily": ",".join(
+            [
+                "weather_code",
+                "temperature_2m_max",
+                "temperature_2m_min",
+                "precipitation_sum",
+                "precipitation_probability_max",
+                "sunrise",
+                "sunset",
+            ]
+        ),
+        "forecast_days": "3",
+        "forecast_hours": "8",
+        "timezone": "auto",
+        "wind_speed_unit": "kmh",
+        "temperature_unit": "celsius",
+        "precipitation_unit": "mm",
+    }
+    url = f"{OPEN_METEO_FORECAST_URL}?{urlencode(params)}"
+    with urlopen(url, timeout=timeout_s) as response:
+        if response.status != 200:
+            raise RuntimeError(f"Open-Meteo returned HTTP {response.status}")
+        data = json.loads(response.read().decode("utf-8"))
+    add_moon_phase(data)
+    return data
+
+
+def add_moon_phase(data: dict[str, Any]) -> None:
+    daily = data.get("daily")
+    if not isinstance(daily, dict):
+        return
+    days = daily.get("time")
+    if not isinstance(days, list):
+        return
+    daily["moon_phase"] = [moon_phase_for_date(day) for day in days]
+
+
+def moon_phase_for_date(day: object) -> float | None:
+    if not isinstance(day, str):
+        return None
+    try:
+        date = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    known_new_moon = datetime(2000, 1, 6, 18, 14, tzinfo=timezone.utc)
+    synodic_month_days = 29.53058867
+    elapsed_days = (date - known_new_moon).total_seconds() / 86400
+    return (elapsed_days % synodic_month_days) / synodic_month_days
+
+
+def fetch_noaa_aurora_probability(latitude: float, longitude: float, timeout_s: float = 8) -> dict[str, Any]:
+    with urlopen(NOAA_AURORA_URL, timeout=timeout_s) as response:
+        if response.status != 200:
+            raise RuntimeError(f"NOAA SWPC returned HTTP {response.status}")
+        data = json.loads(response.read().decode("utf-8"))
+    nearest = nearest_aurora_coordinate(data.get("coordinates") or [], latitude, longitude)
+    payload = {
+        "provider": "noaa-swpc-ovation",
+        "observation_time": data.get("Observation Time"),
+        "forecast_time": data.get("Forecast Time"),
+    }
+    if nearest is not None:
+        lon, lat, probability = nearest
+        payload.update(
+            {
+                "latitude": lat,
+                "longitude": lon,
+                "probability_percent": probability,
+            }
+        )
+    return payload
+
+
+def fetch_noaa_kp_tonight_forecast(weather_data: dict[str, Any], timeout_s: float = 8) -> dict[str, Any]:
+    window = tonight_window_from_weather(weather_data)
+    if window is None:
+        return {"error": "sunset/sunrise unavailable"}
+    with urlopen(NOAA_KP_FORECAST_URL, timeout=timeout_s) as response:
+        if response.status != 200:
+            raise RuntimeError(f"NOAA SWPC Kp forecast returned HTTP {response.status}")
+        rows = json.loads(response.read().decode("utf-8"))
+    start, end = window
+    entries = [entry for entry in kp_forecast_entries(rows) if start <= entry["time"] < end]
+    if not entries:
+        return {
+            "error": "no Kp forecast rows for tonight",
+            "window_start": start.isoformat(),
+            "window_end": end.isoformat(),
+        }
+    peak = max(entries, key=lambda entry: entry["kp"])
+    return {
+        "window_start": start.isoformat(),
+        "window_end": end.isoformat(),
+        "peak_kp": peak["kp"],
+        "peak_time": peak["time"].isoformat(),
+        "noaa_scale": peak.get("noaa_scale"),
+        "likelihood": aurora_likelihood_text(peak["kp"]),
+        "entries": [
+            {
+                "time": entry["time"].isoformat(),
+                "kp": entry["kp"],
+                "observed": entry.get("observed"),
+                "noaa_scale": entry.get("noaa_scale"),
+            }
+            for entry in entries
+        ],
+    }
+
+
+def tonight_window_from_weather(weather_data: dict[str, Any]) -> tuple[datetime, datetime] | None:
+    daily = weather_data.get("daily")
+    if not isinstance(daily, dict):
+        return None
+    sunsets = daily.get("sunset")
+    sunrises = daily.get("sunrise")
+    if not isinstance(sunsets, list) or not sunsets:
+        return None
+    if not isinstance(sunrises, list) or len(sunrises) < 2:
+        return None
+    try:
+        start = datetime.fromisoformat(str(sunsets[0])).astimezone()
+        end = datetime.fromisoformat(str(sunrises[1])).astimezone()
+    except ValueError:
+        return None
+    if end <= start:
+        return None
+    return start, end
+
+
+def kp_forecast_entries(rows: object) -> list[dict[str, Any]]:
+    if not isinstance(rows, list):
+        return []
+    entries = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            time = datetime.fromisoformat(str(row["time_tag"])).replace(tzinfo=timezone.utc).astimezone()
+            kp = float(row["kp"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        entries.append(
+            {
+                "time": time,
+                "kp": kp,
+                "observed": row.get("observed"),
+                "noaa_scale": row.get("noaa_scale"),
+            }
+        )
+    return entries
+
+
+def aurora_likelihood_text(kp: float) -> str:
+    if kp >= 7:
+        return "likely"
+    if kp >= 5:
+        return "possible"
+    if kp >= 4:
+        return "watch"
+    return "unlikely"
+
+
+def nearest_aurora_coordinate(coordinates: list, latitude: float, longitude: float) -> tuple[float, float, float] | None:
+    best = None
+    best_distance = None
+    normalized_longitude = normalize_longitude(longitude)
+    for coordinate in coordinates:
+        if not isinstance(coordinate, list) or len(coordinate) < 3:
+            continue
+        try:
+            lon = normalize_longitude(float(coordinate[0]))
+            lat = float(coordinate[1])
+            probability = float(coordinate[2])
+        except (TypeError, ValueError):
+            continue
+        lon_delta = abs(lon - normalized_longitude)
+        lon_delta = min(lon_delta, 360 - lon_delta)
+        distance = (lat - latitude) ** 2 + lon_delta**2
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best = (lon, lat, probability)
+    return best
+
+
+def normalize_longitude(longitude: float) -> float:
+    value = longitude
+    while value > 180:
+        value -= 360
+    while value < -180:
+        value += 360
+    return value
+
+
+def report_has_required_current_fields(report: WeatherReport) -> bool:
+    current = report.data.get("current")
+    if not isinstance(current, dict):
+        return False
+    daily = report.data.get("daily")
+    if not isinstance(daily, dict):
+        return False
+    has_astronomy = all(isinstance(daily.get(name), list) and daily.get(name) for name in ["sunrise", "sunset", "moon_phase"])
+    aurora = report.data.get("aurora")
+    has_aurora_tonight = isinstance(aurora, dict) and isinstance(aurora.get("tonight"), dict)
+    return REQUIRED_CURRENT_FIELDS.issubset(current) and has_astronomy and has_aurora_tonight
+
+
+def weather_code_text(code: object) -> str:
+    try:
+        value = int(code)
+    except (TypeError, ValueError):
+        return "unknown"
+    if value == 0:
+        return "clear"
+    if value in (1, 2):
+        return "mainly clear"
+    if value == 3:
+        return "overcast"
+    if value in (45, 48):
+        return "fog"
+    if value in (51, 53, 55, 56, 57):
+        return "drizzle"
+    if value in (61, 63, 65, 66, 67):
+        return "rain"
+    if value in (71, 73, 75, 77):
+        return "snow"
+    if value in (80, 81, 82):
+        return "showers"
+    if value in (85, 86):
+        return "snow showers"
+    if value in (95, 96, 99):
+        return "thunderstorm"
+    return f"code {value}"

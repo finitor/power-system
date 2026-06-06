@@ -16,9 +16,11 @@ from urllib.parse import urlparse
 
 from .supervisor import Supervisor, SupervisorSnapshot
 from .terminal_display import format_time
+from .weather import WeatherReport, weather_code_text
 
 
 KINDLE_REFRESH_SECONDS = 60
+WEATHER_STALE_AFTER = timedelta(hours=1)
 MIDNIGHT_SOC_UNAVAILABLE = "00:00:00h SOC unavailable"
 BATTERY_IDLE_CURRENT_A = 0.5
 ROLLING_LOAD_WINDOW = timedelta(hours=3)
@@ -78,15 +80,17 @@ def is_kindle_user_agent(user_agent: str) -> bool:
     return "kindle" in normalized or "silk/" in normalized
 
 
+def format_kindle_time(captured_at: datetime) -> str:
+    return captured_at.astimezone().strftime("%H:%M:%S %Z")
+
+
 def render_kindle_snapshot(
     snapshot: SupervisorSnapshot,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     load_summary: LoadSummary | None = None,
 ) -> str:
     status = snapshot.status_text
-    updated = format_time(snapshot.captured_at)
-    status_class = ' class="bad"' if status == "ERROR" else ""
-    status_class_attr = f' class="meta-cell {status_class[8:-1]}"' if status_class else ' class="meta-cell"'
+    updated = format_kindle_time(snapshot.captured_at)
     soc_text = _soc_text(snapshot)
     lines = [
         "<!doctype html>",
@@ -103,16 +107,17 @@ def render_kindle_snapshot(
         "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
         ".bad{font-weight:bold;}",
         ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
-        ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding-bottom:2px;}",
+        ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",
         ".summary-table .soc-cell{font-size:36px;line-height:1;text-align:left;vertical-align:middle;width:32%;}",
-        ".summary-table .meta-cell{font-size:17px;line-height:1.15;text-align:left;width:68%;}",
+        ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
+        ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
+        ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
         ".small{font-size:13px;}",
         "</style>",
         "</head>",
         "<body>",
         '<table class="summary-table">',
-        f'<tr><td class="soc-cell" rowspan="2">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}</td></tr>',
-        f"<tr><td{status_class_attr}>Status: {escape(status)}</td></tr>",
+        f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
     ]
     lines.extend(_load_section(load_summary))
@@ -143,21 +148,130 @@ def render_kindle_snapshot(
     return "\n".join(lines)
 
 
+def render_kindle_weather(
+    report: WeatherReport | None,
+    refresh_seconds: int = KINDLE_REFRESH_SECONDS,
+    now: datetime | None = None,
+) -> str:
+    reference = now or datetime.now().astimezone()
+    status_text = "Weather unavailable"
+    updated = "never"
+    if report is not None and report.data:
+        updated = format_kindle_time(report.fetched_at)
+        status_text = "stale forecast" if report.stale else "forecast"
+    too_stale = (
+        report is not None
+        and report.data
+        and report.stale
+        and reference.astimezone() - report.fetched_at.astimezone() >= WEATHER_STALE_AFTER
+    )
+    lines = [
+        "<!doctype html>",
+        "<html>",
+        "<head>",
+        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        f'<meta http-equiv="refresh" content="{refresh_seconds}">',
+        "<title>Off-Grid Weather</title>",
+        "<style>",
+        "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
+        "table{border-collapse:collapse;width:100%;}",
+        "td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
+        "td:first-child{font-size:17px;font-weight:bold;width:38%;}",
+        ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
+        ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",
+        ".summary-table .weather-cell{font-size:30px;line-height:1;text-align:left;vertical-align:middle;width:38%;}",
+        ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:46%;}",
+        ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
+        ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
+        ".small{font-size:13px;}",
+        "</style>",
+        "</head>",
+        "<body>",
+    ]
+    if too_stale:
+        lines.extend(
+            [
+                '<table class="summary-table">',
+                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">Weather service has been unreachable since {escape(format_time(report.fetched_at))}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                "</table>",
+                "<h2>Conditions</h2>",
+                "<p>Weather service unreachable.</p>",
+            ]
+        )
+        if report.error:
+            lines.append(f'<p class="small">{escape(report.error)}</p>')
+    elif report is None or not report.data:
+        lines.extend(
+            [
+                '<table class="summary-table">',
+                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">Updated: {escape(updated)}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                "</table>",
+                "<h2>Conditions</h2>",
+                "<p>Weather unavailable.</p>",
+            ]
+        )
+        if report is not None and report.error:
+            lines.append(f'<p class="small">{escape(report.error)}</p>')
+    else:
+        current = report.data.get("current") or {}
+        temp = _format_number(current.get("temperature_2m"), "C", decimals=1)
+        condition = weather_code_text(current.get("weather_code"))
+        lines.extend(
+            [
+                '<table class="summary-table">',
+                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(report.label)}: {escape(condition)}<br>Updated: {escape(updated)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                "</table>",
+                "<h2>Current</h2>",
+                "<table>",
+                _weather_row("Feels Like", _format_number(current.get("apparent_temperature"), "C", decimals=1)),
+                _weather_row("Humidity", _format_number(current.get("relative_humidity_2m"), "%", decimals=0)),
+                _weather_row("Cloud", _format_number(current.get("cloud_cover"), "%", decimals=0)),
+                _weather_row(
+                    "Wind",
+                    _wind_text(current.get("wind_speed_10m"), current.get("wind_gusts_10m"), current.get("wind_direction_10m")),
+                ),
+                _weather_row("Precip Now", _precip_text(current.get("precipitation"), current.get("rain"), current.get("snowfall"))),
+                "</table>",
+            ]
+        )
+        lines.extend(_hourly_weather_section(report.data))
+        lines.extend(_daily_weather_section(report.data))
+        lines.extend(_solar_irradiance_section(current))
+        lines.extend(_astronomy_weather_section(report.data))
+        if report.stale:
+            lines.append("<p class=\"small\">Using last cached weather. WAN fetch failed.</p>")
+        if report.error:
+            lines.append(f'<p class="small">{escape(report.error)}</p>')
+
+    lines.extend(
+        [
+            "</body>",
+            "</html>",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def route_display_request(
     snapshot: SupervisorSnapshot,
     path: str,
     user_agent: str,
     load_summary: LoadSummary | None = None,
+    weather_report: WeatherReport | None = None,
 ) -> DisplayResponse:
     parsed_path = urlparse(path).path
     if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
         return route_api_request(snapshot, parsed_path, load_summary=load_summary)
-    if parsed_path not in {"/", "/kindle", "/display", "/healthz"}:
+    if parsed_path not in {"/", "/kindle", "/display", "/weather", "/healthz"}:
         return DisplayResponse(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"not found\n")
     if parsed_path == "/healthz":
         status = HTTPStatus.OK if snapshot.ok else HTTPStatus.SERVICE_UNAVAILABLE
         body = b"ok\n" if snapshot.ok else b"error\n"
         return DisplayResponse(status, "text/plain; charset=utf-8", body)
+    if parsed_path == "/weather":
+        html = render_kindle_weather(weather_report)
+        return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
 
     html = render_kindle_snapshot(snapshot, load_summary=load_summary)
     content_type = "text/html; charset=utf-8"
@@ -179,6 +293,249 @@ def route_api_request(
     if path == "/api/v1/snapshot":
         return _json_response(HTTPStatus.OK, snapshot_api_payload(snapshot, load_summary=load_summary, now=now))
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
+
+
+def _hourly_weather_section(data: dict) -> list[str]:
+    hourly = data.get("hourly") or {}
+    times = hourly.get("time") or []
+    if not times:
+        return []
+    rows = ["<h2>Next Hours</h2>", "<table>"]
+    for index, hour in enumerate(times[:8]):
+        rows.append(
+            _weather_row(
+                _short_time(hour),
+                "  ".join(
+                    item
+                    for item in [
+                        weather_code_text(_indexed(hourly.get("weather_code"), index)),
+                        _format_number(_indexed(hourly.get("temperature_2m"), index), "C", decimals=1),
+                        _format_number(_indexed(hourly.get("precipitation_probability"), index), "% precip", decimals=0),
+                        _format_number(_indexed(hourly.get("wind_speed_10m"), index), "km/h", decimals=0),
+                    ]
+                    if item
+                ),
+            )
+        )
+    rows.append("</table>")
+    return rows
+
+
+def _daily_weather_section(data: dict) -> list[str]:
+    daily = data.get("daily") or {}
+    days = daily.get("time") or []
+    if not days:
+        return []
+    rows = ["<h2>Forecast</h2>", "<table>"]
+    for index, day in enumerate(days[:3]):
+        rows.append(
+            _weather_row(
+                _short_day(day),
+                "  ".join(
+                    item
+                    for item in [
+                        weather_code_text(_indexed(daily.get("weather_code"), index)),
+                        _daily_temperature_text(
+                            _indexed(daily.get("temperature_2m_min"), index),
+                            _indexed(daily.get("temperature_2m_max"), index),
+                        ),
+                        _format_number(_indexed(daily.get("precipitation_probability_max"), index), "% precip", decimals=0),
+                        _format_number(_indexed(daily.get("precipitation_sum"), index), "mm", decimals=1),
+                    ]
+                    if item
+                ),
+            )
+        )
+    rows.append("</table>")
+    return rows
+
+
+def _solar_irradiance_section(current: dict) -> list[str]:
+    return [
+        "<h2>Solar Irradiance</h2>",
+        "<table>",
+        _weather_row(
+            "Global Horizontal (GHI)",
+            _format_number(current.get("shortwave_radiation"), "W/m2", decimals=0),
+        ),
+        _weather_row("Direct Radiation", _format_number(current.get("direct_radiation"), "W/m2", decimals=0)),
+        _weather_row("Diffuse Radiation", _format_number(current.get("diffuse_radiation"), "W/m2", decimals=0)),
+        _weather_row(
+            "Direct Normal (DNI)",
+            _format_number(current.get("direct_normal_irradiance"), "W/m2", decimals=0),
+        ),
+        "</table>",
+    ]
+
+
+def _astronomy_weather_section(data: dict) -> list[str]:
+    daily = data.get("daily") or {}
+    aurora = data.get("aurora") or {}
+    rows = ["<h2>Astronomy</h2>", "<table>"]
+    rows.append(
+        _weather_row(
+            "Sun",
+            _sun_text(
+                _indexed(daily.get("sunrise"), 0),
+                _indexed(daily.get("sunset"), 0),
+            ),
+        )
+    )
+    rows.append(_weather_row("Moon", _moon_phase_text(_indexed(daily.get("moon_phase"), 0))))
+    rows.append(_weather_row_html("Aurora", _aurora_html(aurora)))
+    rows.append("</table>")
+    return rows
+
+
+def _weather_row(label: str, value: str | None) -> str:
+    return f"<tr><td>{escape(label)}</td><td>{escape(value or '--')}</td></tr>"
+
+
+def _weather_row_html(label: str, value: str | None) -> str:
+    return f"<tr><td>{escape(label)}</td><td>{value or '--'}</td></tr>"
+
+
+def _format_number(value: object, suffix: str, decimals: int = 1) -> str | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f"{number:.{decimals}f}{suffix}"
+
+
+def _wind_text(speed: object, gust: object, direction: object) -> str | None:
+    speed_text = _format_number(speed, "km/h", decimals=0)
+    if speed_text is None:
+        return None
+    gust_text = _format_number(gust, "km/h gust", decimals=0)
+    direction_text = _wind_direction_text(direction)
+    parts = [speed_text]
+    if gust_text:
+        parts.append(gust_text)
+    if direction_text:
+        parts.append(direction_text)
+    return "  ".join(parts)
+
+
+def _wind_direction_text(value: object) -> str | None:
+    try:
+        degrees = float(value)
+    except (TypeError, ValueError):
+        return None
+    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    return directions[int((degrees + 22.5) // 45) % 8]
+
+
+def _precip_text(precipitation: object, rain: object, snowfall: object) -> str | None:
+    parts = []
+    precip_text = _format_number(precipitation, "mm", decimals=1)
+    rain_text = _format_number(rain, "mm rain", decimals=1)
+    snow_text = _format_number(snowfall, "cm snow", decimals=1)
+    if precip_text:
+        parts.append(precip_text)
+    if rain_text:
+        parts.append(rain_text)
+    if snow_text:
+        parts.append(snow_text)
+    return "  ".join(parts) if parts else None
+
+
+def _moon_phase_text(value: object) -> str | None:
+    try:
+        phase = float(value)
+    except (TypeError, ValueError):
+        return None
+    if phase < 0.03 or phase > 0.97:
+        name = "new"
+    elif phase < 0.22:
+        name = "waxing crescent"
+    elif phase < 0.28:
+        name = "first quarter"
+    elif phase < 0.47:
+        name = "waxing gibbous"
+    elif phase < 0.53:
+        name = "full"
+    elif phase < 0.72:
+        name = "waning gibbous"
+    elif phase < 0.78:
+        name = "last quarter"
+    else:
+        name = "waning crescent"
+    return f"{name} ({phase:.2f})"
+
+
+def _sun_text(sunrise: object, sunset: object) -> str | None:
+    sunrise_text = _short_time(sunrise)
+    sunset_text = _short_time(sunset)
+    if sunrise_text == "--" and sunset_text == "--":
+        return None
+    return f"rise {sunrise_text}  set {sunset_text}"
+
+
+def _aurora_html(aurora: object) -> str | None:
+    if not isinstance(aurora, dict):
+        return None
+    tonight = aurora.get("tonight")
+    if aurora.get("error"):
+        return "unavailable"
+    probability = _format_number(aurora.get("probability_percent"), "%", decimals=0)
+    if probability is None:
+        return None
+    forecast_time = aurora.get("forecast_time")
+    now_line = f"now {escape(probability)}"
+    if isinstance(forecast_time, str):
+        now_line = f"{now_line} valid {escape(_short_time(forecast_time))}"
+    return f"{now_line}<br>{_aurora_tonight_text(tonight)}"
+
+
+def _aurora_tonight_text(tonight: object) -> str:
+    if not isinstance(tonight, dict) or tonight.get("error"):
+        return "tonight unavailable"
+    kp = _format_number(tonight.get("peak_kp"), "", decimals=1)
+    likelihood = tonight.get("likelihood")
+    if kp is None or not isinstance(likelihood, str):
+        return "tonight unavailable"
+    peak_time = tonight.get("peak_time")
+    time_text = _short_time(peak_time) if isinstance(peak_time, str) else "--"
+    scale = tonight.get("noaa_scale")
+    scale_text = f" {escape(str(scale))}" if scale else ""
+    return f"tonight {escape(likelihood)} peak Kp {escape(kp)}{scale_text} at {escape(time_text)}"
+
+
+def _daily_temperature_text(low: object, high: object) -> str | None:
+    low_text = _format_number(low, "C", decimals=1)
+    high_text = _format_number(high, "C", decimals=1)
+    if low_text and high_text:
+        return f"{low_text}-{high_text}"
+    return high_text or low_text
+
+
+def _indexed(values: object, index: int) -> object:
+    if not isinstance(values, list) or index >= len(values):
+        return None
+    return values[index]
+
+
+def _short_time(value: object) -> str:
+    if not isinstance(value, str):
+        return "--"
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone()
+    return parsed.strftime("%H:%M")
+
+
+def _short_day(value: object) -> str:
+    if not isinstance(value, str):
+        return "--"
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return value
+    return parsed.strftime("%a %m/%d")
 
 
 def health_api_payload(snapshot: SupervisorSnapshot, now: datetime | None = None) -> dict:
@@ -345,6 +702,7 @@ def run_display_server(
     port: int = 8080,
     snapshot_provider: Callable[[], SupervisorSnapshot] | None = None,
     load_summary_provider: Callable[[], LoadSummary | None] | None = None,
+    weather_provider: Callable[[], WeatherReport | None] | None = None,
     access_log_path: str | None = None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
@@ -399,15 +757,19 @@ def run_display_server(
                 return
             if urlparse(self.path).path == "/healthz":
                 load_summary = None
+                weather_report = None
             elif load_summary_provider is not None:
                 load_summary = load_summary_provider()
+                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path == "/weather" else None
             else:
                 load_summary = load_tracker.update(snapshot)
+                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path == "/weather" else None
             response = route_display_request(
                 snapshot,
                 self.path,
                 self.headers.get("User-Agent", ""),
                 load_summary=load_summary,
+                weather_report=weather_report,
             )
             status = response.status
             self.send_response(response.status.value)
@@ -934,9 +1296,9 @@ def _temperature_section(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Charge controller FET", f"{classic.fet_temp_c:.1f}C"))
         lines.append(_row("Charge controller PCB", f"{classic.pcb_temp_c:.1f}C"))
     if snapshot.ambient is None:
-        lines.append(_row("Sensor 0 ambient temp", "disconnected"))
+        lines.append(_row("Sensor 0 ambient", "disconnected"))
     else:
-        lines.append(_row("Sensor 0 ambient temp", f"{snapshot.ambient.temperature_c:.1f}C"))
+        lines.append(_row("Sensor 0 ambient", f"{snapshot.ambient.temperature_c:.1f}C"))
         if snapshot.ambient.humidity_percent is not None:
             lines.append(_row("Humidity", f"{snapshot.ambient.humidity_percent:.1f}%"))
     lines.append("</table>")

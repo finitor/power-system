@@ -16,6 +16,7 @@ from offgrid_power.classic import ClassicChargeSettings, ClassicTelemetry
 from offgrid_power.metrics import MetricRecorder, snapshot_metric_samples
 from offgrid_power.supervisor import SupervisorSnapshot
 from offgrid_power.web_display import LoadSummary
+from offgrid_power.weather import WeatherReport
 
 
 class MetricsTest(unittest.TestCase):
@@ -141,6 +142,76 @@ class MetricsTest(unittest.TestCase):
             self.assertEqual([row[0] for row in rows], ["classic.0", "classic.0", "classic.0"])
             self.assertEqual([row[1] for row in rows], ["startup", "hourly", "changed"])
             self.assertIn('"battery_current_limit_a":40.0', rows[-1][2])
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_metric_recorder_records_weather_snapshot_once_per_fetch(self) -> None:
+        path = REPO_ROOT / ".tmp-test-metrics.sqlite"
+        try:
+            recorder = MetricRecorder(str(path), snapshot_interval_s=60)
+            report = WeatherReport(
+                label="Cabin",
+                fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
+                data={
+                    "current": {
+                        "temperature_2m": 12.4,
+                        "apparent_temperature": 10.1,
+                        "relative_humidity_2m": 77,
+                        "cloud_cover": 65,
+                        "precipitation": 0.4,
+                        "rain": 0.4,
+                        "snowfall": 0.0,
+                        "wind_speed_10m": 18,
+                        "wind_gusts_10m": 32,
+                        "wind_direction_10m": 250,
+                        "weather_code": 61,
+                        "shortwave_radiation": 412.0,
+                        "direct_radiation": 280.0,
+                        "diffuse_radiation": 132.0,
+                        "direct_normal_irradiance": 515.0,
+                    },
+                    "daily": {
+                        "sunrise": ["2026-06-06T05:39"],
+                        "sunset": ["2026-06-06T21:37"],
+                        "moon_phase": [0.72],
+                    },
+                    "aurora": {
+                        "forecast_time": "2026-06-06T03:12:00Z",
+                        "probability_percent": 18,
+                    },
+                },
+            )
+
+            recorder.record_weather(report)
+            recorder.record_weather(report)
+            MetricRecorder(str(path), snapshot_interval_s=60).record_weather(report)
+
+            with sqlite3.connect(path) as connection:
+                rows = connection.execute(
+                    """
+                    SELECT captured_at, provider, location_label, temperature_c,
+                           cloud_cover_percent, shortwave_radiation_w_m2,
+                           direct_normal_irradiance_w_m2, sunrise, sunset,
+                           moon_phase, aurora_probability_percent,
+                           aurora_forecast_time, raw_json
+                    FROM weather_snapshots
+                    """
+                ).fetchall()
+
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0][0], "2026-06-06T14:30:00+00:00")
+            self.assertEqual(rows[0][1], "open-meteo")
+            self.assertEqual(rows[0][2], "Cabin")
+            self.assertEqual(rows[0][3], 12.4)
+            self.assertEqual(rows[0][4], 65.0)
+            self.assertEqual(rows[0][5], 412.0)
+            self.assertEqual(rows[0][6], 515.0)
+            self.assertEqual(rows[0][7], "2026-06-06T05:39")
+            self.assertEqual(rows[0][8], "2026-06-06T21:37")
+            self.assertEqual(rows[0][9], 0.72)
+            self.assertEqual(rows[0][10], 18.0)
+            self.assertEqual(rows[0][11], "2026-06-06T03:12:00Z")
+            self.assertIn('"shortwave_radiation":412.0', rows[0][12])
         finally:
             path.unlink(missing_ok=True)
 

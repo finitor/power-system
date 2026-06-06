@@ -122,4 +122,4 @@ Example shape:
 - Add long-poll support with `GET /api/v1/snapshot?wait=30`.
 - Add `/api/v1/status` with export status, row counts, and storage health.
 - Add `/api/v1/metrics/latest` after metric storage cadence and retention are corrected.
-- Add install/deploy checks that fail if more than one process is writing `data/metrics.sqlite`.
+- Add install/deploy checks that fail if more than one process is writing `/srv/offgrid/data/metrics.sqlite`.

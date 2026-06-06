@@ -11,6 +11,7 @@ import sqlite3
 from typing import Iterable
 
 from .supervisor import SupervisorSnapshot
+from .weather import WeatherReport
 from .web_display import LoadSummary, snapshot_api_payload
 
 
@@ -52,6 +53,7 @@ class MetricRecorder:
         self._last_snapshot_recorded_at: datetime | None = None
         self._last_settings_hash_by_device: dict[str, str] = {}
         self._last_settings_recorded_at_by_device: dict[str, datetime] = {}
+        self._last_weather_recorded_at: datetime | None = None
 
     def record_snapshot(
         self,
@@ -72,6 +74,21 @@ class MetricRecorder:
                 self._last_snapshot_recorded_at = snapshot.captured_at
             if snapshot.classic_settings is not None:
                 self._record_settings_if_needed(connection, "classic.0", snapshot.classic_settings)
+
+    def record_weather(self, report: WeatherReport | None) -> None:
+        if self.path is None or report is None or report.stale or not report.data:
+            return
+        if self._last_weather_recorded_at == report.fetched_at:
+            return
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.path, timeout=60) as connection:
+            connection.execute("PRAGMA busy_timeout = 60000")
+            if not self._initialized:
+                initialize_metrics_db(connection)
+                self._initialized = True
+            record_weather_snapshot(connection, report)
+            self._last_weather_recorded_at = report.fetched_at
 
     def _should_record_snapshot(self, captured_at: datetime) -> bool:
         if self._last_snapshot_recorded_at is None:
@@ -143,6 +160,44 @@ def initialize_metrics_db(connection: sqlite3.Connection) -> None:
             reason TEXT NOT NULL,
             settings_json TEXT NOT NULL
         )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS weather_snapshots (
+            id INTEGER PRIMARY KEY,
+            captured_at TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            location_label TEXT NOT NULL,
+            temperature_c REAL,
+            apparent_temperature_c REAL,
+            relative_humidity_percent REAL,
+            cloud_cover_percent REAL,
+            precipitation_mm REAL,
+            rain_mm REAL,
+            snowfall_cm REAL,
+            wind_speed_kmh REAL,
+            wind_gust_kmh REAL,
+            wind_direction_deg REAL,
+            weather_code INTEGER,
+            shortwave_radiation_w_m2 REAL,
+            direct_radiation_w_m2 REAL,
+            diffuse_radiation_w_m2 REAL,
+            direct_normal_irradiance_w_m2 REAL,
+            sunrise TEXT,
+            sunset TEXT,
+            moon_phase REAL,
+            aurora_probability_percent REAL,
+            aurora_forecast_time TEXT,
+            raw_json TEXT NOT NULL
+        )
+        """
+    )
+    _ensure_weather_columns(connection)
+    connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS weather_snapshots_time_idx
+        ON weather_snapshots (captured_at)
         """
     )
     connection.execute(
@@ -268,6 +323,46 @@ def create_export_status_views(connection: sqlite3.Connection) -> None:
           ON batches.batch_id = records.batch_id
         """
     )
+    connection.execute(
+        """
+        CREATE VIEW IF NOT EXISTS weather_snapshots_export_status AS
+        SELECT
+            weather.id,
+            weather.captured_at,
+            weather.provider,
+            weather.location_label,
+            weather.temperature_c,
+            weather.apparent_temperature_c,
+            weather.relative_humidity_percent,
+            weather.cloud_cover_percent,
+            weather.precipitation_mm,
+            weather.rain_mm,
+            weather.snowfall_cm,
+            weather.wind_speed_kmh,
+            weather.wind_gust_kmh,
+            weather.wind_direction_deg,
+            weather.weather_code,
+            weather.shortwave_radiation_w_m2,
+            weather.direct_radiation_w_m2,
+            weather.diffuse_radiation_w_m2,
+            weather.direct_normal_irradiance_w_m2,
+            weather.sunrise,
+            weather.sunset,
+            weather.moon_phase,
+            weather.aurora_probability_percent,
+            weather.aurora_forecast_time,
+            records.batch_id AS export_batch_id,
+            batches.uploaded_at AS exported_at,
+            batches.object_key AS export_object_key,
+            weather.raw_json
+        FROM weather_snapshots weather
+        LEFT JOIN export_batch_records records
+          ON records.record_type = 'weather_snapshot'
+         AND records.record_id = weather.id
+        LEFT JOIN export_batches batches
+          ON batches.batch_id = records.batch_id
+        """
+    )
 
 
 def record_supervisor_snapshot(
@@ -308,6 +403,63 @@ def record_device_settings_snapshot(
     )
 
 
+def record_weather_snapshot(connection: sqlite3.Connection, report: WeatherReport) -> None:
+    current = report.data.get("current") or {}
+    daily = report.data.get("daily") or {}
+    aurora = report.data.get("aurora") or {}
+    existing = connection.execute(
+        """
+        SELECT 1
+        FROM weather_snapshots
+        WHERE captured_at = ?
+          AND provider = ?
+          AND location_label = ?
+        LIMIT 1
+        """,
+        (report.fetched_at.isoformat(), "open-meteo", report.label),
+    ).fetchone()
+    if existing is not None:
+        return
+    connection.execute(
+        """
+        INSERT INTO weather_snapshots (
+            captured_at, provider, location_label, temperature_c, apparent_temperature_c,
+            relative_humidity_percent, cloud_cover_percent, precipitation_mm, rain_mm,
+            snowfall_cm, wind_speed_kmh, wind_gust_kmh, wind_direction_deg, weather_code,
+            shortwave_radiation_w_m2, direct_radiation_w_m2, diffuse_radiation_w_m2,
+            direct_normal_irradiance_w_m2, sunrise, sunset, moon_phase,
+            aurora_probability_percent, aurora_forecast_time, raw_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            report.fetched_at.isoformat(),
+            "open-meteo",
+            report.label,
+            _number(current.get("temperature_2m")),
+            _number(current.get("apparent_temperature")),
+            _number(current.get("relative_humidity_2m")),
+            _number(current.get("cloud_cover")),
+            _number(current.get("precipitation")),
+            _number(current.get("rain")),
+            _number(current.get("snowfall")),
+            _number(current.get("wind_speed_10m")),
+            _number(current.get("wind_gusts_10m")),
+            _number(current.get("wind_direction_10m")),
+            _integer(current.get("weather_code")),
+            _number(current.get("shortwave_radiation")),
+            _number(current.get("direct_radiation")),
+            _number(current.get("diffuse_radiation")),
+            _number(current.get("direct_normal_irradiance")),
+            _first(daily.get("sunrise")),
+            _first(daily.get("sunset")),
+            _number(_first(daily.get("moon_phase"))),
+            _number(aurora.get("probability_percent") if isinstance(aurora, dict) else None),
+            aurora.get("forecast_time") if isinstance(aurora, dict) else None,
+            json.dumps(report.data, sort_keys=True, separators=(",", ":")),
+        ),
+    )
+
+
 def classic_settings_payload(settings) -> dict:
     return {
         "battery_current_limit_a": settings.battery_current_limit_a,
@@ -322,6 +474,39 @@ def classic_settings_payload(settings) -> dict:
         "mppt_mode_raw": settings.mppt_mode_raw,
         "aux_function_word": settings.aux_function_word,
     }
+
+
+def _number(value) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _integer(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _first(values):
+    if isinstance(values, list) and values:
+        return values[0]
+    return None
+
+
+def _ensure_weather_columns(connection: sqlite3.Connection) -> None:
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(weather_snapshots)")}
+    for name, definition in [
+        ("sunrise", "TEXT"),
+        ("sunset", "TEXT"),
+        ("moon_phase", "REAL"),
+        ("aurora_probability_percent", "REAL"),
+        ("aurora_forecast_time", "TEXT"),
+    ]:
+        if name not in columns:
+            connection.execute(f"ALTER TABLE weather_snapshots ADD COLUMN {name} {definition}")
 
 
 def _ensure_metric_export_columns(connection: sqlite3.Connection) -> None:

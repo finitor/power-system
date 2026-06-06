@@ -269,6 +269,31 @@ def _unexported_records(connection: sqlite3.Connection, limit: int) -> list[dict
         }
         for row in settings_rows
     )
+    remaining = limit - len(records)
+    if remaining <= 0:
+        return records
+    weather_rows = connection.execute(
+        """
+        SELECT weather.id, weather.captured_at, weather.raw_json
+        FROM weather_snapshots weather
+        LEFT JOIN export_batch_records records
+          ON records.record_type = 'weather_snapshot'
+         AND records.record_id = weather.id
+        WHERE records.record_id IS NULL
+        ORDER BY weather.id
+        LIMIT ?
+        """,
+        (remaining,),
+    ).fetchall()
+    records.extend(
+        {
+            "record_type": "weather_snapshot",
+            "id": row[0],
+            "captured_at": row[1],
+            "payload_json": row[2],
+        }
+        for row in weather_rows
+    )
     return records
 
 
@@ -282,6 +307,9 @@ def _record_to_payload(record: dict, site_id: str) -> dict:
     }
     if record["record_type"] == "supervisor_snapshot":
         payload["snapshot"] = _parse_json_object(record["payload_json"])
+        return payload
+    if record["record_type"] == "weather_snapshot":
+        payload["weather"] = _parse_json_object(record["payload_json"])
         return payload
     payload["device_id"] = record["device_id"]
     payload["reason"] = record["reason"]

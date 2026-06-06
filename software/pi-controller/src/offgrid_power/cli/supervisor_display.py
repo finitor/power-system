@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timedelta
+import os
 from pathlib import Path
 import sys
 from threading import Thread
@@ -23,6 +24,7 @@ from offgrid_power.load import LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
+from offgrid_power.weather import WeatherConfig, WeatherService
 from offgrid_power.web_display import LoadSampleBuffer, LoadTracker, SnapshotCache, run_display_server
 
 
@@ -35,6 +37,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--web-display", action="store_true", help="Serve the same supervisor snapshots over HTTP")
     parser.add_argument("--web-host", default="0.0.0.0", help="HTTP display bind address")
     parser.add_argument("--web-port", type=int, default=8080, help="HTTP display port")
+    parser.add_argument(
+        "--weather",
+        action="store_true",
+        default=_env_bool("WEATHER_ENABLED", False),
+        help="Enable the Kindle weather page using Open-Meteo",
+    )
+    parser.add_argument("--weather-latitude", type=float, default=_env_float("WEATHER_LATITUDE", 0.0))
+    parser.add_argument("--weather-longitude", type=float, default=_env_float("WEATHER_LONGITUDE", 0.0))
+    parser.add_argument("--weather-label", default=os.getenv("WEATHER_LABEL", "Cabin"))
+    parser.add_argument(
+        "--weather-refresh-minutes",
+        type=float,
+        default=_env_float("WEATHER_REFRESH_MINUTES", 30.0),
+    )
+    parser.add_argument(
+        "--weather-cache-path",
+        default=os.getenv("WEATHER_CACHE_PATH", "/srv/offgrid/data/weather-cache.json"),
+    )
     parser.add_argument(
         "--web-access-log-path",
         default="data/web-display-access.log",
@@ -210,8 +230,9 @@ def main() -> int:
         settings_interval_s=args.metrics_settings_interval,
     )
     snapshot_cache = SnapshotCache()
+    weather_service = build_weather_service(args)
     if args.web_display:
-        start_web_display(args, supervisor, snapshot_cache)
+        start_web_display(args, supervisor, snapshot_cache, weather_service)
     previous_poll_render: str | None = None
 
     try:
@@ -221,6 +242,7 @@ def main() -> int:
             load_summary = load_summary_tracker.update(snapshot)
             snapshot_cache.set(snapshot, load_summary)
             record_metrics(metric_recorder, snapshot, load_summary)
+            record_weather_metrics(metric_recorder, weather_service)
             append_ambient_log(args.ambient_log_path, snapshot)
             next_read = time.monotonic() + args.interval
             if args.no_terminal_display:
@@ -254,7 +276,12 @@ def main() -> int:
         return 0
 
 
-def start_web_display(args: argparse.Namespace, supervisor: Supervisor, snapshot_cache: SnapshotCache) -> None:
+def start_web_display(
+    args: argparse.Namespace,
+    supervisor: Supervisor,
+    snapshot_cache: SnapshotCache,
+    weather_service: WeatherService | None = None,
+) -> None:
     thread = Thread(
         target=run_display_server,
         kwargs={
@@ -263,6 +290,7 @@ def start_web_display(args: argparse.Namespace, supervisor: Supervisor, snapshot
             "port": args.web_port,
             "snapshot_provider": snapshot_cache.get,
             "load_summary_provider": snapshot_cache.get_load_summary,
+            "weather_provider": None if weather_service is None else weather_service.get,
             "access_log_path": args.web_access_log_path or None,
         },
         daemon=True,
@@ -270,11 +298,54 @@ def start_web_display(args: argparse.Namespace, supervisor: Supervisor, snapshot
     thread.start()
 
 
+def build_weather_service(args: argparse.Namespace) -> WeatherService | None:
+    if not args.weather:
+        return None
+    if args.weather_latitude == 0.0 and args.weather_longitude == 0.0:
+        print("Weather disabled: latitude/longitude not configured", file=sys.stderr)
+        return None
+    return WeatherService(
+        WeatherConfig(
+            latitude=args.weather_latitude,
+            longitude=args.weather_longitude,
+            label=args.weather_label,
+            refresh=timedelta(minutes=args.weather_refresh_minutes),
+            cache_path=args.weather_cache_path or None,
+        )
+    )
+
+
 def record_metrics(metric_recorder: MetricRecorder, snapshot, load_summary) -> None:
     try:
         metric_recorder.record_snapshot(snapshot, load_summary=load_summary)
     except Exception as exc:  # noqa: BLE001 - metrics are advisory to the live display.
         print(f"Metrics record failed: {exc}", file=sys.stderr)
+
+
+def record_weather_metrics(metric_recorder: MetricRecorder, weather_service: WeatherService | None) -> None:
+    if weather_service is None:
+        return
+    try:
+        metric_recorder.record_weather(weather_service.get())
+    except Exception as exc:  # noqa: BLE001 - weather logging should not affect live supervision.
+        print(f"Weather record failed: {exc}", file=sys.stderr)
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
 
 
 if __name__ == "__main__":

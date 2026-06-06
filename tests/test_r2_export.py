@@ -23,13 +23,14 @@ class R2ExportTest(unittest.TestCase):
             initialize_metrics_db(connection)
             self._insert_snapshot(connection, 1)
             self._insert_settings(connection, 1)
+            self._insert_weather(connection, 1)
 
             batch = build_export_batch(connection, site_id="cabin", prefix="metrics", limit=10)
 
             self.assertIsNotNone(batch)
             assert batch is not None
-            self.assertEqual(batch.row_count, 2)
-            self.assertEqual(batch.records, (("supervisor_snapshot", 1), ("device_settings", 1)))
+            self.assertEqual(batch.row_count, 3)
+            self.assertEqual(batch.records, (("supervisor_snapshot", 1), ("device_settings", 1), ("weather_snapshot", 1)))
             self.assertRegex(
                 batch.object_key,
                 r"^metrics/20\d{6}T\d{6}Z-[0-9a-f]{32}\.ndjson\.gz$",
@@ -43,6 +44,10 @@ class R2ExportTest(unittest.TestCase):
             self.assertEqual(records[1]["device_id"], "classic.0")
             self.assertEqual(records[1]["reason"], "startup")
             self.assertEqual(records[1]["settings"]["float_voltage_v"], 53.6)
+            self.assertEqual(records[2]["record_type"], "weather_snapshot")
+            self.assertEqual(records[2]["record_id"], "weather_snapshot:1")
+            self.assertEqual(records[2]["weather"]["current"]["cloud_cover"], 65)
+            self.assertEqual(records[2]["weather"]["current"]["shortwave_radiation"], 412)
 
     def test_mark_batch_exported_records_ledger_rows(self) -> None:
         with sqlite3.connect(":memory:") as connection:
@@ -138,6 +143,37 @@ class R2ExportTest(unittest.TestCase):
             ) VALUES (?, ?, ?, ?, ?, ?)
             """,
             (row_id, captured_at, "classic.0", "hash-1", "startup", json.dumps(settings, sort_keys=True)),
+        )
+
+    def _insert_weather(self, connection: sqlite3.Connection, row_id: int) -> None:
+        captured_at = datetime(2026, 6, 5, 12, row_id, tzinfo=timezone.utc).isoformat()
+        payload = {
+            "current": {
+                "temperature_2m": 12.4,
+                "cloud_cover": 65,
+                "shortwave_radiation": 412,
+                "direct_normal_irradiance": 515,
+            }
+        }
+        connection.execute(
+            """
+            INSERT INTO weather_snapshots (
+                id, captured_at, provider, location_label, temperature_c,
+                cloud_cover_percent, shortwave_radiation_w_m2,
+                direct_normal_irradiance_w_m2, raw_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row_id,
+                captured_at,
+                "open-meteo",
+                "Cabin",
+                12.4,
+                65,
+                412,
+                515,
+                json.dumps(payload, sort_keys=True),
+            ),
         )
 
 

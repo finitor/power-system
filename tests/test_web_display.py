@@ -12,6 +12,7 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.canbus import CanFrame, PylonCanSnapshot, PylonStatus, decode_pylon_snapshot
+from offgrid_power.ambient import AmbientTelemetry
 from offgrid_power.classic import ClassicTelemetry
 from offgrid_power.supervisor import Supervisor, SupervisorSnapshot
 from offgrid_power.web_display import (
@@ -28,10 +29,12 @@ from offgrid_power.web_display import (
     load_today_text,
     is_kindle_user_agent,
     render_kindle_snapshot,
+    render_kindle_weather,
     render_snapshot_unavailable,
     route_display_request,
     snapshot_api_payload,
 )
+from offgrid_power.weather import WeatherReport
 
 
 class WebDisplayTest(unittest.TestCase):
@@ -76,12 +79,17 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("-webkit-text-size-adjust:100%", html)
         self.assertIn("td{font-size:17px;line-height:1.18;", html)
         self.assertIn(".summary-table .soc-cell{font-size:36px;line-height:1;text-align:left;vertical-align:middle;width:32%;}", html)
-        self.assertIn(".summary-table .meta-cell{font-size:17px;line-height:1.15;text-align:left;width:68%;}", html)
+        self.assertIn(".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}", html)
+        self.assertIn(".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}", html)
+        self.assertIn(".top-link{font-size:17px;line-height:2.1;", html)
+        self.assertNotIn("float:right", html)
         self.assertNotIn("<h1>", html)
         self.assertIn('<table class="summary-table">', html)
-        self.assertIn('<td class="soc-cell" rowspan="2">SOC 97%</td>', html)
-        self.assertIn('<td class="meta-cell">Updated:', html)
-        self.assertIn('<td class="meta-cell">Status: OK</td>', html)
+        self.assertIn('<td class="soc-cell">SOC 97%</td>', html)
+        self.assertNotIn('rowspan="2"', html)
+        self.assertIn('Updated:', html)
+        self.assertIn('<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td>', html)
+        self.assertNotIn("Updated: 2026-", html)
         self.assertNotIn("SOC: 97%  Status: OK", html)
         self.assertNotIn("Refreshed:", html)
         self.assertNotIn('class="updated"', html)
@@ -106,6 +114,138 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("<h2>Temperatures</h2>", html)
         self.assertIn("<td>Battery cells</td><td>15.9-16.9C</td>", html)
         self.assertNotIn("<script", html)
+
+    def test_renders_kindle_weather_html(self) -> None:
+        report = WeatherReport(
+            label="cabin",
+            fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
+            data={
+                "current": {
+                    "temperature_2m": 12.4,
+                    "apparent_temperature": 10.1,
+                    "relative_humidity_2m": 77,
+                    "cloud_cover": 65,
+                    "weather_code": 61,
+                    "wind_speed_10m": 18,
+                    "wind_gusts_10m": 32,
+                    "wind_direction_10m": 250,
+                    "precipitation": 0.4,
+                    "rain": 0.4,
+                    "snowfall": 0,
+                    "shortwave_radiation": 412,
+                    "direct_radiation": 280,
+                    "diffuse_radiation": 132,
+                    "direct_normal_irradiance": 515,
+                },
+                "hourly": {
+                    "time": ["2026-06-06T10:00", "2026-06-06T11:00"],
+                    "temperature_2m": [12.4, 13.1],
+                    "precipitation_probability": [60, 40],
+                    "weather_code": [61, 3],
+                    "wind_speed_10m": [18, 16],
+                },
+                "daily": {
+                    "time": ["2026-06-06", "2026-06-07"],
+                    "weather_code": [61, 3],
+                    "temperature_2m_min": [8.2, 7.5],
+                    "temperature_2m_max": [14.8, 15.2],
+                    "precipitation_probability_max": [70, 20],
+                    "precipitation_sum": [3.4, 0.2],
+                    "sunrise": ["2026-06-06T05:39"],
+                    "sunset": ["2026-06-06T21:37"],
+                    "moon_phase": [0.72],
+                },
+                "aurora": {
+                    "forecast_time": "2026-06-06T03:12:00Z",
+                    "probability_percent": 18,
+                    "tonight": {
+                        "likelihood": "possible",
+                        "peak_kp": 5.33,
+                        "peak_time": "2026-06-07T03:00:00-04:00",
+                        "noaa_scale": "G1",
+                    },
+                },
+            },
+        )
+
+        html = render_kindle_weather(report)
+
+        self.assertIn('<meta http-equiv="refresh" content="60">', html)
+        self.assertIn("cabin: rain", html)
+        self.assertIn('<td class="button-cell"><a class="top-link" href="/kindle">Power</a></td>', html)
+        self.assertNotIn("Updated: 2026-", html)
+        self.assertIn("<h2>Current</h2>", html)
+        self.assertIn("<td>Wind</td><td>18km/h  32km/h gust  W</td>", html)
+        self.assertIn("<h2>Solar Irradiance</h2>", html)
+        self.assertIn("<td>Global Horizontal (GHI)</td><td>412W/m2</td>", html)
+        self.assertIn("<td>Direct Radiation</td><td>280W/m2</td>", html)
+        self.assertIn("<td>Diffuse Radiation</td><td>132W/m2</td>", html)
+        self.assertIn("<td>Direct Normal (DNI)</td><td>515W/m2</td>", html)
+        self.assertIn("<h2>Next Hours</h2>", html)
+        self.assertIn("<td>10:00</td><td>rain  12.4C  60% precip  18km/h</td>", html)
+        self.assertIn("<h2>Forecast</h2>", html)
+        self.assertIn("<td>Sat 06/06</td><td>rain  8.2C-14.8C  70% precip  3.4mm</td>", html)
+        self.assertLess(html.index("<h2>Forecast</h2>"), html.index("<h2>Solar Irradiance</h2>"))
+        self.assertIn("<h2>Astronomy</h2>", html)
+        self.assertIn("<td>Sun</td><td>rise 05:39  set 21:37</td>", html)
+        self.assertNotIn("<td>Sunrise</td>", html)
+        self.assertNotIn("<td>Sunset</td>", html)
+        self.assertIn("<td>Moon</td><td>last quarter (0.72)</td>", html)
+        self.assertNotIn("<td>Moon Phase</td>", html)
+        self.assertIn("<td>Aurora</td><td>now 18% valid", html)
+        self.assertIn("<br>tonight possible peak Kp 5.3 G1 at 03:00</td>", html)
+        self.assertNotIn("Refreshes every 60 seconds.", html)
+        self.assertNotIn("<script", html)
+
+    def test_renders_weather_unavailable_with_retry(self) -> None:
+        report = WeatherReport(
+            label="cabin",
+            fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
+            data={},
+            stale=True,
+            error="network unavailable",
+        )
+
+        html = render_kindle_weather(report)
+
+        self.assertIn("Weather unavailable", html)
+        self.assertIn("network unavailable", html)
+        self.assertIn('<meta http-equiv="refresh" content="60">', html)
+        self.assertIn('<td class="button-cell"><a class="top-link" href="/kindle">Power</a></td>', html)
+
+    def test_hides_weather_details_after_stale_cutoff(self) -> None:
+        fetched_at = datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc)
+        report = WeatherReport(
+            label="cabin",
+            fetched_at=fetched_at,
+            data={"current": {"temperature_2m": 12.4}},
+            stale=True,
+            error="network unavailable",
+        )
+
+        html = render_kindle_weather(report, now=fetched_at + timedelta(hours=1, minutes=1))
+
+        self.assertIn("Weather service has been unreachable since", html)
+        self.assertIn("network unavailable", html)
+        self.assertNotIn("<h2>Current</h2>", html)
+        self.assertNotIn("12.4C", html)
+
+    def test_renders_short_ambient_sensor_label(self) -> None:
+        captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+        snapshot = SupervisorSnapshot(
+            captured_at=captured_at,
+            classic=None,
+            classic_settings=None,
+            battery=None,
+            battery_can_health=None,
+            ambient=AmbientTelemetry(temperature_c=18.2, humidity_percent=None, captured_at=captured_at),
+            errors=[],
+        )
+
+        html = render_kindle_snapshot(snapshot)
+
+        self.assertIn("<td>Sensor 0 ambient</td><td>18.2C</td>", html)
+        self.assertNotIn("Sensor 0 ambient temp", html)
 
     def test_renders_charge_controller_zero_rows_in_kindle_html(self) -> None:
         captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
