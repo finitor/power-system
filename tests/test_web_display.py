@@ -60,6 +60,7 @@ class WebDisplayTest(unittest.TestCase):
             ),
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 
@@ -241,6 +242,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=AmbientTelemetry(temperature_c=18.2, humidity_percent=None, captured_at=captured_at),
+            magnum=None,
             errors=[],
         )
 
@@ -280,6 +282,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 
@@ -329,6 +332,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 
@@ -352,6 +356,7 @@ class WebDisplayTest(unittest.TestCase):
             ),
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 
@@ -367,6 +372,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=["bad <device>"],
         )
 
@@ -382,6 +388,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
             status_conditions=["Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A"],
         )
@@ -461,6 +468,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=snapshot.battery,
             battery_can_health=snapshot.battery_can_health,
             ambient=snapshot.ambient,
+            magnum=snapshot.magnum,
             errors=snapshot.errors,
         )
 
@@ -478,6 +486,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=["Classic read failed: timeout"],
         )
 
@@ -497,6 +506,7 @@ class WebDisplayTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
             status_conditions=["Battery cell delta high"],
         )
@@ -522,6 +532,7 @@ class WebDisplayTest(unittest.TestCase):
             ),
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 
@@ -569,6 +580,7 @@ class WebDisplayTest(unittest.TestCase):
             ),
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 
@@ -825,6 +837,7 @@ class WebDisplayTest(unittest.TestCase):
             ),
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 

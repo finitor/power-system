@@ -391,6 +391,7 @@ class AmbientSupervisorTest(unittest.TestCase):
                 ),
             ),
             ambient=snapshot.ambient,
+            magnum=snapshot.magnum,
             errors=["CAN adapter is in DFU/bootloader mode: DFU in FS Mode serial=208634B94B45"],
         )
 
@@ -417,6 +418,7 @@ class AmbientSupervisorTest(unittest.TestCase):
                 )
             ),
             ambient=None,
+            magnum=snapshot.magnum,
             errors=[],
         )
 
@@ -549,6 +551,7 @@ class AmbientSupervisorTest(unittest.TestCase):
             battery=FakeBatteryCanClient().read(),
             battery_can_health=None,
             ambient=None,
+            magnum=snapshot.magnum,
             errors=[],
         )
 
@@ -609,6 +612,7 @@ class AmbientSupervisorTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=snapshot.magnum,
             errors=[],
         )
 
@@ -650,6 +654,7 @@ class AmbientSupervisorTest(unittest.TestCase):
             battery=None,
             battery_can_health=None,
             ambient=None,
+            magnum=snapshot.magnum,
             errors=[],
         )
 

@@ -21,7 +21,7 @@ from .weather import WeatherReport, weather_code_text
 
 KINDLE_REFRESH_SECONDS = 60
 WEATHER_STALE_AFTER = timedelta(hours=1)
-MIDNIGHT_SOC_UNAVAILABLE = "00:00:00h SOC unavailable"
+MIDNIGHT_SOC_UNAVAILABLE = "unavailable, midnight SOC was not logged"
 BATTERY_IDLE_CURRENT_A = 0.5
 ROLLING_LOAD_WINDOW = timedelta(hours=3)
 

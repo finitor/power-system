@@ -29,6 +29,7 @@ class MetricsTest(unittest.TestCase):
             battery=snapshot.battery,
             battery_can_health=snapshot.battery_can_health,
             ambient=snapshot.ambient,
+            magnum=snapshot.magnum,
             errors=snapshot.errors,
             status_conditions=["Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A"],
         )
@@ -314,6 +315,7 @@ class MetricsTest(unittest.TestCase):
             ),
             battery_can_health=None,
             ambient=None,
+            magnum=None,
             errors=[],
         )
 
