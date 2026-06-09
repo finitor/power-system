@@ -6,7 +6,7 @@ The inverter/charger appears to be a Magnum MS4448PAE-class unit with an ME-RC50
 
 ## Current Hardware Status
 
-Dedicated pilot adapter on order, expected 2026-06-05: Waveshare USB TO RS485/422 Industrial Grade Isolated Converter, with onboard original FT232RL and SP485EEN, multiple protection, wall-mount support, and rail-mount support.
+Dedicated pilot adapter received 2026-06-09: DSD TECH SH-U11H USB-RS485/422 industrial isolated converter. Uses a Prolific PL2303 chip; enumerates as `/dev/ttyUSB1` on blueberry (ttyUSB0 is the existing CH340-based battery RS485 adapter).
 
 Use this adapter only for the Magnum network pilot. Do not share it with the battery RS485 fallback bus.
 
