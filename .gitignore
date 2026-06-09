@@ -38,3 +38,6 @@ data/local/
 # Generated exports
 *.bak
 *.tmp
+
+# AI assistant memory
+.ai/
