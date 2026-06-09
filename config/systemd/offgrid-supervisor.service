@@ -11,6 +11,9 @@ WorkingDirectory=/home/@OFFGRID_USER@/power-system
 Environment=CLASSIC_HOST=192.168.0.10
 Environment=PYTHONPATH=/home/@OFFGRID_USER@/power-system/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
+# Ensure data and log directories exist; creates them on the SD card if /srv/offgrid is not mounted.
+ExecStartPre=+/bin/mkdir -p /srv/offgrid/data /srv/offgrid/logs
+ExecStartPre=+/bin/chown -R @OFFGRID_USER@:@OFFGRID_USER@ /srv/offgrid
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up
