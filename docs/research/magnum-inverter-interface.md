@@ -6,7 +6,7 @@ The inverter/charger appears to be a Magnum MS4448PAE-class unit with an ME-RC50
 
 ## Current Hardware Status
 
-Dedicated pilot adapter received 2026-06-09: DSD TECH SH-U11H USB-RS485/422 industrial isolated converter. Uses a Prolific PL2303 chip; enumerates as `/dev/ttyUSB1` on blueberry (ttyUSB0 is the existing CH340-based battery RS485 adapter).
+Dedicated pilot adapter received 2026-06-09: DSD TECH SH-U11H USB-RS485/422 industrial isolated converter. Uses a Prolific PL2303 chip; enumerates as `/dev/ttyUSB1` on blueberry.
 
 Use this adapter only for the Magnum network pilot. Do not share it with the battery RS485 fallback bus.
 

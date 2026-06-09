@@ -1,13 +1,10 @@
 # Disable USB autosuspend for off-grid supervisor peripherals.
 # Autosuspend causes the gs_usb driver to fail URB re-submission (-EPERM)
 # after the CAN adapter suspends, breaking frame reception until a manual
-# interface reset. Pin all three adapters to always-on.
+# interface reset. Pin both adapters to always-on.
 
 # DSD TECH SH-C31G — CANable 2.0 / gs_usb CAN adapter
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", ATTR{idProduct}=="606f", ATTR{power/control}="on"
 
-# QinHeng CH340 — battery RS485 adapter (ttyUSB0)
-ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", ATTR{power/control}="on"
-
-# Prolific PL2303 — DSD TECH SH-U11H Magnum RS485 adapter (ttyUSB1)
+# Prolific PL2303 — DSD TECH SH-U11H Magnum RS485 adapter
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="23a3", ATTR{power/control}="on"
