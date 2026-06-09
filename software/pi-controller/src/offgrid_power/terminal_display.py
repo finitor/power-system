@@ -12,7 +12,7 @@ from .supervisor import SupervisorSnapshot
 
 if TYPE_CHECKING:
     from .classic import ClassicChargeSettings
-    from .web_display import LoadSummary
+    from .load import LoadSummary
 
 CHANGED_DIGIT_START = "\033[93m"
 CHANGED_DIGIT_END = "\033[0m"

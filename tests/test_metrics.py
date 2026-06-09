@@ -15,7 +15,7 @@ from offgrid_power.canbus import CanFrame, decode_pylon_snapshot
 from offgrid_power.classic import ClassicChargeSettings, ClassicTelemetry
 from offgrid_power.metrics import MetricRecorder, snapshot_metric_samples
 from offgrid_power.supervisor import SupervisorSnapshot
-from offgrid_power.web_display import LoadSummary
+from offgrid_power.load import LoadSummary
 from offgrid_power.weather import WeatherReport
 
 

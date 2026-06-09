@@ -12,7 +12,8 @@ from typing import Iterable
 
 from .supervisor import SupervisorSnapshot
 from .weather import WeatherReport
-from .web_display import LoadSummary, snapshot_api_payload
+from .load import LoadSummary
+from .web_display import snapshot_api_payload
 
 
 @dataclass(frozen=True)

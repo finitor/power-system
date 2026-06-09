@@ -31,7 +31,8 @@ from offgrid_power.metrics import MetricRecorder
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
 from offgrid_power.weather import WeatherConfig, WeatherService
-from offgrid_power.web_display import LoadSampleBuffer, LoadTracker, SnapshotCache, run_display_server
+from offgrid_power.load import LoadSampleBuffer, LoadTracker
+from offgrid_power.web_display import SnapshotCache, run_display_server
 
 
 def parse_args() -> argparse.Namespace:
