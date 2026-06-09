@@ -1,7 +1,8 @@
 [Unit]
 Description=Off-grid power terminal console
 After=network-online.target offgrid-supervisor.service
-Wants=network-online.target offgrid-supervisor.service
+Wants=network-online.target
+BindsTo=offgrid-supervisor.service
 
 [Service]
 Type=simple
