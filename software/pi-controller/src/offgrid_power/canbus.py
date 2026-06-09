@@ -120,9 +120,23 @@ class PylonRequestFlags:
 class PylonExtendedMeasurements:
     min_cell_voltage_v: float | None = None
     max_cell_voltage_v: float | None = None
+    min_cell_pack_number: int | None = None
+    min_cell_number: int | None = None
+    max_cell_pack_number: int | None = None
+    max_cell_number: int | None = None
     min_cell_temperature_c: float | None = None
     max_cell_temperature_c: float | None = None
     installed_capacity_ah: float | None = None
+
+    def min_cell_location_text(self) -> str | None:
+        if self.min_cell_pack_number is None or self.min_cell_number is None:
+            return None
+        return f"{self.min_cell_pack_number:02d}:{self.min_cell_number:02d}"
+
+    def max_cell_location_text(self) -> str | None:
+        if self.max_cell_pack_number is None or self.max_cell_number is None:
+            return None
+        return f"{self.max_cell_pack_number:02d}:{self.max_cell_number:02d}"
 
 
 @dataclass(frozen=True)
@@ -186,9 +200,13 @@ class PylonCanSnapshot:
             extended = self.extended_measurements
             parts = []
             if extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
-                parts.append(
-                    f"cell voltage {extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f} V"
-                )
+                value = f"cell voltage {extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f} V"
+                if extended.min_cell_location_text() is not None or extended.max_cell_location_text() is not None:
+                    value += (
+                        f" (min {extended.min_cell_location_text() or 'unknown'}, "
+                        f"max {extended.max_cell_location_text() or 'unknown'})"
+                    )
+                parts.append(value)
             if extended.min_cell_temperature_c is not None and extended.max_cell_temperature_c is not None:
                 parts.append(
                     f"cell temp {extended.min_cell_temperature_c:.1f}-{extended.max_cell_temperature_c:.1f} C"
@@ -199,7 +217,7 @@ class PylonCanSnapshot:
                 lines.append(f"Extended candidates: {', '.join(parts)}")
 
         raw_frames = self.raw_frames or {}
-        known_ids = {0x351, 0x355, 0x356, 0x359, 0x35C, 0x35E, 0x373, 0x379}
+        known_ids = {0x351, 0x355, 0x356, 0x359, 0x35C, 0x35E, 0x373, 0x374, 0x375, 0x379}
         unknown_ids = sorted(frame_id for frame_id in raw_frames if frame_id not in known_ids)
         if unknown_ids:
             rendered_ids = ", ".join(f"0x{frame_id:03X}" for frame_id in unknown_ids)
@@ -477,16 +495,32 @@ def _decode_extended_measurements(raw_frames: dict[int, bytes]) -> PylonExtended
     if data_379 is not None and len(data_379) >= 2:
         installed_capacity_ah = _u16(data_379, 0)
 
+    min_cell_location = _decode_cell_location(raw_frames.get(0x374))
+    max_cell_location = _decode_cell_location(raw_frames.get(0x375))
+
     if cell_voltage_v is None and cell_temperature_c is None and installed_capacity_ah is None:
         return None
 
     return PylonExtendedMeasurements(
         min_cell_voltage_v=cell_voltage_v[0] if cell_voltage_v is not None else None,
         max_cell_voltage_v=cell_voltage_v[1] if cell_voltage_v is not None else None,
+        min_cell_pack_number=min_cell_location[0] if min_cell_location is not None else None,
+        min_cell_number=min_cell_location[1] if min_cell_location is not None else None,
+        max_cell_pack_number=max_cell_location[0] if max_cell_location is not None else None,
+        max_cell_number=max_cell_location[1] if max_cell_location is not None else None,
         min_cell_temperature_c=cell_temperature_c[0] if cell_temperature_c is not None else None,
         max_cell_temperature_c=cell_temperature_c[1] if cell_temperature_c is not None else None,
         installed_capacity_ah=installed_capacity_ah,
     )
+
+
+def _decode_cell_location(data: bytes | None) -> tuple[int, int] | None:
+    if data is None or len(data) < 4:
+        return None
+    text = bytes(data[:4]).decode("ascii", errors="ignore")
+    if len(text) != 4 or not text.isdigit():
+        return None
+    return int(text[:2]), int(text[2:])
 
 
 def _u16(data: bytes, offset: int) -> int:

@@ -196,6 +196,8 @@ class PylonCanDecodeTest(unittest.TestCase):
                 CanFrame(0x35E, bytes.fromhex("50594C4F4E202020")),
                 CanFrame(0x370, bytes.fromhex("76006C00CF0CCA0C")),
                 CanFrame(0x373, bytes.fromhex("CA0CCF0C1B011C01")),
+                CanFrame(0x374, bytes.fromhex("3032313400000000")),
+                CanFrame(0x375, bytes.fromhex("3032313000000000")),
                 CanFrame(0x379, bytes.fromhex("C800000000000000")),
             ]
         )
@@ -231,9 +233,16 @@ class PylonCanDecodeTest(unittest.TestCase):
         self.assertIsNotNone(snapshot.extended_measurements)
         self.assertAlmostEqual(snapshot.extended_measurements.min_cell_voltage_v, 3.274)
         self.assertAlmostEqual(snapshot.extended_measurements.max_cell_voltage_v, 3.279)
+        self.assertEqual(snapshot.extended_measurements.min_cell_pack_number, 2)
+        self.assertEqual(snapshot.extended_measurements.min_cell_number, 14)
+        self.assertEqual(snapshot.extended_measurements.min_cell_location_text(), "02:14")
+        self.assertEqual(snapshot.extended_measurements.max_cell_pack_number, 2)
+        self.assertEqual(snapshot.extended_measurements.max_cell_number, 10)
+        self.assertEqual(snapshot.extended_measurements.max_cell_location_text(), "02:10")
         self.assertAlmostEqual(snapshot.extended_measurements.min_cell_temperature_c, 9.85)
         self.assertAlmostEqual(snapshot.extended_measurements.max_cell_temperature_c, 10.85)
         self.assertEqual(snapshot.extended_measurements.installed_capacity_ah, 200)
+        self.assertIn("min 02:14, max 02:10", "\n".join(snapshot.summary_lines()))
         self.assertIn("0x370", snapshot.summary_lines()[-1])
 
     def test_parses_candump_log_frames(self) -> None:

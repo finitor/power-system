@@ -48,6 +48,8 @@ class MetricsTest(unittest.TestCase):
 
         self.assertTrue(any(sample.source == "battery" and sample.metric == "soc" and sample.value == 92 for sample in samples))
         self.assertTrue(any(sample.source == "battery" and sample.metric == "cell_voltage_delta" and sample.unit == "mV" for sample in samples))
+        self.assertTrue(any(sample.source == "battery" and sample.metric == "min_cell_location" and sample.text == "02:14" for sample in samples))
+        self.assertTrue(any(sample.source == "battery" and sample.metric == "max_cell_location" and sample.text == "02:10" for sample in samples))
         self.assertTrue(any(sample.source == "classic.0" and sample.metric == "charge_stage" and sample.text == "Resting" for sample in samples))
         self.assertTrue(any(sample.source == "load" and sample.metric == "estimated_autonomy" and sample.value == 46.0 for sample in samples))
         self.assertTrue(any(sample.source == "load" and sample.metric == "rolling_average_current" and sample.value == 3.5 for sample in samples))
@@ -305,6 +307,8 @@ class MetricsTest(unittest.TestCase):
                     CanFrame(0x355, bytes([92, 0, 100, 0, 0, 0, 0, 0])),
                     CanFrame(0x356, bytes.fromhex("B814D8FFA4000000")),
                     CanFrame(0x373, bytes.fromhex("4C0D5A0D21012201")),
+                    CanFrame(0x374, bytes.fromhex("3032313400000000")),
+                    CanFrame(0x375, bytes.fromhex("3032313000000000")),
                     CanFrame(0x379, bytes.fromhex("C800000000000000")),
                 ]
             ),

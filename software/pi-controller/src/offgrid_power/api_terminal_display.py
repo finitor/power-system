@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import shutil
 
-from .terminal_display import format_refresh_age
+from .terminal_display import format_cell_location_for_display, format_refresh_age
 
 
 ROW_LABEL_WIDTH = 21
@@ -61,8 +61,6 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
         for condition in conditions:
             lines.append(f"  - {condition}")
 
-    lines.append("")
-    lines.append("Press Ctrl-C to exit. Read-only monitor; no control writes are performed.")
     return "\n".join(lines)
 
 
@@ -76,8 +74,6 @@ def render_api_unavailable(error: str) -> str:
             "",
             "API snapshot unavailable",
             f"  - {error}",
-            "",
-            "Press Ctrl-C to exit. Read-only monitor; no control writes are performed.",
         ]
     )
 
@@ -106,7 +102,12 @@ def _battery_lines(battery: dict | None) -> list[str]:
     max_cell = battery.get("cell_max_v")
     delta = battery.get("cell_delta_mv")
     if min_cell is not None and max_cell is not None and delta is not None:
-        lines.append(_row("Cells", f"{_fmt(min_cell, 3)}-{_fmt(max_cell, 3)}V ({_fmt(delta, 0)}mV delta)"))
+        min_location = format_cell_location_for_display(battery.get("cell_min_location"))
+        max_location = format_cell_location_for_display(battery.get("cell_max_location"))
+        value = f"Δ {_fmt(delta, 0)}mV"
+        value += f"; min {min_location or '?'} {_fmt(min_cell, 3)}V"
+        value += f"; max {max_location or '?'} {_fmt(max_cell, 3)}V"
+        lines.append(_row("Cells", value))
 
     protections = [*(battery.get("protection_flags") or []), *(battery.get("alarm_flags") or [])]
     lines.append(_row("Protection/Alarms", "none" if not protections else ", ".join(protections)))
@@ -159,15 +160,17 @@ def _solar_lines(solar: list[dict]) -> list[str]:
                 f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah",
             )
         )
-        temps = controller.get("temperatures_c") or {}
-        lines.append(
-            _row(
-                "Temps",
-                f"batt {_fmt(temps.get('battery'), 1)}C  "
-                f"FET {_fmt(temps.get('fet'), 1)}C  "
-                f"PCB {_fmt(temps.get('pcb'), 1)}C",
+        settings = controller.get("settings")
+        if settings is not None:
+            lines.append(
+                _row(
+                    "Charge Settings",
+                    f"Limit {_fmt(settings.get('current_limit_a'), 1)}A  "
+                    f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V for {_fmt(settings.get('absorb_time_s'), 0)}s  "
+                    f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
+                    f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V",
+                )
             )
-        )
     return lines
 
 
@@ -185,9 +188,9 @@ def _temperature_lines(payload: dict) -> list[str]:
         if temps.get("battery") is not None:
             lines.append(_row("Battery terminal", f"{_fmt(temps.get('battery'), 1)}C"))
         if temps.get("fet") is not None:
-            lines.append(_row("Charge controller FET", f"{_fmt(temps.get('fet'), 1)}C"))
+            lines.append(_row("CC0 FET", f"{_fmt(temps.get('fet'), 1)}C"))
         if temps.get("pcb") is not None:
-            lines.append(_row("Charge controller PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
+            lines.append(_row("CC0 PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
     if ambient.get("temperature_c") is None:
         lines.append(_row("Sensor 0 ambient temp", "disconnected"))
     else:

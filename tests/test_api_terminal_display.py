@@ -28,6 +28,8 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "cell_min_v": 3.312,
                 "cell_max_v": 3.318,
                 "cell_delta_mv": 6,
+                "cell_min_location": "02:14",
+                "cell_max_location": "02:10",
                 "charge_enabled": True,
                 "discharge_enabled": True,
                 "charge_voltage_limit_v": 58.4,
@@ -49,6 +51,13 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     "daily_energy_kwh": 5.8,
                     "daily_amp_hours_ah": 106,
                     "temperatures_c": {"battery": 17.0, "fet": 31.0, "pcb": 29.0},
+                    "settings": {
+                        "current_limit_a": 80.0,
+                        "absorb_voltage_v": 55.6,
+                        "absorb_time_s": 1950,
+                        "float_voltage_v": 55.0,
+                        "equalize_voltage_v": 55.6,
+                    },
                 }
             ],
             "load": {"current_a": 4.0, "power_w": 212, "remaining_text": "46.0h"},
@@ -60,18 +69,21 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("SOC:  92%  Status:  OK", rendered)
         self.assertIn("Now                   4.0A  212W", rendered)
         self.assertIn("Flow                  53.04V  -1.2A  -64W  discharging", rendered)
+        self.assertIn("Cells                 Δ 6mV; min 2|14 3.312V; max 2|10 3.318V", rendered)
         self.assertIn("Charge Status         Stage: Float  State: MPPT or regulating voltage", rendered)
+        self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V for 1950s  Float 55.0V  EQ 55.6V", rendered)
+        self.assertNotIn("Temps", rendered)
         self.assertIn("Battery terminal      17.0C", rendered)
-        self.assertIn("Charge controller FET 31.0C", rendered)
+        self.assertIn("CC0 FET               31.0C", rendered)
         self.assertIn("Sensor 0 ambient temp 18.2C", rendered)
-        self.assertIn("Press Ctrl-C to exit. Read-only monitor; no control writes are performed.", rendered)
+        self.assertNotIn("Press Ctrl-C", rendered)
 
     def test_render_api_unavailable(self) -> None:
         rendered = render_api_unavailable("connection refused")
 
         self.assertIn("Status:  UNAVAILABLE", rendered)
         self.assertIn("connection refused", rendered)
-        self.assertIn("Press Ctrl-C to exit. Read-only monitor; no control writes are performed.", rendered)
+        self.assertNotIn("Press Ctrl-C", rendered)
 
 
 if __name__ == "__main__":

@@ -91,6 +91,15 @@ sudo offgrid-can-survey --interface can0 --bitrates 250000,500000 --seconds 10 -
 
 Keep `can0` in listen-only mode while validating telemetry. The CAN decoder currently treats writable/control behavior as unavailable and only decodes battery-to-inverter telemetry and permissive/request frames.
 
+Dynamic charger current tapering is available but off by default. The current actuator is `classic.0`; it writes only the volatile Classic battery-current limit, never EEPROM, and clamps against BMS CCL / charge-enable state:
+
+```sh
+CHARGER_CURRENT_TAPER_DRY_RUN=true
+CHARGER_CURRENT_TAPER=true
+```
+
+Use dry-run first. The policy targets about 100 A below the top knee, 20-30 A through the first ramp-down, 4-10 A near the top, and 0 A when the BMS disables charge, high-cell voltage is unsafe, or the full-charge latch is active.
+
 Install the sensor extra on the Raspberry Pi before reading the AM2302/DHT22 sensor. DS18B20 probes use Linux's 1-Wire interface and do not need this extra, but it is harmless to leave installed.
 
 ```sh

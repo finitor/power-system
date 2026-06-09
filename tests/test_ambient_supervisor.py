@@ -256,9 +256,10 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertNotIn("MidNite Classic", rendered)
         self.assertNotIn("Classic Charge Settings", rendered)
         self.assertNotIn("Flags:", rendered)
+        self.assertNotIn("Temps:", rendered)
         self.assertIn("Battery terminal:      15.3C", rendered)
-        self.assertIn("Charge controller FET: 47.8C", rendered)
-        self.assertIn("Charge controller PCB: 45.0C", rendered)
+        self.assertIn("CC0 FET:               47.8C", rendered)
+        self.assertIn("CC0 PCB:               45.0C", rendered)
         self.assertLess(rendered.index("Battery cells:"), rendered.index("Battery terminal:"))
 
     def test_terminal_display_renders_load_totals(self) -> None:
@@ -320,7 +321,7 @@ class AmbientSupervisorTest(unittest.TestCase):
         self.assertIn("charge 58.4V/200.0A", rendered)
         self.assertIn("charge yes  discharge yes", rendered)
         self.assertIn("Protection/Alarms:     none", rendered)
-        self.assertIn("3.274-3.279V (5mV delta)", rendered)
+        self.assertIn("Δ 5mV; min ? 3.274V; max ? 3.279V", rendered)
         self.assertLess(battery_group.index("Flow:"), battery_group.index("Cells:"))
         self.assertLess(battery_group.index("Cells:"), battery_group.index("Protection/Alarms:"))
         self.assertLess(battery_group.index("Protection/Alarms:"), battery_group.index("Enable:"))

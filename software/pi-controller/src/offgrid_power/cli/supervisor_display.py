@@ -18,6 +18,11 @@ from offgrid_power.canbus import (
     ensure_socketcan_interface_up,
     socketcan_interfaces,
 )
+from offgrid_power.charger_taper import (
+    ChargerCurrentSettings,
+    ChargerCurrentTaperController,
+    ChargerTelemetry,
+)
 from offgrid_power.classic import ClassicClient
 from offgrid_power.config import load_config
 from offgrid_power.load import LoadTotalsTracker
@@ -99,6 +104,20 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Collect snapshots, metrics, and optional web display data without printing the terminal UI",
     )
+    parser.add_argument(
+        "--charger-current-taper",
+        action="store_true",
+        default=_env_bool("CHARGER_CURRENT_TAPER", _env_bool("CLASSIC_CURRENT_TAPER", False)),
+        help="Dynamically write volatile charger current limits from BMS SOC/voltage telemetry",
+    )
+    parser.add_argument(
+        "--charger-current-taper-dry-run",
+        action="store_true",
+        default=_env_bool("CHARGER_CURRENT_TAPER_DRY_RUN", _env_bool("CLASSIC_CURRENT_TAPER_DRY_RUN", False)),
+        help="Evaluate and log charger current taper decisions without writing settings",
+    )
+    parser.add_argument("--classic-current-taper", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--classic-current-taper-dry-run", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--once", action="store_true", help="Render one snapshot and exit")
     return parser.parse_args()
 
@@ -231,6 +250,13 @@ def main() -> int:
     )
     snapshot_cache = SnapshotCache()
     weather_service = build_weather_service(args)
+    charger_current_taper_enabled = args.charger_current_taper or args.classic_current_taper
+    charger_current_taper_dry_run = args.charger_current_taper_dry_run or args.classic_current_taper_dry_run
+    charger_current_taper = (
+        ChargerCurrentTaperController()
+        if charger_current_taper_enabled or charger_current_taper_dry_run
+        else None
+    )
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache, weather_service)
     previous_poll_render: str | None = None
@@ -238,6 +264,13 @@ def main() -> int:
     try:
         while True:
             snapshot = supervisor.read_snapshot()
+            apply_charger_current_taper(
+                charger_current_taper,
+                dry_run=charger_current_taper_dry_run,
+                enabled=charger_current_taper_enabled,
+                supervisor=supervisor,
+                snapshot=snapshot,
+            )
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
             snapshot_cache.set(snapshot, load_summary)
@@ -329,6 +362,63 @@ def record_weather_metrics(metric_recorder: MetricRecorder, weather_service: Wea
         metric_recorder.record_weather(weather_service.get())
     except Exception as exc:  # noqa: BLE001 - weather logging should not affect live supervision.
         print(f"Weather record failed: {exc}", file=sys.stderr)
+
+
+def apply_charger_current_taper(
+    charger_current_taper: ChargerCurrentTaperController | None,
+    *,
+    dry_run: bool,
+    enabled: bool,
+    supervisor: Supervisor,
+    snapshot,
+) -> None:
+    if charger_current_taper is None:
+        return
+    try:
+        charger = _classic_charger_telemetry(snapshot)
+        settings = _classic_current_settings(snapshot)
+        decision = charger_current_taper.decide(charger, settings, snapshot.battery)
+        if decision.target_current_a is None:
+            return
+        current = settings.current_limit_a if settings is not None else None
+        if dry_run:
+            if decision.should_write:
+                print(
+                    "Charger current taper dry-run: "
+                    f"{current:.1f}A -> {decision.target_current_a:.1f}A ({decision.reason})",
+                    file=sys.stderr,
+                )
+            return
+        if not enabled or not decision.should_write:
+            return
+        if supervisor.classic is None:
+            return
+        supervisor.classic.write_charge_settings(
+            battery_current_limit_a=decision.target_current_a,
+            persist=False,
+        )
+        print(
+            "Charger current taper: classic.0 "
+            f"{current:.1f}A -> {decision.target_current_a:.1f}A ({decision.reason})",
+            file=sys.stderr,
+        )
+    except Exception as exc:  # noqa: BLE001 - taper should never kill telemetry/display.
+        print(f"Charger current taper failed: {exc}", file=sys.stderr)
+
+
+def _classic_charger_telemetry(snapshot) -> ChargerTelemetry | None:
+    if snapshot.classic is None:
+        return None
+    return ChargerTelemetry(
+        voltage_v=snapshot.classic.battery_voltage_v,
+        charge_stage=snapshot.classic.charge_stage,
+    )
+
+
+def _classic_current_settings(snapshot) -> ChargerCurrentSettings | None:
+    if snapshot.classic_settings is None:
+        return None
+    return ChargerCurrentSettings(current_limit_a=snapshot.classic_settings.battery_current_limit_a)
 
 
 def _env_bool(name: str, default: bool) -> bool:

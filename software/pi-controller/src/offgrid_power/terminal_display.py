@@ -38,6 +38,18 @@ def format_refresh_age(captured_at: datetime, now: datetime | None = None) -> st
     return f"{seconds:02d} seconds ago"
 
 
+def format_cell_location_for_display(location: str | None) -> str:
+    if location is None:
+        return "?"
+    pack_text, separator, cell_text = location.partition(":")
+    if not separator:
+        return location
+    try:
+        return f"{int(pack_text)}|{int(cell_text)}"
+    except ValueError:
+        return location
+
+
 def highlight_changed_digits(previous: str | None, current: str) -> str:
     if previous is None:
         return current
@@ -149,8 +161,6 @@ def render_snapshot(
         for condition in snapshot.status_conditions:
             lines.append(f"  - {condition}")
 
-    lines.append("")
-    lines.append("Press Ctrl-C to exit. Read-only monitor; no control writes are performed.")
     return "\n".join(lines)
 
 
@@ -179,7 +189,12 @@ def _battery_bank_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Flow", f"{measurements.voltage_v:.2f}V  {measurements.current_a:.1f}A  {power_w}W  {_battery_state(measurements.current_a)}"))
     if extended is not None and extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
         delta_mv = round((extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000)
-        lines.append(_row("Cells", f"{extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V ({delta_mv}mV delta)"))
+        min_location = format_cell_location_for_display(extended.min_cell_location_text())
+        max_location = format_cell_location_for_display(extended.max_cell_location_text())
+        value = f"Δ {delta_mv}mV"
+        value += f"; min {min_location} {extended.min_cell_voltage_v:.3f}V"
+        value += f"; max {max_location} {extended.max_cell_voltage_v:.3f}V"
+        lines.append(_row("Cells", value))
     if status is not None:
         conditions = [*status.protection_flags, *status.alarm_flags]
         lines.append(_row("Protection/Alarms", "none" if not conditions else ", ".join(conditions)))
@@ -232,7 +247,6 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         if classic.is_hypervoc:
             lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
         lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
-        lines.append(_row("Temps", f"batt {classic.battery_temp_c:.1f}C  FET {classic.fet_temp_c:.1f}C  PCB {classic.pcb_temp_c:.1f}C"))
         if index == 0 and snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))
     return lines
@@ -261,8 +275,8 @@ def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
     if snapshot.classic is not None:
         classic = snapshot.classic
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
-        lines.append(_row("Charge controller FET", f"{classic.fet_temp_c:.1f}C"))
-        lines.append(_row("Charge controller PCB", f"{classic.pcb_temp_c:.1f}C"))
+        lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
+        lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
     if snapshot.ambient is None:
         lines.append(_row("Sensor 0 ambient temp", "disconnected"))
     else:

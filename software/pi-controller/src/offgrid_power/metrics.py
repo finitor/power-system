@@ -626,6 +626,18 @@ def _battery_samples(captured_at: datetime, battery) -> Iterable[MetricSample]:
             yield MetricSample(captured_at, source, "max_cell_voltage", value=extended.max_cell_voltage_v, unit="V")
         if extended.min_cell_voltage_v is not None and extended.max_cell_voltage_v is not None:
             yield MetricSample(captured_at, source, "cell_voltage_delta", value=(extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000, unit="mV")
+        if extended.min_cell_pack_number is not None:
+            yield MetricSample(captured_at, source, "min_cell_pack_number", value=float(extended.min_cell_pack_number))
+        if extended.min_cell_number is not None:
+            yield MetricSample(captured_at, source, "min_cell_number", value=float(extended.min_cell_number))
+        if extended.min_cell_location_text() is not None:
+            yield MetricSample(captured_at, source, "min_cell_location", text=extended.min_cell_location_text())
+        if extended.max_cell_pack_number is not None:
+            yield MetricSample(captured_at, source, "max_cell_pack_number", value=float(extended.max_cell_pack_number))
+        if extended.max_cell_number is not None:
+            yield MetricSample(captured_at, source, "max_cell_number", value=float(extended.max_cell_number))
+        if extended.max_cell_location_text() is not None:
+            yield MetricSample(captured_at, source, "max_cell_location", text=extended.max_cell_location_text())
         if extended.min_cell_temperature_c is not None:
             yield MetricSample(captured_at, source, "min_cell_temperature", value=extended.min_cell_temperature_c, unit="C")
         if extended.max_cell_temperature_c is not None:

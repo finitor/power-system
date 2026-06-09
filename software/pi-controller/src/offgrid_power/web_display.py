@@ -15,7 +15,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from .supervisor import Supervisor, SupervisorSnapshot
-from .terminal_display import format_time
+from .terminal_display import format_cell_location_for_display, format_time
 from .weather import WeatherReport, weather_code_text
 
 
@@ -102,6 +102,8 @@ def render_kindle_snapshot(
         "<style>",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
+        "ul{margin:0 0 4px 18px;padding:0;}",
+        "li{line-height:1.15;}",
         "table{border-collapse:collapse;width:100%;}",
         "td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
         "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
@@ -140,7 +142,6 @@ def render_kindle_snapshot(
 
     lines.extend(
         [
-            f'<p class="small">Refreshes every {refresh_seconds} seconds. Read-only monitor.</p>',
             "</body>",
             "</html>",
         ]
@@ -604,6 +605,12 @@ def _battery_api_payload(snapshot: SupervisorSnapshot) -> dict | None:
         "cell_min_v": extended.min_cell_voltage_v if extended is not None else None,
         "cell_max_v": extended.max_cell_voltage_v if extended is not None else None,
         "cell_delta_mv": None,
+        "cell_min_pack_number": extended.min_cell_pack_number if extended is not None else None,
+        "cell_min_number": extended.min_cell_number if extended is not None else None,
+        "cell_min_location": extended.min_cell_location_text() if extended is not None else None,
+        "cell_max_pack_number": extended.max_cell_pack_number if extended is not None else None,
+        "cell_max_number": extended.max_cell_number if extended is not None else None,
+        "cell_max_location": extended.max_cell_location_text() if extended is not None else None,
         "cell_temperature_min_c": extended.min_cell_temperature_c if extended is not None else None,
         "cell_temperature_max_c": extended.max_cell_temperature_c if extended is not None else None,
         "installed_capacity_ah": extended.installed_capacity_ah if extended is not None else None,
@@ -631,6 +638,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
     if snapshot.classic is None:
         return []
     classic = snapshot.classic
+    settings = snapshot.classic_settings
     return [
         {
             "id": "classic.0",
@@ -657,6 +665,15 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 "battery": classic.battery_temp_c,
                 "fet": classic.fet_temp_c,
                 "pcb": classic.pcb_temp_c,
+            },
+            "settings": None
+            if settings is None
+            else {
+                "current_limit_a": settings.battery_current_limit_a,
+                "absorb_voltage_v": settings.absorb_voltage_v,
+                "float_voltage_v": settings.float_voltage_v,
+                "equalize_voltage_v": settings.equalize_voltage_v,
+                "absorb_time_s": settings.absorb_time_s,
             },
         }
     ]
@@ -1191,7 +1208,6 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
                         else []
                     ),
                     _row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"),
-                    _row("Temps", f"batt {classic.battery_temp_c:.1f}C  FET {classic.fet_temp_c:.1f}C  PCB {classic.pcb_temp_c:.1f}C"),
                 ]
             )
             if index == 0 and snapshot.classic_settings is not None:
@@ -1245,9 +1261,13 @@ def _battery_section(snapshot: SupervisorSnapshot) -> list[str]:
     ):
         extended = battery.extended_measurements
         delta_mv = round((extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000)
-        value = f"{extended.min_cell_voltage_v:.3f}-{extended.max_cell_voltage_v:.3f}V ({delta_mv}mV delta)"
-        if extended.min_cell_temperature_c is not None and extended.max_cell_temperature_c is not None:
-            value += f"  {extended.min_cell_temperature_c:.1f}-{extended.max_cell_temperature_c:.1f}C"
+        min_location = format_cell_location_for_display(extended.min_cell_location_text())
+        max_location = format_cell_location_for_display(extended.max_cell_location_text())
+        value = (
+            f"Δ {delta_mv}mV; "
+            f"min {min_location} {extended.min_cell_voltage_v:.3f}V; "
+            f"max {max_location} {extended.max_cell_voltage_v:.3f}V"
+        )
         lines.append(_row("Cells", value))
     if battery.status is not None:
         status = battery.status
@@ -1293,8 +1313,8 @@ def _temperature_section(snapshot: SupervisorSnapshot) -> list[str]:
     if snapshot.classic is not None:
         classic = snapshot.classic
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
-        lines.append(_row("Charge controller FET", f"{classic.fet_temp_c:.1f}C"))
-        lines.append(_row("Charge controller PCB", f"{classic.pcb_temp_c:.1f}C"))
+        lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
+        lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
     if snapshot.ambient is None:
         lines.append(_row("Sensor 0 ambient", "disconnected"))
     else:

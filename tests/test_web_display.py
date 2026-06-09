@@ -13,7 +13,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.canbus import CanFrame, PylonCanSnapshot, PylonStatus, decode_pylon_snapshot
 from offgrid_power.ambient import AmbientTelemetry
-from offgrid_power.classic import ClassicTelemetry
+from offgrid_power.classic import ClassicChargeSettings, ClassicTelemetry
 from offgrid_power.supervisor import Supervisor, SupervisorSnapshot
 from offgrid_power.web_display import (
     LoadSampleBuffer,
@@ -78,6 +78,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertNotIn('<meta name="viewport"', html)
         self.assertIn("-webkit-text-size-adjust:100%", html)
         self.assertIn("td{font-size:17px;line-height:1.18;", html)
+        self.assertIn("ul{margin:0 0 4px 18px;padding:0;}", html)
         self.assertIn(".summary-table .soc-cell{font-size:36px;line-height:1;text-align:left;vertical-align:middle;width:32%;}", html)
         self.assertIn(".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}", html)
         self.assertIn(".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}", html)
@@ -102,7 +103,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertLess(html.index("<h2>Battery Bank</h2>"), html.index("<h2>Charge Controller 0</h2>"))
         self.assertIn("<td>Flow</td><td>54.57V  2.6A  142W  charging</td>", html)
         self.assertIn("<td>Enable</td><td>charge yes  discharge yes</td>", html)
-        self.assertIn("<td>Cells</td><td>3.404-3.418V (14mV delta)  15.9-16.9C</td>", html)
+        self.assertIn("<td>Cells</td><td>Δ 14mV; min ? 3.404V; max ? 3.418V</td>", html)
         battery_section = html[html.index("<h2>Battery Bank</h2>") : html.index("<h2>Charge Controller 0</h2>")]
         self.assertLess(battery_section.index("<td>Flow</td>"), battery_section.index("<td>Cells</td>"))
         self.assertLess(battery_section.index("<td>Cells</td>"), battery_section.index("<td>Protection/Alarms</td>"))
@@ -113,6 +114,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertNotIn("<td>Alarms</td>", html)
         self.assertIn("<h2>Temperatures</h2>", html)
         self.assertIn("<td>Battery cells</td><td>15.9-16.9C</td>", html)
+        self.assertNotIn("Refreshes every 60 seconds.", html)
         self.assertNotIn("<script", html)
 
     def test_renders_kindle_weather_html(self) -> None:
@@ -291,10 +293,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertLess(html.index("<td>Charge Status</td>"), html.index("<td>Production Today</td>"))
         self.assertIn("<td>Charge Status</td><td>Stage: Float  State: MPPT or regulating voltage</td>", html)
         self.assertIn("<td>Production Today</td><td>5.8kWh  106Ah</td>", html)
-        self.assertIn("<td>Temps</td><td>batt 17.0C  FET 31.0C  PCB 29.0C</td>", html)
+        self.assertNotIn("<td>Temps</td>", html)
         self.assertIn("<td>Battery terminal</td><td>17.0C</td>", html)
-        self.assertIn("<td>Charge controller FET</td><td>31.0C</td>", html)
-        self.assertIn("<td>Charge controller PCB</td><td>29.0C</td>", html)
+        self.assertIn("<td>CC0 FET</td><td>31.0C</td>", html)
+        self.assertIn("<td>CC0 PCB</td><td>29.0C</td>", html)
 
     def test_renders_redundant_charge_controller_state_only_once(self) -> None:
         captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
@@ -429,7 +431,44 @@ class WebDisplayTest(unittest.TestCase):
         self.assertAlmostEqual(payload["battery"]["voltage_v"], 53.04)
         self.assertEqual(payload["solar"][0]["id"], "classic.0")
         self.assertEqual(payload["solar"][0]["daily_amp_hours_ah"], 108)
+        self.assertIsNone(payload["solar"][0]["settings"])
         self.assertEqual(payload["load"]["estimated_autonomy_hours"], 46.0)
+
+    def test_snapshot_api_payload_includes_charge_controller_settings(self) -> None:
+        captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+        snapshot = self._snapshot_with_classic_and_battery(
+            captured_at=captured_at,
+            classic_daily_ah=108,
+            current_soc=92,
+        )
+        snapshot = snapshot.__class__(
+            captured_at=snapshot.captured_at,
+            classic=snapshot.classic,
+            classic_settings=ClassicChargeSettings(
+                captured_at=captured_at,
+                battery_current_limit_a=80.0,
+                absorb_voltage_v=55.2,
+                float_voltage_v=54.0,
+                equalize_voltage_v=55.2,
+                sliding_current_limit_a=800,
+                absorb_time_s=300,
+                max_temp_comp_voltage_v=55.2,
+                min_temp_comp_voltage_v=52.8,
+                temp_comp_mv_per_c_cell=-5.0,
+                mppt_mode_raw=0,
+                aux_function_word=0,
+            ),
+            battery=snapshot.battery,
+            battery_can_health=snapshot.battery_can_health,
+            ambient=snapshot.ambient,
+            errors=snapshot.errors,
+        )
+
+        payload = snapshot_api_payload(snapshot)
+
+        self.assertEqual(payload["solar"][0]["settings"]["current_limit_a"], 80.0)
+        self.assertEqual(payload["solar"][0]["settings"]["absorb_voltage_v"], 55.2)
+        self.assertEqual(payload["solar"][0]["settings"]["absorb_time_s"], 300)
 
     def test_routes_api_health_uses_service_unavailable_for_error_snapshot(self) -> None:
         snapshot = SupervisorSnapshot(
@@ -468,6 +507,33 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["status"]["conditions"], ["Battery cell delta high"])
         self.assertIsNone(payload["battery"])
         self.assertEqual(payload["solar"], [])
+
+    def test_snapshot_api_payload_includes_cell_locations(self) -> None:
+        snapshot = SupervisorSnapshot(
+            captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc),
+            classic=None,
+            classic_settings=None,
+            battery=decode_pylon_snapshot(
+                [
+                    CanFrame(0x373, bytes.fromhex("4E0DD80D24012501")),
+                    CanFrame(0x374, bytes.fromhex("3032313400000000")),
+                    CanFrame(0x375, bytes.fromhex("3032313000000000")),
+                ]
+            ),
+            battery_can_health=None,
+            ambient=None,
+            errors=[],
+        )
+
+        payload = snapshot_api_payload(snapshot)
+
+        self.assertIsNotNone(payload["battery"])
+        self.assertEqual(payload["battery"]["cell_min_location"], "02:14")
+        self.assertEqual(payload["battery"]["cell_min_pack_number"], 2)
+        self.assertEqual(payload["battery"]["cell_min_number"], 14)
+        self.assertEqual(payload["battery"]["cell_max_location"], "02:10")
+        self.assertEqual(payload["battery"]["cell_max_pack_number"], 2)
+        self.assertEqual(payload["battery"]["cell_max_number"], 10)
 
     def test_snapshot_unavailable_page_auto_refreshes(self) -> None:
         html = render_snapshot_unavailable(RuntimeError("CAN bus warming up"), refresh_seconds=10)
