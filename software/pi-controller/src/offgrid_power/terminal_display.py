@@ -148,6 +148,9 @@ def render_snapshot(
     lines.extend(_charge_controller_lines(snapshot))
 
     lines.append("")
+    lines.extend(_inverter_charger_lines(snapshot))
+
+    lines.append("")
     lines.extend(_temperature_lines(snapshot))
 
     if snapshot.errors:
@@ -262,6 +265,53 @@ def _charge_settings_line(settings: ClassicChargeSettings) -> str:
     )
 
 
+def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
+    lines = ["Inverter/Charger"]
+    inv = snapshot.magnum
+    if inv is None:
+        lines.append("  No data")
+        return lines
+
+    lines.append(_row("DC", f"{inv.dc_volts:.1f}V  {inv.dc_amps}A  {inv.dc_power_w}W"))
+
+    ac_out_parts = [f"{inv.ac_volts_out}V"]
+    if inv.ac_amps_out is not None:
+        ac_out_parts.append(f"{inv.ac_amps_out}A")
+    if inv.ac_freq_hz is not None:
+        ac_out_parts.append(f"{inv.ac_freq_hz:.1f}Hz")
+    lines.append(_row("AC Output", "  ".join(ac_out_parts)))
+
+    if inv.ac_volts_in > 0:
+        ac_in_parts = [f"{inv.ac_volts_in}V"]
+        if inv.ac_amps_in is not None:
+            ac_in_parts.append(f"{inv.ac_amps_in}A")
+        lines.append(_row("AC Input", "  ".join(ac_in_parts)))
+    else:
+        lines.append(_row("AC Input", "0V  no source"))
+
+    status_text = inv.status_label()
+    fault = inv.fault_label()
+    if fault:
+        status_text += f"  Fault: {fault}"
+    lines.append(_row("Status", status_text))
+
+    settings_parts = []
+    if inv.absorb_v is not None:
+        settings_parts.append(f"Absorb {inv.absorb_v:.1f}V")
+    if inv.float_v is not None:
+        settings_parts.append(f"Float {inv.float_v:.1f}V")
+    if inv.absorb_time_hr is not None:
+        settings_parts.append(f"{inv.absorb_time_hr:.1f}hr")
+    if inv.shore_amps is not None:
+        settings_parts.append(f"Shore {inv.shore_amps}A")
+    if inv.charger_amps_pct is not None and inv.charger_amps_pct > 0:
+        settings_parts.append(f"Charger {inv.charger_amps_pct}%")
+    if settings_parts:
+        lines.append(_row("Settings", "  ".join(settings_parts)))
+
+    return lines
+
+
 def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
     lines = ["Temperatures"]
     if (
@@ -277,6 +327,11 @@ def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
         lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
         lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
+    if snapshot.magnum is not None:
+        inv = snapshot.magnum
+        lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))
+        lines.append(_row("INV transformer", f"{inv.transformer_temp_c}C"))
+        lines.append(_row("INV FET", f"{inv.fet_temp_c}C"))
     if snapshot.ambient is None:
         lines.append(_row("Sensor 0 ambient temp", "disconnected"))
     else:

@@ -92,6 +92,55 @@ Leave RJ45 pin 4 (+14 V) and pin 5 (GND) disconnected from the USB adapter. If n
 
 The SH-U11H has two unpopulated jumper positions labelled **120R T** and **120R R** (transmit-line and receive-line termination resistors). Leave both unpopulated. The ME-RC50 and the inverter are the two bus endpoints and own termination; the Pi is a passive mid-bus tap and must not add a third termination load.
 
+## Packet Identification and Cycle Alignment Bug
+
+The `magnum-pi` `CycleTracker` identifies the first packet in a cycle as the inverter if byte 10 is non-zero. When the Pi joins the bus mid-cycle it may receive the remote packet first. The remote's byte 10 is also non-zero (0x9B in the observed ME-RC50 firmware), so the tracker permanently misidentifies the two packets for the entire session.
+
+Correct identification by known values (MS4448PAE, firmware rev 6.1):
+
+| Byte position | Inverter packet | Remote packet |
+|---|---|---|
+| [10] revision | 0x3D = 61 → rev 6.1 | 0x9B = 155 |
+| [14] | 0x73 = 115 = MS4448PAE model | 0x14 (unrelated) |
+
+Detection approach: check byte 14 for 0x73 to confirm the inverter packet; the other 21/22-byte packet is the remote. A `MagnumClient` wrapper must verify alignment on connect and swap if inverted before using decoded values or sending writes.
+
+## Voltage Encoding
+
+The Magnum bus stores voltages as 12V-nominal × 10, single byte. For a 48V system (multiplier = 4):
+
+- Decode: `actual_v = wire_byte × 4 / 10`
+- Encode: `wire_byte = int(actual_v × 10 / 4)`
+- Resolution: 0.4 V per wire count at 48V (0.1 V at 12V-nominal)
+
+The ME-RC50 display steps voltages in 0.4V increments on a 48V system, which is one wire count. This was confirmed by observation: incrementing float on the remote changed the wire byte from 0x89 (54.8V) to 0x88 (54.4V).
+
+The `magnum-pi` `voltage_multiplier` is not reliably auto-detected due to a race between `_identify_as_inverter_or_remote` (which sets `_inverter_model_id` from the raw byte) and `_parse_into_cycle` (which gates the multiplier update on `_inverter_model_id is None`). By the time parsing runs, the ID is already set, so the multiplier stays 1. Force multiplier = 4 in `MagnumClient` after confirming the model byte.
+
+Remote packet field positions confirmed by live observation (2026-06-09):
+
+| Byte | Field | Example value |
+|---|---|---|
+| 0 | Control flags (inverter/charger/eq toggle) | 0x00 (none active) |
+| 3 | Custom absorb voltage (wire) | 0x89 = 54.8V |
+| 5 | Shore/AC input current limit (A) | 0x1E = 30A |
+| 11 | Float voltage (wire) | 0x89 = 54.8V |
+| 13 | Absorb time (× 0.1 hr) | 0x1E = 3.0hr |
+
+## Write Injection: ME-RC50 Override Problem
+
+Confirmed 2026-06-09: the Pi can inject a valid remote packet onto the green network port and the inverter accepts it for one bus cycle. However the ME-RC50 retransmits its own saved settings every ~100ms. Our single injected packet is immediately overwritten.
+
+**Consequence**: a parallel tap on the network port cannot hold a setting change against a live ME-RC50. One-shot writes do not persist.
+
+**Options for sustained write control:**
+
+1. **Remove the ME-RC50** — Pi owns the remote slot entirely. Loses manual control panel.
+2. **Pi transmits every cycle (~100ms)** — two devices contending in the same time slot causes RS485 collisions. Not safe.
+3. **Inline interposer (MagWeb topology)** — Pi sits between the inverter network port and the ME-RC50. Passes through ME-RC50 packets transparently; substitutes modified packets when an override is active. Requires two RS485 adapters (one per bus segment) and a relay loop in the Pi. This is the only architecture that allows Pi control while keeping the ME-RC50 in service.
+
+Option 3 is the correct long-term path for any automated charge parameter control. Monitoring and read-only telemetry work fine from a parallel tap with no changes needed.
+
 ## Control Policy
 
 For inverter on/off, use a state-aware command path:
@@ -104,9 +153,10 @@ For inverter on/off, use a state-aware command path:
 
 Avoid blind repeated toggles because the protocol exposes inverter on/off as a toggle-style command in the prior art.
 
+Note: toggle commands face the same ME-RC50 override problem as parameter writes. A one-shot toggle may apply for one cycle and then be undone by the ME-RC50's retransmission of its own control byte. Sustained control requires the inline interposer topology.
+
 ## Open Questions
 
-- Which physical port is easiest and safest to tap: inverter network port, inverter remote port, or ME-RC50 daisy-chain port?
-- Does the installed ME-RC50 revision behave as expected with `pymagnum` or `magnum-pi`?
-- Is a MagWeb unit already installed, available used, or worth buying?
-- Can Magnum network transmit commands coexist safely with the ME-RC50 remote in normal service?
+- Is a second RS485 adapter available or worth sourcing to implement the inline interposer topology?
+- Does the ME-RC50 retransmit control flag state (inverter/charger toggle bits) in every packet, or only on change? If only on change, a one-shot toggle from the Pi might persist until the ME-RC50 sends a conflicting state.
+- Can Magnum network transmit commands coexist safely with the ME-RC50 remote in normal service? (Answered for parameter writes: no, ME-RC50 wins. Open for toggle commands.)

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from .ambient import AmbientDhtClient, AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
 from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_health
 from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
+from .magnum import MagnumClient, MagnumSnapshot
 
 
 STATUS_OK = "OK"
@@ -29,6 +30,7 @@ class SupervisorSnapshot:
     battery: PylonCanSnapshot | None
     battery_can_health: CanBusHealth | None
     ambient: AmbientTelemetry | None
+    magnum: MagnumSnapshot | None
     errors: list[str]
     status_conditions: list[str] = field(default_factory=list)
     status_severity: str = STATUS_OK
@@ -66,11 +68,13 @@ class Supervisor:
         ambient: AmbientClient | None = None,
         battery: BatteryCanClient | None = None,
         battery_can_interface: str | None = None,
+        magnum: MagnumClient | None = None,
     ) -> None:
         self.classic = classic
         self.ambient = ambient
         self.battery = battery
         self.battery_can_interface = battery_can_interface
+        self.magnum = magnum
         self._status_condition_counts: dict[str, int] = {}
 
     def read_snapshot(self) -> SupervisorSnapshot:
@@ -80,6 +84,7 @@ class Supervisor:
         battery: PylonCanSnapshot | None = None
         battery_can_health: CanBusHealth | None = None
         ambient: AmbientTelemetry | None = None
+        magnum: MagnumSnapshot | None = None
 
         if self.classic is not None:
             try:
@@ -106,6 +111,12 @@ class Supervisor:
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Battery CAN read failed: {exc}")
 
+        if self.magnum is not None:
+            try:
+                magnum = self.magnum.read()
+            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
+                errors.append(f"Magnum read failed: {exc}")
+
         status_condition_candidates = charge_limit_status_condition_candidates(classic_settings, battery)
         status_condition_candidates.extend(self._stable_status_condition_candidates(cell_status_condition_candidates(battery)))
         status_conditions = [candidate.text for candidate in status_condition_candidates]
@@ -118,6 +129,7 @@ class Supervisor:
             battery=battery,
             battery_can_health=battery_can_health,
             ambient=ambient,
+            magnum=magnum,
             errors=errors,
             status_conditions=status_conditions,
             status_severity=status_severity,

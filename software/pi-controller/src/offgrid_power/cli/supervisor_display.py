@@ -24,6 +24,7 @@ from offgrid_power.charger_taper import (
     ChargerTelemetry,
 )
 from offgrid_power.classic import ClassicClient
+from offgrid_power.magnum import MagnumClient
 from offgrid_power.config import load_config
 from offgrid_power.load import LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
@@ -157,6 +158,11 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
         help="Specific DS18B20 id such as 28-000000000000; default reads the first probe",
     )
     parser.add_argument(
+        "--magnum-device",
+        default=os.getenv("MAGNUM_DEVICE", ""),
+        help="Serial device for Magnum RS-485 bus (e.g. /dev/ttyUSB0); empty disables",
+    )
+    parser.add_argument(
         "--no-ambient",
         action="store_true",
         default=not config.ambient.enabled,
@@ -197,6 +203,8 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
             protocol=args.battery_can_protocol,
         )
 
+    magnum = MagnumClient(args.magnum_device) if args.magnum_device else None
+
     return Supervisor(
         classic=None
         if args.no_classic
@@ -209,6 +217,7 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         ambient=ambient,
         battery=battery,
         battery_can_interface=battery_can_interface,
+        magnum=magnum,
     )
 
 

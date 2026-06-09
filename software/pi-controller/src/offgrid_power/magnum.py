@@ -1,0 +1,195 @@
+"""Magnum Energy inverter/charger RS-485 telemetry client."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from magnum_pi.bus import MagnumBus
+from magnum_pi.models.inverter import InverterPacket
+from magnum_pi.models.remote import RemotePacket
+
+log = logging.getLogger(__name__)
+
+# MS4448PAE is a 48V system; voltage bytes are 12V-nominal × 10 on the wire.
+VOLTAGE_MULTIPLIER = 4
+# Model byte identifying this inverter in the extended packet at position 14.
+_INVERTER_MODEL_BYTE = 0x73
+# Packet header bytes belonging to non-remote, non-inverter accessories.
+_ACCESSORY_HEADERS = {0x81, 0x91, 0xA1, 0xA2}
+
+
+@dataclass(frozen=True)
+class MagnumSnapshot:
+    """Decoded state from one Magnum bus cycle."""
+
+    captured_at: datetime
+    # From inverter packet
+    dc_volts: float
+    dc_amps: int
+    ac_volts_out: int
+    ac_volts_in: int
+    ac_amps_in: int | None
+    ac_amps_out: int | None
+    ac_freq_hz: float | None
+    inverter_on: bool
+    charger_on: bool
+    status_name: str       # InverterStatus enum member name
+    fault_name: str        # InverterFault enum member name
+    battery_temp_c: int
+    transformer_temp_c: int
+    fet_temp_c: int
+    # From remote packet (None if remote not seen in this cycle)
+    absorb_v: float | None = None
+    float_v: float | None = None
+    absorb_time_hr: float | None = None
+    shore_amps: int | None = None
+    charger_amps_pct: int | None = None
+
+    @property
+    def dc_power_w(self) -> int:
+        return round(self.dc_volts * self.dc_amps)
+
+    @property
+    def ac_power_w(self) -> int | None:
+        if self.ac_amps_out is None:
+            return None
+        return self.ac_volts_out * self.ac_amps_out
+
+    def status_label(self) -> str:
+        """Human-readable operating state derived from status and LEDs."""
+        name = self.status_name
+        labels = {
+            "INVERT": "Inverting",
+            "SEARCH": "Search mode",
+            "CHARGE": "Charging",
+            "BULK": "Charging (bulk)",
+            "ABSORB": "Charging (absorb)",
+            "FLOAT": "Charging (float)",
+            "EQ": "Equalizing",
+            "BATSAVER": "Battery saver",
+            "STANDBY": "Standby",
+            "INVERTER_STANDBY": "Inverter standby",
+            "OFF": "Off",
+        }
+        return labels.get(name, name.lower().replace("_", " "))
+
+    def fault_label(self) -> str | None:
+        """Fault description, or None if no fault."""
+        if self.fault_name in ("NONE", "UNKNOWN"):
+            return None
+        return self.fault_name.lower().replace("_", " ")
+
+
+def _find_packets(raw_packets: list) -> tuple[bytes | None, bytes | None]:
+    """Return (inverter_bytes, remote_bytes) from a cycle's raw packets.
+
+    The magnum-pi CycleTracker can misidentify packets when joining the bus
+    mid-cycle. We detect the actual inverter packet by its model byte (0x73 =
+    MS4448PAE) at position 14, independent of the tracker's classification.
+    The remote is the other 21/22-byte non-accessory packet.
+    """
+    inverter: bytes | None = None
+    remote: bytes | None = None
+    for _, data in raw_packets:
+        if len(data) < 21:
+            continue
+        if data[0] in _ACCESSORY_HEADERS:
+            continue
+        if data[14] == _INVERTER_MODEL_BYTE:
+            inverter = data
+        elif remote is None:
+            remote = data
+    return inverter, remote
+
+
+def _snapshot_from_cycle(raw_packets: list) -> MagnumSnapshot | None:
+    inverter_data, remote_data = _find_packets(raw_packets)
+    if inverter_data is None:
+        return None
+
+    try:
+        inv = InverterPacket.from_bytes(inverter_data)
+    except Exception as exc:
+        log.debug("Failed to parse inverter packet: %s", exc)
+        return None
+
+    remote: RemotePacket | None = None
+    if remote_data is not None:
+        try:
+            remote = RemotePacket.from_bytes(remote_data, voltage_multiplier=VOLTAGE_MULTIPLIER)
+        except Exception as exc:
+            log.debug("Failed to parse remote packet: %s", exc)
+
+    absorb_v: float | None = None
+    float_v: float | None = None
+    absorb_time_hr: float | None = None
+    shore_amps: int | None = None
+    charger_amps_pct: int | None = None
+
+    if remote is not None:
+        base = remote.base
+        absorb_v = base.custom_absorb_v  # None if battery_type encoding instead
+        float_v = base.float_v if base.float_v > 0 else None
+        absorb_time_hr = base.absorb_time_hr if base.absorb_time_hr > 0 else None
+        shore_amps = base.shore_amps
+        charger_amps_pct = base.charger_amps_pct
+
+    return MagnumSnapshot(
+        captured_at=datetime.now(timezone.utc),
+        dc_volts=inv.dc_volts,
+        dc_amps=inv.dc_amps,
+        ac_volts_out=inv.ac_volts_out,
+        ac_volts_in=inv.ac_volts_in,
+        ac_amps_in=inv.ac_amps_in,
+        ac_amps_out=inv.ac_amps_out,
+        ac_freq_hz=inv.ac_freq_hz,
+        inverter_on=inv.inverter_led,
+        charger_on=inv.charger_led,
+        status_name=inv.status.name,
+        fault_name=inv.fault.name,
+        battery_temp_c=inv.battery_temp_c,
+        transformer_temp_c=inv.transformer_temp_c,
+        fet_temp_c=inv.fet_temp_c,
+        absorb_v=absorb_v,
+        float_v=float_v,
+        absorb_time_hr=absorb_time_hr,
+        shore_amps=shore_amps,
+        charger_amps_pct=charger_amps_pct,
+    )
+
+
+class MagnumClient:
+    """Synchronous Magnum bus reader.
+
+    Each call to read() opens the serial port, waits for a cycle that
+    contains an identifiable MS4448PAE inverter packet, and returns.
+    Uses asyncio.run() internally; safe to call from synchronous code.
+    """
+
+    def __init__(self, device: str, max_cycles: int = 10) -> None:
+        self._device = device
+        self._max_cycles = max_cycles
+
+    def read(self) -> MagnumSnapshot | None:
+        try:
+            return asyncio.run(self._read_async())
+        except Exception as exc:
+            log.warning("Magnum read failed: %s", exc)
+            return None
+
+    async def _read_async(self) -> MagnumSnapshot | None:
+        async with MagnumBus(self._device) as bus:
+            for _ in range(self._max_cycles):
+                try:
+                    cycle = await asyncio.wait_for(bus.read_cycle(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    log.debug("Magnum bus cycle timeout")
+                    continue
+                snapshot = _snapshot_from_cycle(cycle.raw_packets)
+                if snapshot is not None:
+                    return snapshot
+        log.warning("Magnum: no valid inverter packet seen in %d cycles", self._max_cycles)
+        return None
