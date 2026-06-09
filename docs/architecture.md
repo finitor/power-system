@@ -85,6 +85,15 @@ Candidate controlled chargers:
 
 The exact implementation may differ per charger. The Classic may be managed through Modbus TCP if reliable write control is confirmed. The Magnum path may be managed through the ME-RC50/Magnum network only after passive telemetry and safe command behavior are verified. Until then, conservative manual settings and alerts are preferred over blind automated control.
 
+## RS485 Device Adapter Architecture
+
+The Pi currently has one RS485 adapter (DSD TECH SH-U11H) used for the Magnum inverter network. Additional RS485 devices are planned — notably new charge controllers that also speak RS485. The intended layering when a second RS485 device arrives:
+
+- **Transport layer** — owns the serial port: device path, baud rate, open/close, raw read/write. One instance per physical adapter. Swappable independently of device logic.
+- **Device adapter** — owns the protocol: one class per device type (`MagnumClient`, future `ChargeControllerClient`, etc.). Takes a transport, not a device path. Produces a normalized snapshot in the same style as `ClassicTelemetry` and `PylonCanSnapshot`.
+
+Until a second RS485 device arrives the transport and device adapter can remain a single class (as with the existing `ClassicClient`). The refactor point is when two devices need to share an adapter or when an adapter needs to be swapped without touching device logic. Do not introduce the transport abstraction earlier.
+
 ## BMS Disconnect And Charger Transients
 
 The BMS must be treated as last-ditch battery protection, not as the normal charge-control mechanism. If a lithium BMS opens while a legacy charger or MPPT controller is actively delivering current, the battery bus can experience a load-dump transient: the charger suddenly loses the battery as its voltage reference and energy sink.
