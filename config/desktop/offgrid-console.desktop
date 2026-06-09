@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Offgrid Console
+Exec=lxterminal --geometry=132x42 -e /home/@OFFGRID_USER@/.local/bin/open-offgrid-console
+Terminal=false
+X-GNOME-Autostart-enabled=true

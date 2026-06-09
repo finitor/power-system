@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Loop forever: re-attach whenever the offgrid-console tmux session is
+# recreated (e.g. the offgrid-console service restarting alongside the
+# supervisor). The window survives session restarts instead of closing.
+while true; do
+  if tmux has-session -t offgrid-console 2>/dev/null; then
+    tmux attach -t offgrid-console
+  fi
+  sleep 2
+done
