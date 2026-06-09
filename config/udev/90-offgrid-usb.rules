@@ -4,7 +4,9 @@
 # interface reset. Pin both adapters to always-on.
 
 # DSD TECH SH-C31G — CANable 2.0 / gs_usb CAN adapter
-ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", ATTR{idProduct}=="606f", ATTR{power/control}="on"
+# RUN resets the SocketCAN interface after any USB re-enumeration (power glitch, hub reset, etc.)
+# so the supervisor does not need a manual restart to recover frame reception.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", ATTR{idProduct}=="606f", ATTR{power/control}="on", RUN+="/bin/sh -c 'sleep 1 && ip link set can0 down 2>/dev/null; ip link set can0 type can bitrate 500000 listen-only on; ip link set can0 up'"
 
 # Prolific PL2303 — DSD TECH SH-U11H Magnum RS485 adapter
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="23a3", ATTR{power/control}="on"
