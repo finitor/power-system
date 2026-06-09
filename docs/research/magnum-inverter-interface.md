@@ -90,6 +90,8 @@ Expected USB-RS485 adapter wiring for the first bench attempt:
 
 Leave RJ45 pin 4 (+14 V) and pin 5 (GND) disconnected from the USB adapter. If no packets decode, swap pins 3 and 6 at the adapter before assuming a protocol or software problem, since some adapters label A/B backward.
 
+The SH-U11H has two unpopulated jumper positions labelled **120R T** and **120R R** (transmit-line and receive-line termination resistors). Leave both unpopulated. The ME-RC50 and the inverter are the two bus endpoints and own termination; the Pi is a passive mid-bus tap and must not add a third termination load.
+
 ## Control Policy
 
 For inverter on/off, use a state-aware command path:
