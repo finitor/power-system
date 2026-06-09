@@ -18,7 +18,7 @@ ExecStartPre=+/bin/chown -R @OFFGRID_USER@:@OFFGRID_USER@ /srv/offgrid
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up
-ExecStart=/home/@OFFGRID_USER@/power-system/.venv/bin/python /home/@OFFGRID_USER@/power-system/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --web-display --web-port 8080 --weather --weather-latitude 48.000000 --weather-longitude -84.000000 --weather-label cabin --weather-cache-path /srv/offgrid/data/weather-cache.json --interval 5 --no-terminal-display --web-access-log-path /srv/offgrid/logs/web-display-access.log --load-sample-log-path /srv/offgrid/data/load-samples.csv --metrics-db-path /srv/offgrid/data/metrics.sqlite --metrics-snapshot-interval 60 --metrics-settings-interval 3600 --ambient-log-path /srv/offgrid/logs/ambient.csv
+ExecStart=/home/@OFFGRID_USER@/power-system/.venv/bin/python /home/@OFFGRID_USER@/power-system/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --web-display --web-port 8081 --weather --weather-latitude 48.000000 --weather-longitude -84.000000 --weather-label cabin --weather-cache-path /srv/offgrid/data/weather-cache.json --interval 5 --no-terminal-display --web-access-log-path /srv/offgrid/logs/web-display-access.log --load-sample-log-path /srv/offgrid/data/load-samples.csv --metrics-db-path /srv/offgrid/data/metrics.sqlite --metrics-snapshot-interval 60 --metrics-settings-interval 3600 --ambient-log-path /srv/offgrid/logs/ambient.csv
 Restart=on-failure
 RestartSec=5
 

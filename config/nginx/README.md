@@ -1,6 +1,6 @@
 # Nginx
 
-`offgrid-supervisor.conf` proxies port 80 to the supervisor web/API server on `127.0.0.1:8080`.
+`offgrid-supervisor.conf` proxies ports 80 and 8080 to the supervisor web/API server on `127.0.0.1:8081`.
 
 Intended local URLs:
 
@@ -11,7 +11,13 @@ http://blueberry.local/api/v1/health
 http://blueberry.local/api/v1/snapshot
 ```
 
-The supervisor should continue to run unprivileged on port 8080. Nginx owns port 80.
+The supervisor runs unprivileged on port 8081. Nginx owns ports 80 and 8080 — the
+8080 listener exists because the Kindle wall display is bookmarked to
+`http://blueberry.local:8080/` from before nginx fronted the supervisor; serving
+that port from nginx gives the Kindle the auto-retry page during supervisor
+restarts instead of a dead browser error page. Local consumers that want the raw
+supervisor (for example the terminal console's API poll) should use
+`127.0.0.1:8081` directly.
 
 Install on Raspberry Pi OS:
 
