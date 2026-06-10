@@ -26,4 +26,6 @@ curl -s --max-time 5 http://127.0.0.1:8081/api/v1/snapshot \
 
 echo "taper: $(tail -1 /srv/offgrid/logs/charger-taper.csv 2>/dev/null || echo no decisions logged)"
 
+echo "inverter-events: $(tail -1 /srv/offgrid/logs/inverter-events.csv 2>/dev/null || echo none logged)"
+
 echo "kindle-port: $(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -A 'Kindle/3.0' http://127.0.0.1:8080/)"

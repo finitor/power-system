@@ -9,7 +9,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
-from offgrid_power.magnum import _find_packets, _snapshot_from_cycle
+from offgrid_power.magnum import (
+    InverterEventTracker,
+    MagnumSnapshot,
+    _find_packets,
+    _snapshot_from_cycle,
+)
 
 
 # Captured live from the MS4448PAE bus on 2026-06-09. The magnum-pi
@@ -101,6 +106,50 @@ class SnapshotFromCycleTest(unittest.TestCase):
         self.assertAlmostEqual(snapshot.dc_volts, 53.2)
         self.assertIsNone(snapshot.absorb_v)
         self.assertIsNone(snapshot.float_v)
+
+
+def _magnum(inverter_on: bool, fault: str = "NONE", dc_volts: float = 53.0) -> MagnumSnapshot:
+    from datetime import datetime, timezone
+    return MagnumSnapshot(
+        captured_at=datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc),
+        dc_volts=dc_volts, dc_amps=0, ac_volts_out=120, ac_volts_in=0,
+        ac_amps_in=0, ac_amps_out=0, ac_freq_hz=60.0,
+        inverter_on=inverter_on, charger_on=False,
+        status_name="INVERT" if inverter_on else "OFF", fault_name=fault,
+        battery_temp_c=25, transformer_temp_c=30, fet_temp_c=30,
+    )
+
+
+class InverterEventTrackerTest(unittest.TestCase):
+    def test_no_event_on_first_observation_or_steady_state(self) -> None:
+        t = InverterEventTracker()
+        self.assertIsNone(t.observe(_magnum(True)))
+        self.assertIsNone(t.observe(_magnum(True)))
+
+    def test_low_battery_off_transition_is_lbco_cutout(self) -> None:
+        t = InverterEventTracker()
+        t.observe(_magnum(True))
+        event = t.observe(_magnum(False, fault="LOW_BAT", dc_volts=47.8))
+        self.assertEqual(event["event"], "lbco_cutout")
+        self.assertEqual(event["fault"], "LOW_BAT")
+        self.assertEqual(event["dc_volts"], 47.8)
+
+    def test_plain_off_transition_when_no_low_battery_fault(self) -> None:
+        t = InverterEventTracker()
+        t.observe(_magnum(True))
+        event = t.observe(_magnum(False, fault="NONE"))
+        self.assertEqual(event["event"], "inverter_off")
+
+    def test_on_transition_logged(self) -> None:
+        t = InverterEventTracker()
+        t.observe(_magnum(False, fault="LOW_BAT"))
+        event = t.observe(_magnum(True))
+        self.assertEqual(event["event"], "inverter_on")
+
+    def test_none_snapshot_is_ignored(self) -> None:
+        t = InverterEventTracker()
+        t.observe(_magnum(True))
+        self.assertIsNone(t.observe(None))
 
 
 if __name__ == "__main__":

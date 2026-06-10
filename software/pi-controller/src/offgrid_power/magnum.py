@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 
 from magnum_pi.bus import MagnumBus
 from magnum_pi.models.inverter import InverterPacket
@@ -193,3 +195,83 @@ class MagnumClient:
                     return snapshot
         log.warning("Magnum: no valid inverter packet seen in %d cycles", self._max_cycles)
         return None
+
+
+# Inverter faults that indicate the inverter shut off for a battery reason
+# rather than a manual toggle or AC transfer.
+_LOW_BATTERY_FAULTS = {"LOW_BAT", "DEAD_BAT"}
+
+INVERTER_EVENT_FIELDS = [
+    "captured_at",
+    "event",
+    "fault",
+    "dc_volts",
+    "battery_soc_percent",
+    "battery_voltage_v",
+]
+
+
+class InverterEventTracker:
+    """Detects inverter on->off transitions and classifies cut-outs.
+
+    A transition to OFF carrying a low-battery fault is an LBCO cut-out —
+    the event worth capturing for autonomy analysis. An off-transition with
+    no such fault (manual toggle, AC transfer) is logged as a plain
+    inverter_off so the record is complete and the two are distinguishable.
+    """
+
+    def __init__(self) -> None:
+        self._was_inverting: bool | None = None
+
+    def observe(self, magnum: MagnumSnapshot | None, battery=None) -> dict | None:
+        if magnum is None:
+            return None
+        inverting = magnum.inverter_on
+        previous = self._was_inverting
+        self._was_inverting = inverting
+        if previous is None or previous == inverting:
+            return None
+        if inverting:
+            event = "inverter_on"
+        elif magnum.fault_name in _LOW_BATTERY_FAULTS:
+            event = "lbco_cutout"
+        else:
+            event = "inverter_off"
+
+        soc = voltage = None
+        if battery is not None:
+            if getattr(battery, "state_of_charge", None) is not None:
+                soc = battery.state_of_charge.soc_percent
+            if getattr(battery, "measurements", None) is not None:
+                voltage = battery.measurements.voltage_v
+        return {
+            "captured_at": magnum.captured_at.isoformat(),
+            "event": event,
+            "fault": magnum.fault_name,
+            "dc_volts": magnum.dc_volts,
+            "battery_soc_percent": soc,
+            "battery_voltage_v": voltage,
+        }
+
+
+def append_inverter_event_log(path: str, event: dict) -> None:
+    """Append one inverter on/off event to a durable CSV."""
+    if not path or not event:
+        return
+    log_path = Path(path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    needs_header = not log_path.exists() or log_path.stat().st_size == 0
+    with log_path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=INVERTER_EVENT_FIELDS)
+        if needs_header:
+            writer.writeheader()
+        writer.writerow(
+            {
+                "captured_at": event.get("captured_at"),
+                "event": event.get("event"),
+                "fault": event.get("fault"),
+                "dc_volts": "" if event.get("dc_volts") is None else f"{event['dc_volts']:.1f}",
+                "battery_soc_percent": "" if event.get("battery_soc_percent") is None else event["battery_soc_percent"],
+                "battery_voltage_v": "" if event.get("battery_voltage_v") is None else f"{event['battery_voltage_v']:.2f}",
+            }
+        )

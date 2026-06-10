@@ -25,6 +25,37 @@
 | Inverter temperature | Inverter/charger | Medium | Thermal monitoring |
 | Faults/alarms | Inverter/charger | High | Needs exact message mapping |
 
+## Current Settings (ME-RC50)
+
+Read from the remote and the bus 2026-06-10. Charge values use the custom
+CC/CV profile.
+
+| Setting | Value | Notes |
+|---|---|---|
+| Low Battery Cut Out (LBCO) | 48.0 V | See rationale below |
+| LBCO cut-in (turn-back-on) | not user-settable | Magnum fixes the recovery hysteresis in firmware (restarts ~2 V above LBCO, i.e. ~50 V, after its reconnect delay). Do not hunt for a menu item. |
+| Absorb voltage (custom) | 54.4 V | |
+| Float voltage | 54.4 V | |
+| Absorb time | 3.0 h | |
+| Charge current limit (custom CC) | 40 A | Set under Custom CC/CV; not carried in the remote broadcast, so the supervisor's `charger_amps_pct` reads 0. See [research note](../research/magnum-inverter-interface.md). |
+| Shore/AC input limit | 30 A | |
+| Equalize | off (0.0 V offset) | Correct for LiFePO4 |
+
+### LBCO rationale
+
+The Cubix BMS reports a discharge voltage limit of **44.8 V** (2.8 V/cell
+on the 16S pack) — its under-voltage disconnect. LBCO is set to **48.0 V**
+(3.0 V/cell), ~3.2 V above that, so the inverter sheds AC load before the
+BMS has to open under current. That margin absorbs cell divergence and
+load sag near the bottom of the LiFePO4 curve, and avoids the load-dump
+transient (charger/inverter losing its sink) that `../architecture.md`
+warns against. The BMS under-voltage trip is cell-based and evaluated
+under load, so its effective pack-voltage trip can be higher than 44.8 V —
+another reason for the headroom.
+
+If the charge limit is ever changed at the panel, update `bulk_current_a`
+in `charger_taper.py` to match (it is the taper's operator ceiling).
+
 ## Control Boundaries
 
 The inverter/charger owns AC inversion and charging behavior. The Raspberry Pi may monitor state and may later request mode changes only if a supported, well-documented interface is available.

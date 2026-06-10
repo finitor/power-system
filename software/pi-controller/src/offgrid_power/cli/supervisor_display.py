@@ -25,7 +25,7 @@ from offgrid_power.charger_taper import (
     append_decision_log,
 )
 from offgrid_power.classic import ClassicClient
-from offgrid_power.magnum import MagnumClient
+from offgrid_power.magnum import InverterEventTracker, MagnumClient, append_inverter_event_log
 from offgrid_power.config import load_config
 from offgrid_power.load import LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
@@ -185,6 +185,11 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
         default=config.ambient.log_path,
         help="Append ambient readings to this CSV file",
     )
+    parser.add_argument(
+        "--inverter-event-log-path",
+        default=os.getenv("INVERTER_EVENT_LOG_PATH", ""),
+        help="Append inverter on/off and LBCO cut-out events to this CSV",
+    )
 
 
 def build_supervisor(args: argparse.Namespace) -> Supervisor:
@@ -278,6 +283,7 @@ def main() -> int:
         if charger_current_taper_enabled or charger_current_taper_dry_run
         else None
     )
+    inverter_event_tracker = InverterEventTracker()
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache, weather_service)
     previous_poll_render: str | None = None
@@ -307,6 +313,9 @@ def main() -> int:
             record_metrics(metric_recorder, snapshot, load_summary)
             record_weather_metrics(metric_recorder, weather_service)
             append_ambient_log(args.ambient_log_path, snapshot)
+            inverter_event = inverter_event_tracker.observe(snapshot.magnum, snapshot.battery)
+            if inverter_event is not None:
+                append_inverter_event_log(args.inverter_event_log_path, inverter_event)
             next_read = time.monotonic() + args.interval
             if args.no_terminal_display:
                 if args.once:
