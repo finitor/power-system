@@ -2,9 +2,13 @@
 
 In June 2026 I upgraded my off-grid cabin's energy storage to LiFePO4,
 triggering a cascade of desired improvements in capacity, instrumentation,
-and control. Planning and implementing all that here. I expect this will
-be interesting to outsiders mainly for the mechanics of interfacing to all
-the machinery of a solar power system from a Raspberry Pi.
+and control. Planning and implementing all that here with Codex & Claude.
+
+I expect this will be interesting to outsiders mainly for the mechanics of
+interfacing to all the machinery of a solar power system from a Raspberry Pi.
+But possibly also for seeing how the AIs help a moderately experienced
+electrical engineer structure a medium-complexity project that mixes
+hardware, software, and legacy device support.
 
 ## Goals
 
