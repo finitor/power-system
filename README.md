@@ -26,6 +26,9 @@ Update this section as the system moves through bench testing, installation, com
 - [docs/maintenance.md](docs/maintenance.md): backup, restore, inspection, and recovery routines.
 - [docs/troubleshooting.md](docs/troubleshooting.md): symptoms, likely causes, and checks.
 - [docs/safety.md](docs/safety.md): electrical and operational safety notes.
+- [docs/engineering-plan.md](docs/engineering-plan.md): living backlog of hardening and architecture work.
+- [docs/decisions/](docs/decisions/): architecture decision records (append-only judgments with context and consequences).
+- [docs/journal/](docs/journal/): append-only engineering journal — dated session narratives of what was tried, measured, and learned.
 - [hardware/bom.csv](hardware/bom.csv): bill of materials.
 - [hardware/on-hand.csv](hardware/on-hand.csv): parts already on hand, ordered, or being considered.
 - [software/](software/): Pi services, telemetry, dashboard, and control code.
