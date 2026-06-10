@@ -13,6 +13,16 @@ set -euo pipefail
 PROJECT_DIR="${OFFGRID_PROJECT_DIR:-/home/@OFFGRID_USER@/power-system}"
 VENV="${PROJECT_DIR}/.venv"
 
+# The pull below may update this very script while bash is reading it
+# incrementally. Run from a temp copy so the executing code can't change
+# mid-deploy; the updated script applies on the next run.
+if [ -z "${OFFGRID_DEPLOY_REEXEC:-}" ]; then
+    tmp="$(mktemp /tmp/offgrid-deploy.XXXXXX.sh)"
+    cp "$0" "${tmp}"
+    chmod +x "${tmp}"
+    OFFGRID_DEPLOY_REEXEC=1 exec bash "${tmp}" "$@"
+fi
+
 cd "${PROJECT_DIR}"
 
 echo "== git =="
