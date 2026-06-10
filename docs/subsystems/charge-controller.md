@@ -20,7 +20,27 @@ The system is moving toward multiple PV sources. Code and documentation should r
 | PV source | Controller | Array | Status | Notes |
 |---|---|---|---|---|
 | PV array 0 | Midnite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | Existing | 8 modules total; exact module ratings may vary around 295-305 W |
-| PV array 1 | Victron BlueSolar MPPT 150/85 CAN-bus | Canadian Solar CS6X-300-adjacent modules, 4s3p | Dry run before mount construction | 12 modules total; exact module ratings may vary around 295-305 W |
+| PV array 1 | EPEver TEP10425 (likely) or Victron BlueSolar MPPT 150/85 | Canadian Solar CS6X-300-adjacent modules, 4s3p | Dry run before mount construction | 12 modules total; exact module ratings may vary around 295-305 W |
+
+## Array 1 Controller Selection
+
+Both candidates are ordered (2026-06). Working position: the **EPEver
+TEP10425 is the probable pick** because of its higher PV input headroom —
+250 V max Voc at lowest temperature against the Victron's 150 V absolute
+limit, which rules out 4s strings of the CS6X-class modules outright. The
+Victron stays in contention only if its control and telemetry prove
+significantly better in practice (VE.Can is a known-good protocol; the
+EPEver's writable RS485 Modbus registers and PV-input behavior must be
+bench-confirmed before relying on them).
+
+EPEver manual notes (saved at `~/Dropbox/manuals/solar/TEP-Manual-EN-V1.1.pdf`):
+two PV inputs, IP20, common-negative grounding, local parameter setting,
+RS485 Modbus, built-in BMS communication port, and built-in CAN parallel
+communication port.
+
+If the Victron is installed, its battery-side protection needs a 120-125 A
+DC breaker (manual examples use 120 A for the 85 A output); tracked as
+`victron-batt-breaker` (deferred) in the inventory.
 
 ## Existing Disconnects
 

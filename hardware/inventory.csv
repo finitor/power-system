@@ -1,0 +1,48 @@
+id,category,item,manufacturer,model,qty,status,rating,interface,purpose,vendor_url,notes
+pi,controller,Raspberry Pi,Raspberry Pi,3 Model B v1.2,1,installed,5 V,GPIO/USB/Ethernet/Wi-Fi/Bluetooth,Supervisory controller and logger,,1 GB RAM; 4x USB 2.0; 40-pin GPIO
+usb-hub,controller,Powered USB hub,Waveshare,USB 3.2-Gen1-HUB-4U,1,installed,external 5 V / USB bus,USB 3.2 Gen 1 upstream / 4 downstream,Isolates telemetry adapter bus power from the Pi,,Installed inline 2026-06-09 to eliminate 5 V brownouts that were dropping the CAN adapter
+dc-12v,power,48V to 12V DC-DC converter,Victron Energy,Orion-Tr IP43 48/12-9 (110 W),1,installed,48 V in / 12 V 9 A out,48 V bus to 12 V control bus,12 V control rail for thermostat and relay/SSR/fan loads,,Installed and working
+dc-5v,power,48V to 5V DC-DC converter,Mean Well,DDR-60L-5,1,on-hand,48 V in / 5 V 60 W out,DIN rail,Pi 5 V supply,,
+kindle-display,display,Kindle wall display,Amazon,Kindle Touch (jailbroken),1,installed,battery / USB charge,Wi-Fi browser,Wall display for supervisor dashboard,,Bookmarked to port 8080; see docs/subsystems/display-services.md
+can-adapter,monitoring,USB-to-CAN adapter,DSD TECH,SH-C31G,1,installed,USB powered,USB Type-B / CAN terminal block,Battery CAN telemetry (can0),https://www.deshide.com/product-details_SH-C31G.html,CANable 2.0 based; Cubix RJ45 pinout: pin 4 CANH / pin 5 CANL / pins 3+6 GND
+magnum-rs485-adapter,monitoring,USB-to-RS485 adapter (Magnum),DSD TECH,SH-U11H,1,installed,USB powered,USB-A / RS485 screw terminals (A+ B- GND),Magnum network interface at /dev/magnum-rs485,,Industrial isolated; termination jumpers left unpopulated (mid-bus tap); dedicated to Magnum bus
+battery-rs485-adapter,monitoring,USB-to-RS485 adapter (battery fallback),Waveshare,USB TO RS485/422 industrial isolated,1,retired,USB powered,USB / RS485 screw terminal,Battery BMS RS485 fallback,https://www.waveshare.com/usb-to-rs485-422.htm,Fallback deemed unnecessary; CAN telemetry and Modbus access cover the need
+esm-100,monitoring,Battery remote monitor,Eco-Worthy,ESM-100,1,installed,battery accessory powered,battery monitor link,Voltage/current/SOC display at the rack,,
+whizbang,monitoring,Battery monitor shunt,MidNite Solar,WhizBang Jr,1,deferred,TBD,Classic accessory / shunt,Optional independent current/SOC cross-check,,Deferred unless BMS/ESM-100 telemetry proves insufficient
+temp-ds18b20,monitoring,Temperature sensors,Generic,DS18B20 stainless waterproof probe,10,on-hand,3.3 V,1-Wire GPIO,Battery/enclosure/heater-plate/ambient temperature,,Map sensor IDs to physical locations during installation
+temp-dht22,monitoring,Temperature/humidity sensor,ASAIR,AM2302 / DHT22,1,on-hand,3.3-5 V,GPIO single-wire,Utility-room ambient temperature and humidity,,Advisory only; not for safety cutoff
+batteries,storage,Rack battery,Eco-Worthy,Cubix 100,2,installed,48 V 100 Ah each (200 Ah bank),Bluetooth/Wi-Fi/RS485/CAN/RS232,Energy storage,,LiFePO4 with built-in 100 A BMS per unit; 56.1 x 48.3 x 14.3 cm each
+classic-200,charging,Charge controller,MidNite Solar,Classic 200,1,installed,48 V battery / PV input per spec,Modbus TCP (192.168.0.10),Solar charging for PV array 0,,Supervisor reads telemetry and writes charge settings over Modbus TCP
+victron-mppt,charging,Charge controller,Victron Energy,BlueSolar MPPT 150/85 VE.Can,1,ordered,48 V battery / 150 V max PV / 85 A out,VE.Can RJ45,Candidate array 1 controller,,Order may be in limbo; 150 V absolute PV limit rules out 4s CS6X strings; see subsystem doc for selection rationale
+epever-tep10425,charging,Charge controller,EPEver,TEP10425,1,ordered,48 V battery / 250 V max PV Voc cold / 100 A / 5200 W,RS485 Modbus RJ45 + BMS/CAN COM port,Likely array 1 controller,,Probable pick for PV voltage headroom; see subsystem doc for selection rationale and manual notes
+magnasine,conversion,Inverter/charger,Magnum Energy,MagnaSine MS4448PAE,1,installed,48 V DC / split-phase AC,Magnum network RS485 (green port) + ME-RC50 remote,AC inversion and generator charging,,Model 0x73 confirmed on the bus; supervisor reads telemetry via /dev/magnum-rs485
+pv-array-0,pv,PV modules (array 0),Canadian Solar,CS6X-295/300/305 class,8,installed,~300 W each,4s2p strings,Existing array feeding the Classic 200,,Exact per-module ratings vary across the CS6X family
+pv-array-1,pv,PV modules (array 1),Canadian Solar,CS6X-295/300/305 class,12,on-hand,~300 W each,4s3p planned,Second array,,Dry run on the ground pending mount construction
+pv0-disconnect,protection,PV array 0 disconnect,existing,2-pole breaker,1,installed,20 A / DC rating TBD,array 0 to Classic PV input,Array-side disconnect,,Confirm model and DC/load-break ratings
+classic-batt-disconnect,protection,Classic battery disconnect,existing,2-pole breaker,1,installed,100 A / DC rating TBD,Classic output to 48 V bus,Controller battery-side disconnect,,Confirm model and DC interrupt rating
+pv1-disconnect,protection,PV array 1 disconnect,Walfront,DC MCB 1000 V 50 A 2-pole,1,ordered,1000 VDC 50 A,DIN rail,Candidate combined array 1 disconnect,,Verify load-break suitability and polarity/enclosure before install
+cc-batt-breaker,protection,Charge-controller battery breaker,MOLLOM,DC MCB 250 V 100 A 1-pole,1,ordered,250 VDC 100 A,DIN rail,Candidate controller-to-battery protection,,Verify DC interrupt rating and load-break suitability before install
+victron-batt-breaker,protection,Victron battery breaker,TBD,120-125 A DC breaker 80/125 VDC+,1,deferred,120-125 A,DC breaker,Victron 150/85 battery-side protection,,Only needed if the Victron is installed; manual examples use 120 A for 85 A output
+pv1-string-fuses,protection,PV string protection,TBD,15 A DC PV fuse/breaker 300-600 VDC,3,needed,15 A per string,fuse holder/breaker,Array 1 per-string positive protection,,Panel max series fuse rating is 15 A
+pv1-combiner,protection,Outdoor PV combiner,TBD,3-string combiner,1,needed,sized to final string fusing,combiner box,Array 1 string combining,,Must accept selected string fuses and conductor sizes
+heater,temperature-control,Ceramic heater,TBD,48 V 200 W,1,needed,48 V / 200 W,switched 48 V DC,Winter battery preheat,,Use with breaker/manual disconnect plus NC thermal switch and one-shot thermal fuse
+thermostat,temperature-control,Thermostat controller,TBD,dual relay heat/cool,1,needed,12 V control preferred,relay outputs,Owns heat/ventilation setpoints; Pi stays supervisory,,
+heater-ssr,temperature-control,DC solid-state relay,Sensata/Crydom,EL100D10-12 candidate,1,needed,3-100 VDC 10 A out / 10-14 VDC in,12 V control,Heater switching with fail-safe off,,
+heater-breaker,temperature-control,Heater branch breaker,MidNite Solar,MNEPV10 or similar,1,needed,10 A 100-150 VDC,DC breaker,Heater branch protection and service disconnect,,
+thermal-cutoff,temperature-control,Resettable thermal cutoff,TBD,NC bimetal switch 60 C,1,needed,60 C,thermal switch in SSR control path,Heater over-temperature backstop,,Mount on heater spreader plate
+thermal-fuse,temperature-control,One-shot thermal fuse,TBD,72-84 C cutoff,1,needed,72-84 C,thermal fuse,Final heater safety backstop,,
+vent-fan,temperature-control,Ventilation fan,TBD,12 V DC fan,1,needed,12 V,12 V control,Warm-weather enclosure ventilation,,
+vent-damper,temperature-control,Vent damper,TBD,NC backdraft or motorized,1,needed,TBD,mechanical / 12 V control,Avoid permanently open winter vent,,
+opto-board,control,GPIO optocoupler board,Generic,8-channel PC817,1,needed,3.3-30 V signal / 10 mA per channel,GPIO isolation,Signal-level isolation only,,Do not switch heater load directly
+relay-module,control,Relay module,Javino or similar,1-8 channel high/low trigger,1,needed,5 V coil / 30 VDC 10 A contacts,GPIO trigger / SPDT contacts,Controlled outputs incl. Classic AUX2 charge inhibit,,Prefer high-level trigger and normally-open contacts; document fail-safe state before final selection
+rj45-breakout-f,bench,RJ45 female screw-terminal breakout,Poyiccot,8P8C female jack to screw terminals,2,on-hand,low-voltage comms,RJ45 female / screw terminal,Bench wiring and probing for CAN/RS485,,
+rj45-breakout-m,bench,RJ45 male screw-terminal breakout,Poyiccot,90-degree RJ45 male to screw terminals,1,on-hand,low-voltage comms,RJ45 male / screw terminal,Pinout probing only,,Avoid permanent strain on battery ports
+gpio-cobbler,bench,GPIO cobbler / ribbon breakout,Generic,40-pin Pi breakout,1,on-hand,3.3 V logic,GPIO ribbon,Bench prototyping,,
+res-51,passive,Resistor 51 ohm flameproof,TBD,1/2 W through-hole,10,on-hand,1/2 W,through-hole,Bench stock,,
+res-150,passive,Resistor 150 ohm flameproof,TBD,1/2 W through-hole,10,on-hand,1/2 W,through-hole,Bench stock,,
+res-360,passive,Resistor 360 ohm flameproof,TBD,1/2 W through-hole,10,on-hand,1/2 W,through-hole,Bench stock,,
+res-1k,passive,Resistor 1 kohm,TBD,through-hole,10,on-hand,TBD,through-hole,Bench stock,,
+res-10k,passive,Resistor 10 kohm,TBD,through-hole,10,on-hand,TBD,through-hole,DHT22 pull-up; Classic AUX2 pull-up candidate,,
+res-100k,passive,Resistor 100 kohm flameproof,TBD,1/4 W through-hole,1,on-hand,1/4 W,through-hole,Bench stock,,Confirm count
+res-4k7,passive,Resistor 4.7 kohm,TBD,through-hole,5,needed,TBD,through-hole,DS18B20 1-Wire pull-up,,Approximate with 10k/1k combinations for bench tests if needed
+res-120,passive,Resistor 120 ohm,TBD,through-hole,4,needed,TBD,through-hole,CAN termination spares,,

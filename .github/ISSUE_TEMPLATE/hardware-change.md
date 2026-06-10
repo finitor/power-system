@@ -18,7 +18,6 @@ labels: hardware
 ## Photos / diagrams updated?
 
 - [ ] `docs/wiring.md`
-- [ ] `docs/hardware-inventory.md`
-- [ ] `hardware/bom.csv`
+- [ ] `hardware/inventory.csv`
 - [ ] Photos added
 

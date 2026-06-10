@@ -5,14 +5,13 @@
 | Item | Value |
 |---|---|
 | Controller | Raspberry Pi 3 Model B v1.2 |
-| Power source | 5.1 V supply from 48 V system or from 12 V control bus; target 5.1 V, 5 A or better |
-| 12 V control bus supply | Victron Orion-Tr 48/12-9A isolated candidate |
+| Power source | Mean Well DDR-60L-5 (48 V to 5 V, 60 W), on hand |
+| 12 V control bus supply | Victron Orion-Tr IP43 48/12-9 (110 W), installed |
 | Network | 100BASE-T Ethernet, 2.4 GHz Wi-Fi, Bluetooth/BLE available |
 | Storage | microSD boot plus external logging storage candidate |
 | Enclosure | TBD |
 | Battery CAN interface | DSD TECH SH-C31G isolated USB-to-CAN adapter, preferred candidate |
-| Battery RS485 interface | Waveshare isolated USB-RS485/422 adapter, fallback |
-| Magnum RS485 interface | Second isolated USB-RS485 adapter, pilot |
+| Magnum RS485 interface | DSD TECH SH-U11H isolated USB-RS485, installed at /dev/magnum-rs485 |
 
 ## Power Supply Requirements
 

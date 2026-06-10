@@ -42,7 +42,7 @@ git remote add origin https://github.com/YOUR-USER/off-grid-power-system.git
 
 ```sh
 git status
-git add docs/wiring.md hardware/bom.csv
+git add docs/wiring.md hardware/inventory.csv
 git commit -m "Document battery monitor wiring"
 git push
 ```

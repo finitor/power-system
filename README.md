@@ -19,7 +19,7 @@ Update this section as the system moves through bench testing, installation, com
 
 - [docs/architecture.md](docs/architecture.md): system overview and data/control flow.
 - [docs/subsystems/](docs/subsystems/): telemetry, control, wiring, and open questions for each major hardware subsystem.
-- [docs/hardware-inventory.md](docs/hardware-inventory.md): component table.
+- [hardware/inventory.csv](hardware/inventory.csv): single source of truth for components; [docs/hardware-inventory.md](docs/hardware-inventory.md) explains the format and views.
 - [docs/wiring.md](docs/wiring.md): wiring notes, pinouts, fuse ratings, cable gauges, and labels.
 - [docs/commissioning.md](docs/commissioning.md): first power-up and acceptance checklist.
 - [docs/runbooks/](docs/runbooks/): action-oriented procedures for installation, changeovers, maintenance, and recovery.
@@ -29,8 +29,6 @@ Update this section as the system moves through bench testing, installation, com
 - [docs/engineering-plan.md](docs/engineering-plan.md): living backlog of hardening and architecture work.
 - [docs/decisions/](docs/decisions/): architecture decision records (append-only judgments with context and consequences).
 - [docs/journal/](docs/journal/): append-only engineering journal — dated session narratives of what was tried, measured, and learned.
-- [hardware/bom.csv](hardware/bom.csv): bill of materials.
-- [hardware/on-hand.csv](hardware/on-hand.csv): parts already on hand, ordered, or being considered.
 - [software/](software/): Pi services, telemetry, dashboard, and control code.
 - [config/](config/): deployable service and application configuration templates.
 - [scripts/](scripts/): installation, backup, restore, and health-check helpers.
