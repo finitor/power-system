@@ -169,7 +169,7 @@ def _solar_lines(solar: list[dict]) -> list[str]:
                 _row(
                     "Charge Settings",
                     f"Limit {_fmt(settings.get('current_limit_a'), 1)}A  "
-                    f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V for {_fmt(settings.get('absorb_time_s'), 0)}s  "
+                    f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V {_fmt(_hours(settings.get('absorb_time_s')), 1)}h  "
                     f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
                     f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V",
                 )
@@ -214,18 +214,19 @@ def _inverter_charger_lines(inverter: dict | None) -> list[str]:
 
     settings = inverter.get("settings") or {}
     settings_parts = []
+    if settings.get("charger_amps_pct") is not None and (settings.get("charger_amps_pct") or 0) > 0:
+        settings_parts.append(f"Limit {_fmt(settings.get('charger_amps_pct'), 0)}%")
     if settings.get("absorb_v") is not None:
-        settings_parts.append(f"Absorb {_fmt(settings.get('absorb_v'), 1)}V")
+        absorb = f"Absorb {_fmt(settings.get('absorb_v'), 1)}V"
+        if settings.get("absorb_time_hr") is not None:
+            absorb += f" {_fmt(settings.get('absorb_time_hr'), 1)}h"
+        settings_parts.append(absorb)
     if settings.get("float_v") is not None:
         settings_parts.append(f"Float {_fmt(settings.get('float_v'), 1)}V")
-    if settings.get("absorb_time_hr") is not None:
-        settings_parts.append(f"{_fmt(settings.get('absorb_time_hr'), 1)}hr")
     if settings.get("shore_amps") is not None:
         settings_parts.append(f"Shore {_fmt(settings.get('shore_amps'), 0)}A")
-    if settings.get("charger_amps_pct") is not None and (settings.get("charger_amps_pct") or 0) > 0:
-        settings_parts.append(f"Charger {_fmt(settings.get('charger_amps_pct'), 0)}%")
     if settings_parts:
-        lines.append(_row("Settings", "  ".join(settings_parts)))
+        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
 
     return lines
 
@@ -261,6 +262,13 @@ def _temperature_lines(payload: dict) -> list[str]:
         if ambient.get("humidity_percent") is not None:
             lines.append(_row("Humidity", f"{_fmt(ambient.get('humidity_percent'), 1)}%"))
     return lines
+
+
+def _hours(seconds) -> float | None:
+    try:
+        return float(seconds) / 3600
+    except (TypeError, ValueError):
+        return None
 
 
 def _row(label: str, value: str) -> str:

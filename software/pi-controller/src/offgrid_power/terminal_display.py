@@ -259,7 +259,7 @@ def _charge_settings_line(settings: ClassicChargeSettings) -> str:
     return _row(
         "Charge Settings",
         f"Limit {settings.battery_current_limit_a:.1f}A  "
-        f"Absorb {settings.absorb_voltage_v:.1f}V for {settings.absorb_time_s}s  "
+        f"Absorb {settings.absorb_voltage_v:.1f}V {settings.absorb_time_s / 3600:.1f}h  "
         f"Float {settings.float_voltage_v:.1f}V  "
         f"EQ {settings.equalize_voltage_v:.1f}V",
     )
@@ -296,18 +296,19 @@ def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
     lines.append(_row("Status", status_text))
 
     settings_parts = []
+    if inv.charger_amps_pct is not None and inv.charger_amps_pct > 0:
+        settings_parts.append(f"Limit {inv.charger_amps_pct}%")
     if inv.absorb_v is not None:
-        settings_parts.append(f"Absorb {inv.absorb_v:.1f}V")
+        absorb = f"Absorb {inv.absorb_v:.1f}V"
+        if inv.absorb_time_hr is not None:
+            absorb += f" {inv.absorb_time_hr:.1f}h"
+        settings_parts.append(absorb)
     if inv.float_v is not None:
         settings_parts.append(f"Float {inv.float_v:.1f}V")
-    if inv.absorb_time_hr is not None:
-        settings_parts.append(f"{inv.absorb_time_hr:.1f}hr")
     if inv.shore_amps is not None:
         settings_parts.append(f"Shore {inv.shore_amps}A")
-    if inv.charger_amps_pct is not None and inv.charger_amps_pct > 0:
-        settings_parts.append(f"Charger {inv.charger_amps_pct}%")
     if settings_parts:
-        lines.append(_row("Settings", "  ".join(settings_parts)))
+        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
 
     return lines
 

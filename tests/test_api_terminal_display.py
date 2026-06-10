@@ -71,7 +71,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Flow                  53.04V  -1.2A  -64W  discharging", rendered)
         self.assertIn("Cells                 Δ 6mV; min 2|14 3.312V; max 2|10 3.318V", rendered)
         self.assertIn("Charge Status         Stage: Float  State: MPPT or regulating voltage", rendered)
-        self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V for 1950s  Float 55.0V  EQ 55.6V", rendered)
+        self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V 0.5h  Float 55.0V  EQ 55.6V", rendered)
         self.assertNotIn("Temps", rendered)
         self.assertIn("Battery terminal      17.0C", rendered)
         self.assertIn("CC0 FET               31.0C", rendered)
