@@ -42,6 +42,26 @@ conservative user-defined profile, and the supervisor's taper is the
 policy authority for this controller too (the taper abstractions are
 charger-agnostic by design).
 
+## Ports and pinouts (1.2.1)
+
+**COM port** (RJ45, isolated, Modbus RS485; supplies 5VDC/200mA on pin 1):
+
+| Pin | Function |
+|---|---|
+| 1 | +5VDC — leave disconnected |
+| 3 | RS485-B |
+| 6 | RS485-A |
+| 8 | GND |
+
+**Port 9** (RTS/BMS/CAN multiplexed): correction to the accessories-section
+reading — the BMS-Link module is only needed for *other* manufacturers'
+BMS protocols. **Pylon-protocol batteries connect directly to port 9 with
+BMS protocol number 21** (Pylon cable CC-RJ45-RJ45-PYLON-200, pins 3/6 —
+i.e. RS485-based Pylon). Port 9 also carries CAN (pin 5 = CAN-L) and the
+RTS-D47K temp sensor (protocol number 32). So the Cubix pairing path for a
+future UBS experiment is: battery's Pylon RS485 port → port 9 pins 3/6,
+BPRO=21.
+
 ## Remote parameter setting (3.3.7)
 
 - "USER" voltage parameters settable via PC software through the **COM
