@@ -4,7 +4,7 @@ Raspberry Pi-mediated monitoring, logging, and control for an off-grid power ins
 
 ## Goals
 
-- Track the physical system by major subsystem: battery bank, solar charge controller, inverter/charger, controller, loads, sensors, wiring, fuses, and enclosures.
+- Track the physical system by major subsystem: battery bank, PV arrays, charge controllers, inverter/charger, loads, sensors, wiring, fuses, and enclosures.
 - Run reliable local telemetry on a Raspberry Pi.
 - Keep control logic conservative, inspectable, and recoverable.
 - Preserve field observations, photos, diagrams, and configuration in one versioned place.
