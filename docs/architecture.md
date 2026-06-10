@@ -10,6 +10,7 @@ This project is organized around the major power-system subsystems that require 
 - [Battery temperature control](subsystems/battery-temperature-control.md): winter warming, warm-weather ventilation, and charge-temperature permissives.
 - [Inverter/charger](subsystems/inverter-charger.md): MagnaSine 4448 inverter/charger.
 - [Supervisory controller](subsystems/supervisory-controller.md): Raspberry Pi and local services.
+- [Display services](subsystems/display-services.md): Kindle wall display, desktop console, and the nginx/systemd restart chain.
 
 ```mermaid
 flowchart LR

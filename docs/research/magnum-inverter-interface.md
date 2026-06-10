@@ -139,7 +139,7 @@ Confirmed 2026-06-09: the Pi can inject a valid remote packet onto the green net
 2. **Pi transmits every cycle (~100ms)** — two devices contending in the same time slot causes RS485 collisions. Not safe.
 3. **Inline interposer (MagWeb topology)** — Pi sits between the inverter network port and the ME-RC50. Passes through ME-RC50 packets transparently; substitutes modified packets when an override is active. Requires two RS485 adapters (one per bus segment) and a relay loop in the Pi. This is the only architecture that allows Pi control while keeping the ME-RC50 in service.
 
-Option 3 is the correct long-term path for any automated charge parameter control. Monitoring and read-only telemetry work fine from a parallel tap with no changes needed.
+Monitoring and read-only telemetry work fine from a parallel tap with no changes needed. For control, the provisional decision (see `docs/decisions/0002-magnum-remote-takeover.md`) is option 1 — remove the ME-RC50 and have the Pi take over the remote's function — with the supervisor's Inverter/Charger display group as the visibility validation step, and option 3 as fallback if the Pi cannot meet the availability bar.
 
 ## Control Policy
 
