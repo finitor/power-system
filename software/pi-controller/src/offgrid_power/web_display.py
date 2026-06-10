@@ -62,6 +62,37 @@ def format_kindle_time(captured_at: datetime) -> str:
     return captured_at.astimezone().strftime("%H:%M:%S %Z")
 
 
+def _kindle_refresh_script(refresh_seconds: int) -> str:
+    """In-place XHR refresher for the Kindle wall display.
+
+    Replaces <meta refresh>: navigation-based refresh dies permanently if
+    one reload lands while the server is down (the browser swaps in its
+    native error page, which carries no refresh). This script never
+    navigates -- it fetches the page and swaps document.body.innerHTML on
+    success, silently retrying on failure, so the display self-recovers
+    from Pi reboots, supervisor restarts, and Wi-Fi drops. ES3-only for
+    the Kindle Touch's 2011 WebKit.
+    """
+    return (
+        '<script type="text/javascript">\n'
+        "(function() {\n"
+        "  function tick() {\n"
+        "    var x = new XMLHttpRequest();\n"
+        "    var url = window.location.pathname + '?k=' + (new Date()).getTime();\n"
+        "    x.open('GET', url, true);\n"
+        "    x.onreadystatechange = function() {\n"
+        "      if (x.readyState !== 4 || x.status !== 200) { return; }\n"
+        "      var m = /<body[^>]*>([\\s\\S]*)<\\/body>/.exec(x.responseText);\n"
+        "      if (m) { document.body.innerHTML = m[1]; }\n"
+        "    };\n"
+        "    x.send(null);\n"
+        "  }\n"
+        f"  setInterval(tick, {refresh_seconds * 1000});\n"
+        "})();\n"
+        "</script>"
+    )
+
+
 def render_kindle_snapshot(
     snapshot: SupervisorSnapshot,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
@@ -75,7 +106,7 @@ def render_kindle_snapshot(
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-        f'<meta http-equiv="refresh" content="{refresh_seconds}">',
+        _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power</title>",
         "<style>",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
@@ -150,7 +181,7 @@ def render_kindle_weather(
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-        f'<meta http-equiv="refresh" content="{refresh_seconds}">',
+        _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Weather</title>",
         "<style>",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",

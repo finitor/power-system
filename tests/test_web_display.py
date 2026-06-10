@@ -60,8 +60,12 @@ class WebDisplayTest(unittest.TestCase):
             ),
         )
 
-        # The meta refresh is what keeps the Kindle wall display alive.
-        self.assertIn('<meta http-equiv="refresh" content="60">', html)
+        # The in-place XHR refresher keeps the Kindle wall display alive:
+        # it never navigates, so a Pi reboot can't strand the browser on a
+        # native error page.
+        self.assertIn("XMLHttpRequest", html)
+        self.assertIn("setInterval(tick, 60000)", html)
+        self.assertNotIn('http-equiv="refresh"', html)
         self.assertIn("SOC 97%", html)
         for section in ("Load", "Battery Bank", "Charge Controller 0", "Inverter/Charger", "Temperatures"):
             self.assertIn(f"<h2>{section}</h2>", html)
@@ -69,8 +73,6 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("5.1A  272W", html)
         self.assertIn("18.7h", html)
         self.assertIn("54.57V", html)
-        # Kindle WebKit is ancient; keep the page script-free.
-        self.assertNotIn("<script", html)
 
     def test_renders_kindle_snapshot_with_empty_and_error_snapshots(self) -> None:
         # Degraded states must render, not raise: this is what the wall
@@ -112,13 +114,12 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_weather(report)
 
-        self.assertIn('<meta http-equiv="refresh" content="60">', html)
+        self.assertIn("XMLHttpRequest", html)
         # Derived formatting: weather code text, wind direction, moon phase name.
         self.assertIn("Cabin: rain", html)
         self.assertIn("18km/h  32km/h gust  W", html)
         self.assertIn("rise 05:39  set 21:37", html)
         self.assertIn("last quarter (0.72)", html)
-        self.assertNotIn("<script", html)
 
     def test_renders_weather_unavailable_with_retry(self) -> None:
         report = WeatherReport(
@@ -133,7 +134,7 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertIn("Weather unavailable", html)
         self.assertIn("network unavailable", html)
-        self.assertIn('<meta http-equiv="refresh" content="60">', html)
+        self.assertIn("XMLHttpRequest", html)
 
     def test_hides_weather_details_after_stale_cutoff(self) -> None:
         fetched_at = datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc)
