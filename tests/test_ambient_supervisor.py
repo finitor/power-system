@@ -30,7 +30,7 @@ from offgrid_power.terminal_display import (
     CHANGED_DIGIT_START,
     DOWN_ARROW,
     UP_ARROW,
-    format_refresh_age,
+    format_updated_time,
     highlight_changed_digits,
     render_snapshot,
 )
@@ -345,18 +345,13 @@ class TerminalDisplayTest(unittest.TestCase):
         self.assertIn("201.0V", rendered)
         self.assertIn("218.0V", rendered)
 
-    def test_renders_refresh_age(self) -> None:
+    def test_renders_updated_timestamp(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None).read_snapshot()
 
-        rendered = render_snapshot(snapshot, now=snapshot.captured_at + timedelta(seconds=5))
+        rendered = render_snapshot(snapshot)
 
-        self.assertIn("Refreshed: 05 seconds ago", rendered)
-
-    def test_format_refresh_age_uses_human_singular_and_zero(self) -> None:
-        captured_at = datetime(2026, 5, 28, 12, 0, tzinfo=timezone.utc)
-
-        self.assertEqual(format_refresh_age(captured_at, captured_at), "00 seconds ago")
-        self.assertEqual(format_refresh_age(captured_at, captured_at + timedelta(seconds=1)), "01 seconds ago")
+        self.assertIn(f"Updated: {format_updated_time(snapshot.captured_at)}", rendered)
+        self.assertNotIn("Refreshed:", rendered)
 
     def test_renders_battery_can_dfu_mode(self) -> None:
         snapshot = make_snapshot(
@@ -430,8 +425,8 @@ class HighlightChangedDigitsTest(unittest.TestCase):
 
     def test_does_not_highlight_refresh_age(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Refreshed: 1 second ago",
-            current="Refreshed: 2 seconds ago",
+            previous="Updated: 12:00:01 EDT",
+            current="Updated: 12:00:02 EDT",
         )
 
         self.assertNotIn(CHANGED_DIGIT_START, highlighted)
@@ -439,8 +434,8 @@ class HighlightChangedDigitsTest(unittest.TestCase):
 
     def test_adds_direction_arrows_to_changed_values(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Output:  54.2V    3.6A    196W\nRefreshed: 1 second ago",
-            current="Output:  54.1V    3.8A    190W\nRefreshed: 2 seconds ago",
+            previous="Output:  54.2V    3.6A    196W\nUpdated: 12:00:01 EDT",
+            current="Output:  54.1V    3.8A    190W\nUpdated: 12:00:02 EDT",
         )
 
         self.assertIn(DOWN_ARROW, highlighted)

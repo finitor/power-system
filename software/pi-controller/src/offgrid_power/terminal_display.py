@@ -32,10 +32,9 @@ def format_time(value: datetime) -> str:
     return value.astimezone().strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
-def format_refresh_age(captured_at: datetime, now: datetime | None = None) -> str:
-    now = now or datetime.now(captured_at.tzinfo)
-    seconds = max(0, int((now - captured_at).total_seconds()))
-    return f"{seconds:02d} seconds ago"
+def format_updated_time(captured_at: datetime) -> str:
+    """Match the web display's Updated stamp, e.g. '18:46:21 EDT'."""
+    return captured_at.astimezone().strftime("%H:%M:%S %Z")
 
 
 def format_cell_location_for_display(location: str | None) -> str:
@@ -86,7 +85,7 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
     previous_lines = previous.splitlines()
 
     for line_index, current_line in enumerate(current.splitlines()):
-        if current_line.startswith("Refreshed:") or line_index >= len(previous_lines):
+        if current_line.startswith("Updated:") or line_index >= len(previous_lines):
             continue
 
         previous_values = list(MEASUREMENT_PATTERN.finditer(previous_lines[line_index]))
@@ -122,7 +121,7 @@ def render_snapshot(
     lines: list[str] = []
     width = min(shutil.get_terminal_size((100, 30)).columns, 120)
     lines.append("Off-Grid Power Supervisor".ljust(width))
-    lines.append(f"Refreshed: {format_refresh_age(snapshot.captured_at, now)}")
+    lines.append(f"Updated: {format_updated_time(snapshot.captured_at)}")
     lines.append(_status_line(snapshot))
     lines.append("")
 

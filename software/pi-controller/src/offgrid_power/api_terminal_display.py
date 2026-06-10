@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 import shutil
 
-from .terminal_display import format_cell_location_for_display, format_refresh_age
+from .terminal_display import format_cell_location_for_display, format_updated_time
 
 
 ROW_LABEL_WIDTH = 21
@@ -20,9 +20,9 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
 
     lines.append("Off-Grid Power Supervisor".ljust(width))
     if captured_at is None:
-        lines.append("Refreshed: unavailable")
+        lines.append("Updated: unavailable")
     else:
-        lines.append(f"Refreshed: {format_refresh_age(captured_at, now)}")
+        lines.append(f"Updated: {format_updated_time(captured_at)}")
     lines.append(_status_line(status, battery))
     lines.append("")
 
@@ -72,7 +72,7 @@ def render_api_unavailable(error: str) -> str:
     return "\n".join(
         [
             "Off-Grid Power Supervisor".ljust(width),
-            "Refreshed: unavailable",
+            "Updated: unavailable",
             "Status:  UNAVAILABLE",
             "",
             "API snapshot unavailable",
