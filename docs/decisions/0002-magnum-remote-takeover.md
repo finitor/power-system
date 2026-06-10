@@ -18,6 +18,12 @@ made takeover costlier at the same time as its benefit shrank.
 The Pi keeps full read-only Magnum telemetry. Inverter on/off control, if
 ever wanted, would reopen this decision or use the interposer fallback.
 
+Addendum 2026-06-10: inverter on/off toggle was bench-tested and works
+with the ME-RC50 installed — the remote does not interfere with it (unlike
+charge settings). This is banked as a known capability, not built (see
+research note). It does not change the rejection: charge-parameter control
+still cannot coexist with the remote, which was the actual goal.
+
 ## Context
 
 The Pi reads the Magnum inverter/charger over RS-485 from a parallel tap on

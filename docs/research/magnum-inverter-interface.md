@@ -141,6 +141,38 @@ Confirmed 2026-06-09: the Pi can inject a valid remote packet onto the green net
 
 Monitoring and read-only telemetry work fine from a parallel tap with no changes needed. For control, the provisional decision (see `docs/decisions/0002-magnum-remote-takeover.md`) is option 1 — remove the ME-RC50 and have the Pi take over the remote's function — with the supervisor's Inverter/Charger display group as the visibility validation step, and option 3 as fallback if the Pi cannot meet the availability bar.
 
+## Inverter Toggle Works With the Remote Installed (2026-06-10)
+
+Bench test: single inverter toggle from the Pi, ME-RC50 connected and
+operating normally. Captured timeline (inverter status byte / remote
+control byte):
+
+```
+ 0.0s  inverter 0x40 (INVERT), remote ctrl 0x00
+ ---   Pi sends one toggle (remote packet, byte 0 bit 0 set)
+ 0.2s  inverter 0x20 (OFF)          remote ctrl stays 0x00
+ ...   inverter held OFF for the full 12s window
+ ---   Pi sends one restore toggle
+ 0.2s  inverter 0x40 (INVERT)       remote ctrl stays 0x00
+```
+
+Key result — and the **opposite** of the charge-settings behavior: the
+inverter on/off toggle is a *transition command*, not a continuously
+broadcast state. The ME-RC50 holds `ctrl=0x00` (no toggle) steadily, the
+inverter latches the commanded run state, and the remote does **not** push
+back or restore it. The inverter stayed OFF for 12 seconds with the remote
+fully connected and would have stayed off indefinitely without the Pi's
+restore toggle. (Contrast: charge voltages/currents *are* rebroadcast every
+~100ms, so the remote overwrites those Pi writes within one cycle.)
+
+**Banked capability (not built):** the Pi can reliably control inverter
+on/off with the ME-RC50 in place — low-voltage inverter disable / load-shed
+is achievable today without removing the remote. Deliberately not developed
+into a supervisory feature yet: not worth dedicating an interface to a
+single state. Use a state-aware path when built (read state, toggle only if
+a change is needed, re-read to confirm) because the command is
+toggle-not-set. Note AC loads blip off during any test.
+
 ## Custom CC/CV Settings Are Not Broadcast (2026-06-10)
 
 The ME-RC50 has a Custom CC/CV battery profile active with a 40 A charge
