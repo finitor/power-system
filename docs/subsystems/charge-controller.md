@@ -46,6 +46,26 @@ If the Victron is installed, its battery-side protection needs a 120-125 A
 DC breaker (manual examples use 120 A for the 85 A output); tracked as
 `victron-batt-breaker` (deferred) in the inventory.
 
+### Consolidation option (considered 2026-06-10, parked)
+
+The TEP10425's two PV inputs could take both arrays, retiring the Classic.
+Decision: **keep the Classic on array 0.** Rationale: controller redundancy
+(either unit failing still leaves solar charging — the consolidated
+single-point failure is the worst available off-grid), ~6 kW combined
+nameplate would clip the EPEver's 5,200 W ceiling on the best days, the
+multi-controller supervisor cost is already paid (actor threads;
+charger-agnostic taper), and a subsystem with nine years of trouble-free
+service should not be disturbed to win marginal simplicity. The dual input
+is instead the **Classic-failure contingency**: if the Classic dies, both
+arrays move to the EPEver with the control path already proven.
+
+Charge-policy coherence across two controllers: chargers on a shared bus
+do not negotiate — each regulates to its own setpoints and the highest
+setpoint wins the top of charge. Both controllers must therefore carry the
+same conservative profile, with the supervisor as the single policy
+authority (see the epever research note for why the EPEver's native BMS
+mode is not that authority with this bank).
+
 ## Existing Disconnects
 
 | Location | Installed device | Current rating | Poles | Notes |

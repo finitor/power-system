@@ -28,12 +28,19 @@ controller follows the BMS directly:
 - honors BMS forced-charge requests and full-charge (BCF) status.
 
 This is natively the closed-loop charge control our charger-current taper
-approximates over Modbus for the Classic. **Open question (bench):** which
-protocols BPRO supports and whether the Cubix's Pylon dialect is among
-them — the battery's inverter-facing RS485/CAN protocols are both set to
-PYLON, and the TEP10425 has a dedicated BMS/CAN COM port. If it pairs, the
-taper may be unnecessary on this controller; the supervisor's role reduces
-to monitoring and verifying.
+approximates over Modbus for the Classic — **but on present evidence it is
+not usable as the policy plane with our bank.** Across 1,487 recorded
+supervisor snapshots the Cubix has published exactly one CVL (58.4 V =
+3.65 V/cell, its protection maximum) and one CCL (200 A): a static
+protection envelope, not a managed charge target. UBS following those
+limits would charge far hotter than our 54.4 V practice. Good BMSes
+(e.g. Pylontech) walk CVL/CCL down dynamically near full, which is what
+makes UBS-style modes genuinely closed-loop; whether the Cubix does this
+near 100% SOC has never been observed and is now a deciding bench
+question. Until proven otherwise: **UBS stays off**, the EPEver runs a
+conservative user-defined profile, and the supervisor's taper is the
+policy authority for this controller too (the taper abstractions are
+charger-agnostic by design).
 
 ## Remote parameter setting (3.3.7)
 
@@ -67,6 +74,12 @@ to monitoring and verifying.
    limit current) and verify a write+readback of a harmless parameter.
 3. Test BPRO/UBS against a Cubix pack on the BMS/CAN port: does it accept
    the Pylon CAN protocol? Verify it tracks BMS CVL/CCL.
-4. Record ARM/DSP firmware versions in the inventory notes.
-5. Confirm PV-input behavior near the 250 V cold-Voc limit assumption
+4. **Deciding observation:** watch CAN frame 0x351 (CVL/CCL) through a
+   genuine full-charge event — if the Cubix never modulates its limits,
+   UBS is permanently unsuitable as the policy plane here.
+5. Spec-table questions for the dual PV inputs: independent MPPT trackers
+   or internally paralleled? Per-input Voc/current limits? (Matters for
+   the Classic-failure contingency below.)
+6. Record ARM/DSP firmware versions in the inventory notes.
+7. Confirm PV-input behavior near the 250 V cold-Voc limit assumption
    against the spec table before wiring the 4s3p array.
