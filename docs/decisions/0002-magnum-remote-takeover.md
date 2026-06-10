@@ -4,7 +4,19 @@ Date: 2026-06-09
 
 ## Status
 
-Proposed — validation in progress
+Rejected 2026-06-10 — keeping the ME-RC50; Magnum stays read-only from the Pi
+
+Rationale for rejection: Magnum charging is generator-driven and therefore
+always human-attended — the operator starts a small generator outside, so
+charge sessions are observable and manually supervised by construction. The
+risk that motivates closed-loop charge control is *unattended* charging,
+which is the solar path; supervisory effort goes to the charger current
+taper on the solar controllers instead. The discovery that Custom CC/CV
+parameters are not conveyed in the remote's broadcast (see research note)
+made takeover costlier at the same time as its benefit shrank.
+
+The Pi keeps full read-only Magnum telemetry. Inverter on/off control, if
+ever wanted, would reopen this decision or use the interposer fallback.
 
 ## Context
 

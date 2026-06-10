@@ -68,9 +68,11 @@ synchronous path, and `--once` always reads synchronously.
 Phase 2 (TODO):
 
 - Persistent Magnum listener: hold the serial port open and consume bus
-  cycles continuously instead of open/read/close per poll. Natural home for
-  the future remote-takeover transmit loop (decision 0002), which must emit
-  the remote packet every ~100ms on the same thread that owns the port.
+  cycles continuously instead of open/read/close per poll. Motivation is
+  telemetry robustness: the open-per-poll pattern also makes ad-hoc bench
+  captures collide with the supervisor on the serial port (hit 2026-06-10).
+  (The remote-takeover transmit loop is no longer a driver — decision 0002
+  was rejected; the ME-RC50 stays.)
 - Surface per-device ages in the API payload (staleness is currently only a
   status condition).
 
@@ -85,35 +87,12 @@ minutes by the prune, `ambient.csv` unbounded.
 - Bound or rotate `ambient.csv`.
 - The real fix is restoring dedicated storage; document remount procedure.
 
-## 8. Public-repo preparation — PLACEHOLDERS DONE, HISTORY PASS AT RELEASE
+## 8. Public-repo preparation — DONE
 
-Goal: the repo can eventually go public without exposing the operator's
-username, host paths, or the site's precise location.
-
-Done:
-
-- systemd units and the desktop entry are templates
-  (`@OFFGRID_USER@`/`@PROJECT_DIR@`) rendered by deploy.sh from `id -un`
-  and the checkout location — zero per-site configuration.
-- Scripts derive the project dir from their own location instead of
-  hardcoding a home directory.
-- Site coordinates moved from the supervisor ExecStart line into
-  `/etc/offgrid-power.env` (never in the repo); the CLI already preferred
-  those env vars. Docs and `.env.example` carry approximate/placeholder
-  values; public location granularity is "near Wawa, Ontario, Canada".
-- Maidenhead locator removed as the site label/id; docs and examples use
-  "cabin"/"Cabin".
-
-Remaining, to do immediately before flipping the repo public (not
-earlier, to pay the history-rewrite tax once):
-
-- `git filter-repo --replace-text` pass over history mapping the
-  username, home paths, coordinates, and locator to the placeholder
-  forms; force-push and re-point both clones.
-- Check `git log --format='%ae' | sort -u` for personal email addresses
-  in commit metadata.
-- Re-read `docs/journal/` and `docs/research/` for narrative details that
-  identify the site more precisely than intended.
+Placeholders/templates landed first; the history rewrite (username, paths,
+coordinates, locator, author identity) and MIT license followed, and the
+repo went public 2026-06-10. The journal entry for that date records the
+sequence and the deploy.sh self-update lesson.
 
 ## 9. Operator actions — USER
 
