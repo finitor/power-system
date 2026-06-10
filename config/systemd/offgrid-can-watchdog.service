@@ -1,0 +1,6 @@
+[Unit]
+Description=Recover the off-grid CAN adapter if the bus is silent
+
+[Service]
+Type=oneshot
+ExecStart=@PROJECT_DIR@/scripts/can-watchdog.sh

@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodic off-grid CAN bus liveness check
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

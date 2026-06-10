@@ -11,6 +11,7 @@
 | Desktop console window missing | tmux session recreated while window script could not re-attach; or used `systemctl start` after a manual stop (BindsTo does not propagate starts) | `systemctl is-active offgrid-console`, `tmux list-clients -t offgrid-console` | `sudo systemctl restart offgrid-console`; window re-attaches via `~/.local/bin/open-offgrid-console` loop |
 | Console shows stale/missing fields after deploy | Console process running old code against new API | Compare console output to `/api/v1/snapshot` | `sudo systemctl restart offgrid-supervisor` restarts both via BindsTo |
 | Magnum values garbled (impossible volts/temps) | magnum-pi CycleTracker joined bus mid-cycle and swapped inverter/remote packets | `magnum-pi sniff`; inverter packet has model byte 0x73 at position 14 | Use `MagnumClient` (identifies by model byte); do not trust raw magnum-pi monitor output |
+| Battery CAN silent / stale conditions flapping | gs_usb URB wedge after USB disturbance (adapter up, no frames), or Cubix BMS legitimately quiet at idle | `candump can0` shows nothing; `rx_packets` static in `/sys/class/net/can0/statistics` | `offgrid-can-watchdog.timer` auto-resets the adapter within ~2 min (10 min cooldown). Manual: unbind/rebind the USB device, reconfigure can0; supervisor actor recovers without restart |
 
 ## Field Observation Template
 

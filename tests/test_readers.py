@@ -12,8 +12,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
+from offgrid_power.canbus import PylonCanSnapshot, PylonMeasurements
 from offgrid_power.readers import DeviceReading, PollingReader
-from offgrid_power.supervisor import Supervisor
+from offgrid_power.supervisor import Supervisor, validated_battery_snapshot
 
 
 class PollingReaderTest(unittest.TestCase):
@@ -179,6 +180,18 @@ class SupervisorReaderModeTest(unittest.TestCase):
 
         self.assertIsNone(snapshot.ambient)
         self.assertEqual(snapshot.errors, [])
+
+    def test_partial_battery_snapshot_counts_as_failed_read(self) -> None:
+        # A sparse frame burst decodes to a snapshot without measurements;
+        # it must not overwrite the cached good snapshot.
+        sparse = PylonCanSnapshot()
+        with self.assertRaisesRegex(RuntimeError, "partial CAN read"):
+            validated_battery_snapshot(sparse)
+
+        rich = PylonCanSnapshot(
+            measurements=PylonMeasurements(voltage_v=53.0, current_a=-2.5, temperature_c=20.0)
+        )
+        self.assertIs(validated_battery_snapshot(rich), rich)
 
     def test_classic_write_routes_through_reader_thread(self) -> None:
         write_threads: list[str] = []

@@ -95,7 +95,11 @@ class Supervisor:
         if self.classic is not None:
             readers["classic"] = PollingReader("classic", self.classic.read, interval_s)
         if self.battery is not None:
-            readers["battery"] = PollingReader("battery", self.battery.read, interval_s)
+            readers["battery"] = PollingReader(
+                "battery",
+                lambda: validated_battery_snapshot(self.battery.read()),
+                interval_s,
+            )
         if self.ambient is not None:
             readers["ambient"] = PollingReader("ambient", self.ambient.read, interval_s)
         if self.magnum is not None:
@@ -287,6 +291,19 @@ class Supervisor:
             if count >= candidate.required_samples:
                 conditions.append(candidate)
         return conditions
+
+
+def validated_battery_snapshot(snapshot: PylonCanSnapshot) -> PylonCanSnapshot:
+    """Reject partial CAN reads so they cannot overwrite a good cache.
+
+    When the bus is flapping, a 1.5s collection window can catch a sparse
+    frame burst and decode a snapshot with no measurements frame. Caching
+    that as "last good" makes displays flicker between rich and empty data.
+    A snapshot without measurements counts as a failed read instead.
+    """
+    if snapshot is not None and snapshot.measurements is None:
+        raise RuntimeError("partial CAN read: no battery measurements frame")
+    return snapshot
 
 
 def charge_limit_status_conditions(

@@ -56,12 +56,15 @@ render() {
 render config/systemd/offgrid-supervisor.service | sudo tee /etc/systemd/system/offgrid-supervisor.service > /dev/null
 render config/systemd/offgrid-console.service | sudo tee /etc/systemd/system/offgrid-console.service > /dev/null
 render config/systemd/offgrid-metrics-export.service | sudo tee /etc/systemd/system/offgrid-metrics-export.service > /dev/null
+render config/systemd/offgrid-can-watchdog.service | sudo tee /etc/systemd/system/offgrid-can-watchdog.service > /dev/null
+sudo install -m 644 config/systemd/offgrid-can-watchdog.timer /etc/systemd/system/
 sudo install -m 644 config/systemd/offgrid-metrics-export.timer /etc/systemd/system/
 sudo install -m 644 config/nginx/offgrid-supervisor.conf /etc/nginx/sites-available/
 sudo install -m 644 config/udev/90-offgrid-usb.rules /etc/udev/rules.d/
 install -m 755 config/desktop/open-offgrid-console "${HOME}/.local/bin/open-offgrid-console"
 render config/desktop/offgrid-console.desktop > "${HOME}/.config/autostart/offgrid-console.desktop"
 sudo systemctl daemon-reload
+sudo systemctl enable --now --quiet offgrid-can-watchdog.timer
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=tty
 sudo nginx -t -q
