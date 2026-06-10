@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 import sys
+import time
 import unittest
+
+# The load estimates compute "hours since local midnight" and roll daily
+# totals at local midnight, so expected values depend on the host timezone.
+# Pin the site's zone so the suite passes identically on the Pi (Eastern),
+# workstations, and UTC CI runners.
+os.environ["TZ"] = "America/Toronto"
+time.tzset()
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
