@@ -24,7 +24,11 @@ class ChargerCurrentTaperConfig:
     ramp2_voltage_v: float = 54.4
     top_voltage_v: float = 54.8
     full_reset_voltage_v: float = 54.0
-    bulk_current_a: float = 100.0
+    # Operator ceiling: keep equal to the charger limit configured at the
+    # panel. The taper only ever reduces from here; it must never raise the
+    # limit above what the operator chose (first caught by dry-run
+    # 2026-06-10, when bulk targeted 100A over an 80A panel setting).
+    bulk_current_a: float = 80.0
     ramp1_high_current_a: float = 30.0
     ramp1_low_current_a: float = 20.0
     ramp2_high_current_a: float = 10.0
@@ -76,6 +80,8 @@ class ChargerCurrentTaperController:
         if battery.charge_limits is not None:
             target = min(target, max(0.0, battery.charge_limits.charge_current_limit_a))
 
+        # Never target above the operator ceiling, whatever the candidates say.
+        target = min(target, self.config.bulk_current_a)
         target = round(max(0.0, target), 1)
         should_write = abs(settings.current_limit_a - target) >= self.config.min_write_delta_a
         return ChargerCurrentTaperDecision(target, reason, should_write=should_write)

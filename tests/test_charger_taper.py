@@ -33,8 +33,20 @@ class ChargerTaperTest(unittest.TestCase):
             self._battery(soc=80, voltage_v=52.9, ccl_a=200.0),
         )
 
-        self.assertEqual(decision.target_current_a, 100.0)
+        self.assertEqual(decision.target_current_a, 80.0)
         self.assertTrue(decision.should_write)
+
+    def test_never_targets_above_operator_ceiling(self) -> None:
+        # Bulk must restore to the panel-configured limit, never beyond it,
+        # regardless of BMS CCL headroom.
+        decision = ChargerCurrentTaperController().decide(
+            self._charger(voltage_v=52.0, stage="BulkMppt"),
+            self._settings(current_a=80.0),
+            self._battery(soc=60, voltage_v=52.0, ccl_a=200.0),
+        )
+
+        self.assertEqual(decision.target_current_a, 80.0)
+        self.assertFalse(decision.should_write)
 
     def test_ramps_down_from_soc_or_voltage_whichever_is_lower(self) -> None:
         decision = ChargerCurrentTaperController().decide(
