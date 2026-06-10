@@ -130,7 +130,7 @@ To gather DS18B20 ambient temperature data in a CSV file:
 offgrid-supervisor \
   --no-classic \
   --ambient-kind ds18b20 \
-  --ambient-log-path /home/@OFFGRID_USER@/power-system/data/ambient.csv
+  --ambient-log-path ~/power-system/data/ambient.csv
 ```
 
 The old AM2302/DHT22 path is still available for reference. Its default wiring uses BCM GPIO 4, physical pin 7:
@@ -174,7 +174,7 @@ AMBIENT_LOG_PATH=/srv/offgrid/logs/ambient.csv
 WEATHER_ENABLED=true
 WEATHER_LATITUDE=48.000000
 WEATHER_LONGITUDE=-84.000000
-WEATHER_LABEL=cabin
+WEATHER_LABEL=Cabin
 WEATHER_REFRESH_MINUTES=30
 WEATHER_CACHE_PATH=/srv/offgrid/data/weather-cache.json
 ```

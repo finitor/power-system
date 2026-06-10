@@ -3,7 +3,8 @@ set -eu
 
 SESSION_NAME="${OFFGRID_CONSOLE_SESSION:-offgrid-console}"
 CLASSIC_HOST="${CLASSIC_HOST:-192.168.0.10}"
-PROJECT_DIR="${OFFGRID_PROJECT_DIR:-/home/@OFFGRID_USER@/power-system}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="${OFFGRID_PROJECT_DIR:-$(dirname "${SCRIPT_DIR}")}"
 PYTHON="${OFFGRID_PYTHON:-${PROJECT_DIR}/.venv/bin/python}"
 DISPLAY_MODULE="${OFFGRID_DISPLAY_MODULE:-offgrid_power.cli.api_terminal_display}"
 DISPLAY_URL="${OFFGRID_DISPLAY_URL:-http://127.0.0.1:8081/api/v1/snapshot}"

@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Single deploy action for the Pi supervisor. Runs ON the Pi:
 #
-#   ssh @OFFGRID_USER@@blueberry.local power-system/scripts/deploy.sh
+#   ssh <user>@<pi-host> 'cd power-system && bash scripts/deploy.sh'
 #
-# Pulls the repo to git truth, syncs config files into their system
-# locations, reinstalls the package if the manifest changed, restarts
-# services, and health-checks the result. This is the only deploy verb;
-# rsync of individual files is for bench iteration only and must end
-# with a deploy.sh run so the checkout matches git.
+# Pulls the repo to git truth, renders config templates
+# (@OFFGRID_USER@/@PROJECT_DIR@) into their system locations, reinstalls
+# the package if the manifest changed, restarts services, and
+# health-checks the result. This is the only deploy verb; rsync of
+# individual files is for bench iteration only and must end with a
+# deploy.sh run so the checkout matches git.
 set -euo pipefail
 
-PROJECT_DIR="${OFFGRID_PROJECT_DIR:-/home/@OFFGRID_USER@/power-system}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${OFFGRID_PROJECT_DIR:-$(dirname "${SCRIPT_DIR}")}"
 VENV="${PROJECT_DIR}/.venv"
+OFFGRID_USER="$(id -un)"
 
 # The pull below may update this very script while bash is reading it
 # incrementally. Run from a temp copy so the executing code can't change
@@ -20,7 +23,7 @@ if [ -z "${OFFGRID_DEPLOY_REEXEC:-}" ]; then
     tmp="$(mktemp /tmp/offgrid-deploy.XXXXXX.sh)"
     cp "$0" "${tmp}"
     chmod +x "${tmp}"
-    OFFGRID_DEPLOY_REEXEC=1 exec bash "${tmp}" "$@"
+    OFFGRID_DEPLOY_REEXEC=1 OFFGRID_PROJECT_DIR="${PROJECT_DIR}" exec bash "${tmp}" "$@"
 fi
 
 cd "${PROJECT_DIR}"
@@ -46,14 +49,18 @@ else
 fi
 
 echo "== configs =="
-sudo install -m 644 config/systemd/offgrid-supervisor.service /etc/systemd/system/
-sudo install -m 644 config/systemd/offgrid-console.service /etc/systemd/system/
-sudo install -m 644 config/systemd/offgrid-metrics-export.service /etc/systemd/system/
+# Render @OFFGRID_USER@/@PROJECT_DIR@ templates for this host.
+render() {
+    sed "s|@OFFGRID_USER@|${OFFGRID_USER}|g; s|@PROJECT_DIR@|${PROJECT_DIR}|g" "$1"
+}
+render config/systemd/offgrid-supervisor.service | sudo tee /etc/systemd/system/offgrid-supervisor.service > /dev/null
+render config/systemd/offgrid-console.service | sudo tee /etc/systemd/system/offgrid-console.service > /dev/null
+render config/systemd/offgrid-metrics-export.service | sudo tee /etc/systemd/system/offgrid-metrics-export.service > /dev/null
 sudo install -m 644 config/systemd/offgrid-metrics-export.timer /etc/systemd/system/
 sudo install -m 644 config/nginx/offgrid-supervisor.conf /etc/nginx/sites-available/
 sudo install -m 644 config/udev/90-offgrid-usb.rules /etc/udev/rules.d/
 install -m 755 config/desktop/open-offgrid-console "${HOME}/.local/bin/open-offgrid-console"
-install -m 644 config/desktop/offgrid-console.desktop "${HOME}/.config/autostart/offgrid-console.desktop"
+render config/desktop/offgrid-console.desktop > "${HOME}/.config/autostart/offgrid-console.desktop"
 sudo systemctl daemon-reload
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=tty

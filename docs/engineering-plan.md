@@ -85,7 +85,37 @@ minutes by the prune, `ambient.csv` unbounded.
 - Bound or rotate `ambient.csv`.
 - The real fix is restoring dedicated storage; document remount procedure.
 
-## 8. Operator actions — USER
+## 8. Public-repo preparation — PLACEHOLDERS DONE, HISTORY PASS AT RELEASE
+
+Goal: the repo can eventually go public without exposing the operator's
+username, host paths, or the site's precise location.
+
+Done:
+
+- systemd units and the desktop entry are templates
+  (`@OFFGRID_USER@`/`@PROJECT_DIR@`) rendered by deploy.sh from `id -un`
+  and the checkout location — zero per-site configuration.
+- Scripts derive the project dir from their own location instead of
+  hardcoding a home directory.
+- Site coordinates moved from the supervisor ExecStart line into
+  `/etc/offgrid-power.env` (never in the repo); the CLI already preferred
+  those env vars. Docs and `.env.example` carry approximate/placeholder
+  values; public location granularity is "near Wawa, Ontario, Canada".
+- Maidenhead locator removed as the site label/id; docs and examples use
+  "cabin"/"Cabin".
+
+Remaining, to do immediately before flipping the repo public (not
+earlier, to pay the history-rewrite tax once):
+
+- `git filter-repo --replace-text` pass over history mapping the
+  username, home paths, coordinates, and locator to the placeholder
+  forms; force-push and re-point both clones.
+- Check `git log --format='%ae' | sort -u` for personal email addresses
+  in commit metadata.
+- Re-read `docs/journal/` and `docs/research/` for narrative details that
+  identify the site more precisely than intended.
+
+## 9. Operator actions — USER
 
 - Decide whether the SSD returns; item 7 sizing depends on it.
 - `offgrid-metrics-export.timer` is disabled on the Pi — confirm whether R2

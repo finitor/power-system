@@ -84,7 +84,7 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_renders_kindle_weather_values(self) -> None:
         report = WeatherReport(
-            label="cabin",
+            label="Cabin",
             fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
             data={
                 "current": {
@@ -112,7 +112,7 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertIn('<meta http-equiv="refresh" content="60">', html)
         # Derived formatting: weather code text, wind direction, moon phase name.
-        self.assertIn("cabin: rain", html)
+        self.assertIn("Cabin: rain", html)
         self.assertIn("18km/h  32km/h gust  W", html)
         self.assertIn("rise 05:39  set 21:37", html)
         self.assertIn("last quarter (0.72)", html)
@@ -120,7 +120,7 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_renders_weather_unavailable_with_retry(self) -> None:
         report = WeatherReport(
-            label="cabin",
+            label="Cabin",
             fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
             data={},
             stale=True,
@@ -136,7 +136,7 @@ class WebDisplayTest(unittest.TestCase):
     def test_hides_weather_details_after_stale_cutoff(self) -> None:
         fetched_at = datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc)
         report = WeatherReport(
-            label="cabin",
+            label="Cabin",
             fetched_at=fetched_at,
             data={"current": {"temperature_2m": 12.4}},
             stale=True,

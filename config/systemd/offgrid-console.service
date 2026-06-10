@@ -8,12 +8,12 @@ BindsTo=offgrid-supervisor.service
 Type=simple
 User=@OFFGRID_USER@
 Group=@OFFGRID_USER@
-WorkingDirectory=/home/@OFFGRID_USER@/power-system
+WorkingDirectory=@PROJECT_DIR@
 Environment=CLASSIC_HOST=192.168.0.10
-Environment=PYTHONPATH=/home/@OFFGRID_USER@/power-system/software/pi-controller/src
+Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
 ExecStartPre=/bin/sh -c '/usr/bin/tmux kill-session -t offgrid-console 2>/dev/null || true'
-ExecStart=/home/@OFFGRID_USER@/power-system/scripts/run-console-tmux.sh
+ExecStart=@PROJECT_DIR@/scripts/run-console-tmux.sh
 ExecStop=/bin/kill -TERM $MAINPID
 Restart=always
 RestartSec=5

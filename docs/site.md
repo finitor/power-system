@@ -2,15 +2,18 @@
 
 ## Location
 
-The installation is in Wawa, Ontario, Canada.
+The installation is near Wawa, Ontario, Canada.
 
-The site plus code is `(redacted)`, interpreted relative to Wawa, Ontario. This decodes to the following approximate coordinates:
+Exact coordinates are deliberately not recorded in this repo; they live in
+the deployment environment file (`WEATHER_LATITUDE` / `WEATHER_LONGITUDE`
+in `/etc/offgrid-power.env`; see `.env.example` at the repo root for the
+full variable list). The approximate values below are sufficient for the
+climate and solar discussions in these docs.
 
 | Field | Value |
 |---|---:|
-| Plus code | (redacted), Wawa, ON |
-| Latitude | 47.9 N |
-| Longitude | 84.8 W |
+| Latitude | ~47.9 N |
+| Longitude | ~84.8 W |
 | Time zone | America/Toronto |
 | Standard time offset | UTC-05:00 |
 | Daylight time offset | UTC-04:00 |
@@ -31,15 +34,15 @@ solar noon clock minutes =
 
 where:
 
-- `longitude_degrees` is negative west of Greenwich. For this site, use `-84.8`.
+- `longitude_degrees` is negative west of Greenwich. For this site, use approximately `-84.8`.
 - `time_zone_offset_minutes` is `-300` for Eastern Standard Time or `-240` for Eastern Daylight Time.
 - `equation_of_time_minutes` is the date-dependent correction from a solar-position calculator or ephemeris.
 - The result is minutes after local midnight.
 
-Using the site longitude, the longitude-only correction is about:
+Using the approximate site longitude, the longitude-only correction is about:
 
 ```text
-4 * (84.8 - 75.00) = 39.3 minutes
+4 * (84.8 - 75.00) = 39.2 minutes
 ```
 
 So before the equation-of-time correction:
@@ -55,4 +58,4 @@ Then subtract the equation of time for the date using the formula above. For exa
 13:39 - 2.5 minutes = 13:36:30
 ```
 
-For operational use, prefer a library or published solar-position calculator that accepts latitude, longitude, date, and time zone. The hand calculation is useful for sanity-checking expected production timing and understanding why maximum PV output may occur well after civil noon.
+For operational use, prefer a library or published solar-position calculator that accepts latitude, longitude, date, and time zone — fed with the precise coordinates from the environment file. The hand calculation is useful for sanity-checking expected production timing and understanding why maximum PV output may occur well after civil noon.
