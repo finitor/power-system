@@ -1,10 +1,14 @@
-# Off-Grid Power System
+# Magpie Camp Power System
 
-Raspberry Pi-mediated monitoring, logging, and control for an off-grid power installation.
+In June 2026 I upgraded my off-grid cabin's energy storage to LiFePO4,
+triggering a cascade of desired improvements in capacity, instrumentation,
+and control. Planning and implementing all that here. I expect this will
+be interesting to outsiders mainly for the mechanics of interfacing to all
+the machinery of a solar power system from a Raspberry Pi.
 
 ## Goals
 
-- Track the physical system by major subsystem: battery bank, PV arrays, charge controllers, inverter/charger, loads, sensors, wiring, fuses, and enclosures.
+- Track the physical system by major subsystem: battery bank, PV arrays, charge controllers, inverter/charger, supervisor, loads, sensors, wiring, fuses, and enclosures.
 - Run reliable local telemetry on a Raspberry Pi.
 - Keep control logic conservative, inspectable, and recoverable.
 - Preserve field observations, photos, diagrams, and configuration in one versioned place.
