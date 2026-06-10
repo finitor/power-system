@@ -11,9 +11,18 @@ Raspberry Pi-mediated monitoring, logging, and control for an off-grid power ins
 
 ## Current Status
 
-Status: planning / initial scaffold
+In service. A Raspberry Pi supervisor polls the battery bank (CAN), the
+MidNite Classic charge controller (Modbus TCP, read and write), and the
+MagnaSine inverter/charger (Magnum network RS-485) on per-device actor
+threads, serving a Kindle wall display, a desktop terminal console, and a
+JSON API behind nginx, with metrics in local SQLite and store-and-forward
+export to object storage.
 
-Update this section as the system moves through bench testing, installation, commissioning, and normal operation.
+In progress: a second PV array and charge controller (EPEver TEP10425
+likely), battery temperature control (heater/ventilation chain), and
+supervisory control of the Magnum charger — see
+[docs/engineering-plan.md](docs/engineering-plan.md) and
+[docs/journal/](docs/journal/) for the live state of work.
 
 ## Repo Map
 
