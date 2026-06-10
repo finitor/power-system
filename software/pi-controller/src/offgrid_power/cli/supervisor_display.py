@@ -40,6 +40,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Display live power-system metrics.")
     add_supervisor_arguments(parser)
     parser.add_argument("--interval", type=float, default=config.display.refresh_seconds)
+    parser.add_argument(
+        "--no-device-readers",
+        action="store_true",
+        help="Read devices synchronously in the main loop instead of per-device actor threads",
+    )
     parser.add_argument("--battery-capacity-ah", type=float, default=config.display.battery_capacity_ah)
     parser.add_argument("--web-display", action="store_true", help="Serve the same supervisor snapshots over HTTP")
     parser.add_argument("--web-host", default="0.0.0.0", help="HTTP display bind address")
@@ -271,6 +276,14 @@ def main() -> int:
         start_web_display(args, supervisor, snapshot_cache, weather_service)
     previous_poll_render: str | None = None
 
+    # Per-device actor threads: one thread owns each adapter so a slow or
+    # wedged device cannot stall the tick, and writes (charger taper) are
+    # queued onto the owning thread. --once keeps the synchronous path so a
+    # single probe reads every device exactly once.
+    if not args.no_device_readers and not args.once:
+        supervisor.start_readers(interval_s=args.interval)
+        supervisor.wait_for_initial_readings()
+
     try:
         while True:
             snapshot = supervisor.read_snapshot()
@@ -317,6 +330,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print()
         return 0
+    finally:
+        supervisor.stop_readers()
 
 
 def start_web_display(
@@ -403,7 +418,7 @@ def apply_charger_current_taper(
             return
         if supervisor.classic is None:
             return
-        supervisor.classic.write_charge_settings(
+        supervisor.write_classic_charge_settings(
             battery_current_limit_a=decision.target_current_a,
             persist=False,
         )

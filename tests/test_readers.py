@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+import sys
+import threading
+import time
+import unittest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
+sys.path.insert(0, str(PACKAGE_SRC))
+
+from offgrid_power.readers import DeviceReading, PollingReader
+from offgrid_power.supervisor import Supervisor
+
+
+class PollingReaderTest(unittest.TestCase):
+    def test_read_now_caches_value_and_clears_error(self) -> None:
+        reader = PollingReader("dev", lambda: 42, interval_s=5.0)
+
+        reader.read_now()
+        reading = reader.reading()
+
+        self.assertEqual(reading.value, 42)
+        self.assertIsNotNone(reading.captured_at)
+        self.assertIsNone(reading.error)
+
+    def test_failure_keeps_last_good_value_and_records_error(self) -> None:
+        calls = iter([lambda: 42, lambda: (_ for _ in ()).throw(RuntimeError("bus timeout"))])
+        reader = PollingReader("dev", lambda: next(calls)(), interval_s=5.0)
+
+        reader.read_now()
+        good_at = reader.reading().captured_at
+        reader.read_now()
+        reading = reader.reading()
+
+        self.assertEqual(reading.value, 42)
+        self.assertEqual(reading.captured_at, good_at)
+        self.assertEqual(reading.error, "bus timeout")
+
+    def test_none_return_counts_as_failure(self) -> None:
+        reader = PollingReader("dev", lambda: None, interval_s=5.0)
+
+        reader.read_now()
+        reading = reader.reading()
+
+        self.assertIsNone(reading.value)
+        self.assertEqual(reading.error, "no reading")
+
+    def test_staleness_thresholds(self) -> None:
+        now = datetime.now(timezone.utc)
+        fresh = DeviceReading("dev", 1, now - timedelta(seconds=5), None, stale_after_s=20)
+        stale = DeviceReading("dev", 1, now - timedelta(seconds=45), None, stale_after_s=20)
+        never = DeviceReading("dev", None, None, "down", stale_after_s=20)
+
+        self.assertFalse(fresh.is_stale(now))
+        self.assertTrue(stale.is_stale(now))
+        self.assertFalse(never.is_stale(now))
+        self.assertAlmostEqual(fresh.age_seconds(now), 5.0)
+        self.assertIsNone(never.age_seconds(now))
+
+    def test_submit_runs_command_on_actor_thread(self) -> None:
+        reader = PollingReader("dev", lambda: 1, interval_s=60.0)
+        reader.start()
+        try:
+            command_thread = reader.submit(lambda: threading.current_thread().name)
+        finally:
+            reader.stop()
+
+        self.assertEqual(command_thread, "reader-dev")
+
+    def test_submit_propagates_command_exception(self) -> None:
+        reader = PollingReader("dev", lambda: 1, interval_s=60.0)
+        reader.start()
+        try:
+            with self.assertRaisesRegex(RuntimeError, "write rejected"):
+                reader.submit(lambda: (_ for _ in ()).throw(RuntimeError("write rejected")))
+        finally:
+            reader.stop()
+
+    def test_submit_executes_inline_when_not_started(self) -> None:
+        reader = PollingReader("dev", lambda: 1, interval_s=60.0)
+
+        self.assertEqual(reader.submit(lambda: "inline"), "inline")
+
+    def test_reads_and_commands_share_one_thread(self) -> None:
+        seen_threads: set[str] = set()
+
+        def read_fn() -> int:
+            seen_threads.add(threading.current_thread().name)
+            return 1
+
+        reader = PollingReader("dev", read_fn, interval_s=0.01)
+        reader.start()
+        try:
+            seen_threads.add(reader.submit(lambda: threading.current_thread().name))
+            time.sleep(0.05)
+        finally:
+            reader.stop()
+
+        self.assertEqual(seen_threads, {"reader-dev"})
+        self.assertIsNotNone(reader.reading().captured_at)
+
+
+class FakeReader:
+    def __init__(self, name: str, value, captured_at, error=None, stale_after_s: float = 20.0) -> None:
+        self._reading = DeviceReading(name, value, captured_at, error, stale_after_s)
+
+    def reading(self) -> DeviceReading:
+        return self._reading
+
+    def stop(self, timeout_s: float = 2.0) -> None:
+        pass
+
+
+class SupervisorReaderModeTest(unittest.TestCase):
+    def _supervisor_with_readers(self, readers: dict) -> Supervisor:
+        supervisor = Supervisor(classic=None)
+        supervisor._readers = readers
+        return supervisor
+
+    def test_composes_from_reader_caches(self) -> None:
+        now = datetime.now(timezone.utc)
+
+        class FakeMagnumValue:
+            pass
+
+        magnum_value = FakeMagnumValue()
+        supervisor = self._supervisor_with_readers(
+            {
+                "classic": FakeReader("classic", ("telemetry", "settings"), now),
+                "magnum": FakeReader("magnum", magnum_value, now),
+            }
+        )
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertEqual(snapshot.classic, "telemetry")
+        self.assertEqual(snapshot.classic_settings, "settings")
+        self.assertIs(snapshot.magnum, magnum_value)
+        self.assertEqual(snapshot.errors, [])
+        self.assertEqual(snapshot.status_conditions, [])
+
+    def test_reader_error_keeps_last_good_value_and_reports_error(self) -> None:
+        now = datetime.now(timezone.utc)
+        supervisor = self._supervisor_with_readers(
+            {"magnum": FakeReader("magnum", "last-good", now, error="serial port vanished")}
+        )
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertEqual(snapshot.magnum, "last-good")
+        self.assertEqual(snapshot.errors, ["Magnum read failed: serial port vanished"])
+
+    def test_stale_reading_raises_warning_condition(self) -> None:
+        old = datetime.now(timezone.utc) - timedelta(seconds=120)
+        supervisor = self._supervisor_with_readers(
+            {"magnum": FakeReader("magnum", "old-value", old, stale_after_s=20.0)}
+        )
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertEqual(snapshot.magnum, "old-value")
+        self.assertEqual(snapshot.status_text, "WARNING")
+        self.assertTrue(
+            any("Magnum inverter telemetry stale" in condition for condition in snapshot.status_conditions),
+            snapshot.status_conditions,
+        )
+
+    def test_ambient_error_means_no_reading_not_stale_carryover(self) -> None:
+        now = datetime.now(timezone.utc)
+        supervisor = self._supervisor_with_readers(
+            {"ambient": FakeReader("ambient", "old-temp", now, error="probe disconnected")}
+        )
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertIsNone(snapshot.ambient)
+        self.assertEqual(snapshot.errors, [])
+
+    def test_classic_write_routes_through_reader_thread(self) -> None:
+        write_threads: list[str] = []
+
+        class FakeClassic:
+            def read(self):
+                return ("telemetry", "settings")
+
+            def write_charge_settings(self, **kwargs):
+                write_threads.append(threading.current_thread().name)
+
+        supervisor = Supervisor(classic=FakeClassic())
+        supervisor.start_readers(interval_s=60.0)
+        try:
+            supervisor.wait_for_initial_readings(timeout_s=5.0)
+            supervisor.write_classic_charge_settings(battery_current_limit_a=40.0)
+        finally:
+            supervisor.stop_readers()
+
+        self.assertEqual(write_threads, ["reader-classic"])
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import time
 
 from .ambient import AmbientDhtClient, AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
 from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_health
 from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
 from .magnum import MagnumClient, MagnumSnapshot
+from .readers import DeviceReading, PollingReader
 
 
 STATUS_OK = "OK"
@@ -76,64 +78,199 @@ class Supervisor:
         self.battery_can_interface = battery_can_interface
         self.magnum = magnum
         self._status_condition_counts: dict[str, int] = {}
+        self._readers: dict[str, PollingReader] | None = None
+
+    def start_readers(self, interval_s: float = 5.0) -> None:
+        """Switch to per-device actor threads.
+
+        Each configured adapter is owned by one thread: it polls on an
+        interval, and writes reach the device by being submitted to the same
+        thread (see write_classic_charge_settings), so reads and writes to a
+        device can never race. read_snapshot composes from the cached
+        last-good values without blocking on any device.
+        """
+        if self._readers is not None:
+            return
+        readers: dict[str, PollingReader] = {}
+        if self.classic is not None:
+            readers["classic"] = PollingReader("classic", self.classic.read, interval_s)
+        if self.battery is not None:
+            readers["battery"] = PollingReader("battery", self.battery.read, interval_s)
+        if self.ambient is not None:
+            readers["ambient"] = PollingReader("ambient", self.ambient.read, interval_s)
+        if self.magnum is not None:
+            readers["magnum"] = PollingReader("magnum", self.magnum.read, interval_s)
+        for reader in readers.values():
+            reader.start()
+        self._readers = readers
+
+    def stop_readers(self) -> None:
+        if self._readers is None:
+            return
+        for reader in self._readers.values():
+            reader.stop()
+        self._readers = None
+
+    def wait_for_initial_readings(self, timeout_s: float = 10.0) -> None:
+        """Block until every reader has either a value or an error.
+
+        Used once at startup so the first snapshot isn't empty while the
+        actor threads complete their first polls.
+        """
+        if self._readers is None:
+            return
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            readings = [reader.reading() for reader in self._readers.values()]
+            if all(reading.captured_at is not None or reading.error is not None for reading in readings):
+                return
+            time.sleep(0.2)
+
+    def write_classic_charge_settings(self, **kwargs) -> None:
+        """Write Classic charge settings via the device's actor thread.
+
+        All Classic I/O must go through one thread; when readers are active
+        the write executes on the classic reader thread between polls, so it
+        can never race a read on the shared Modbus connection.
+        """
+        if self.classic is None:
+            raise RuntimeError("no Classic adapter configured")
+
+        def write() -> None:
+            self.classic.write_charge_settings(**kwargs)
+
+        if self._readers is not None and "classic" in self._readers:
+            self._readers["classic"].submit(write)
+            return
+        write()
 
     def read_snapshot(self) -> SupervisorSnapshot:
-        errors: list[str] = []
-        classic: ClassicTelemetry | None = None
-        classic_settings: ClassicChargeSettings | None = None
-        battery: PylonCanSnapshot | None = None
+        if self._readers is not None:
+            devices, errors, stale_candidates = self._collect_from_readers()
+        else:
+            devices, errors, stale_candidates = self._collect_direct()
+
         battery_can_health: CanBusHealth | None = None
-        ambient: AmbientTelemetry | None = None
-        magnum: MagnumSnapshot | None = None
-
-        if self.classic is not None:
-            try:
-                classic, classic_settings = self.classic.read()
-            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
-                errors.append(f"Classic read failed: {exc}")
-
-        if self.ambient is not None:
-            try:
-                ambient = self.ambient.read()
-            except AmbientProbeDisconnected:
-                ambient = None
-            except Exception:  # noqa: BLE001 - ambient is advisory unless a control loop depends on it.
-                ambient = None
-
         if self.battery_can_interface is not None:
             battery_can_health = canbus_health(self.battery_can_interface)
             if not battery_can_health.ok:
                 errors.append(battery_can_health.status_message())
 
-        if self.battery is not None:
-            try:
-                battery = self.battery.read()
-            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
-                errors.append(f"Battery CAN read failed: {exc}")
-
-        if self.magnum is not None:
-            try:
-                magnum = self.magnum.read()
-            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
-                errors.append(f"Magnum read failed: {exc}")
+        classic_settings = devices["classic_settings"]
+        battery = devices["battery"]
 
         status_condition_candidates = charge_limit_status_condition_candidates(classic_settings, battery)
         status_condition_candidates.extend(self._stable_status_condition_candidates(cell_status_condition_candidates(battery)))
+        status_condition_candidates.extend(stale_candidates)
         status_conditions = [candidate.text for candidate in status_condition_candidates]
         status_severity = status_condition_severity(status_condition_candidates)
 
         return SupervisorSnapshot(
             captured_at=datetime.now(timezone.utc),
-            classic=classic,
+            classic=devices["classic"],
             classic_settings=classic_settings,
             battery=battery,
             battery_can_health=battery_can_health,
-            ambient=ambient,
-            magnum=magnum,
+            ambient=devices["ambient"],
+            magnum=devices["magnum"],
             errors=errors,
             status_conditions=status_conditions,
             status_severity=status_severity,
         )
+
+    def _collect_direct(self) -> tuple[dict, list[str], list[StatusConditionCandidate]]:
+        errors: list[str] = []
+        devices: dict = {
+            "classic": None,
+            "classic_settings": None,
+            "battery": None,
+            "ambient": None,
+            "magnum": None,
+        }
+
+        if self.classic is not None:
+            try:
+                devices["classic"], devices["classic_settings"] = self.classic.read()
+            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
+                errors.append(f"Classic read failed: {exc}")
+
+        if self.ambient is not None:
+            try:
+                devices["ambient"] = self.ambient.read()
+            except AmbientProbeDisconnected:
+                pass
+            except Exception:  # noqa: BLE001 - ambient is advisory unless a control loop depends on it.
+                pass
+
+        if self.battery is not None:
+            try:
+                devices["battery"] = self.battery.read()
+            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
+                errors.append(f"Battery CAN read failed: {exc}")
+
+        if self.magnum is not None:
+            try:
+                devices["magnum"] = self.magnum.read()
+            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
+                errors.append(f"Magnum read failed: {exc}")
+
+        return devices, errors, []
+
+    # Error message prefixes match the direct-read path so displays and
+    # alerting behave identically in both modes.
+    _READER_ERROR_PREFIXES = {
+        "classic": "Classic read failed",
+        "battery": "Battery CAN read failed",
+        "magnum": "Magnum read failed",
+    }
+    _READER_LABELS = {
+        "classic": "Charge controller",
+        "battery": "Battery CAN",
+        "magnum": "Magnum inverter",
+    }
+
+    def _collect_from_readers(self) -> tuple[dict, list[str], list[StatusConditionCandidate]]:
+        assert self._readers is not None
+        now = datetime.now(timezone.utc)
+        errors: list[str] = []
+        stale_candidates: list[StatusConditionCandidate] = []
+        devices: dict = {
+            "classic": None,
+            "classic_settings": None,
+            "battery": None,
+            "ambient": None,
+            "magnum": None,
+        }
+
+        for name, reader in self._readers.items():
+            reading = reader.reading()
+
+            if name == "ambient":
+                # Ambient keeps direct-path semantics: a failed probe means
+                # "no reading", never a stale carried-over temperature.
+                if reading.error is None and reading.value is not None:
+                    devices["ambient"] = reading.value
+                continue
+
+            if reading.value is not None:
+                if name == "classic":
+                    devices["classic"], devices["classic_settings"] = reading.value
+                else:
+                    devices[name] = reading.value
+
+            if reading.error is not None:
+                errors.append(f"{self._READER_ERROR_PREFIXES[name]}: {reading.error}")
+
+            if reading.is_stale(now):
+                age = reading.age_seconds(now)
+                stale_candidates.append(
+                    StatusConditionCandidate(
+                        f"reader.{name}.stale",
+                        f"{self._READER_LABELS[name]} telemetry stale: last good read {age:.0f}s ago",
+                    )
+                )
+
+        return devices, errors, stale_candidates
 
     def _stable_status_condition_candidates(self, candidates: list[StatusConditionCandidate]) -> list[StatusConditionCandidate]:
         active_keys = {candidate.key for candidate in candidates}

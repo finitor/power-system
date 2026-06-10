@@ -49,26 +49,30 @@ GitHub Actions workflow runs the unittest suite on every push. Catches
 import breaks and contract regressions before code reaches hardware.
 Requires item 2 (manifest) so `pip install -e .` brings real deps.
 
-## 6. Per-device readers with staleness — TODO (next major task)
+## 6. Per-device actor threads with staleness — PHASE 1 DONE
 
-The supervisor poll loop reads Classic (3s timeout), CAN (1.5s window), and
+The supervisor poll loop read Classic (3s timeout), CAN (1.5s window), and
 Magnum (serial open + up to ~5s) sequentially every 5s tick. One slow device
-starves display freshness and, eventually, control decisions. Planned RS485
-charge controllers exceed the budget.
+starved display freshness and, eventually, control decisions.
 
-Design sketch:
+Phase 1 (done): `offgrid_power/readers.py` provides `PollingReader`, a
+device actor — one thread owns each adapter exclusively. Reads happen on its
+poll loop; writes are submitted to the same thread as queued commands
+(`PollingReader.submit`), so reads and writes to one device can never race.
+The charger taper writes via `Supervisor.write_classic_charge_settings`,
+which routes through the classic actor. Failures keep the last good value;
+stale readings (default 4x interval) surface as WARNING status conditions in
+every display. Enabled by default; `--no-device-readers` restores the
+synchronous path, and `--once` always reads synchronously.
 
-- One reader thread per device adapter, each maintaining a last-good
-  snapshot with `captured_at`.
-- Snapshot composer assembles `SupervisorSnapshot` from the caches without
-  blocking on any device.
-- Staleness becomes explicit: every device payload carries its age; displays
-  flag stale data (a 4-minute-old voltage is a different fact from a live
-  one, especially once charge-parameter writes depend on it).
-- `MagnumClient` holds its serial port open instead of reopening per read;
-  replace the `asyncio.run()`-per-read pattern with a persistent reader.
+Phase 2 (TODO):
 
-Do this before integrating the next device, not after.
+- Persistent Magnum listener: hold the serial port open and consume bus
+  cycles continuously instead of open/read/close per poll. Natural home for
+  the future remote-takeover transmit loop (decision 0002), which must emit
+  the remote packet every ~100ms on the same thread that owns the port.
+- Surface per-device ages in the API payload (staleness is currently only a
+  status condition).
 
 ## 7. SD card durability — TODO (background)
 
