@@ -1,6 +1,0 @@
-[Unit]
-Description=Restart off-grid supervisor after deployed code changes
-
-[Service]
-Type=oneshot
-ExecStart=/bin/systemctl try-restart offgrid-supervisor.service
