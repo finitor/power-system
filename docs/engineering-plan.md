@@ -88,8 +88,6 @@ minutes by the prune, `ambient.csv` unbounded.
 ## 8. Operator actions — USER
 
 - Decide whether the SSD returns; item 7 sizing depends on it.
-- Verify the first GitHub Actions run succeeded (repo is private; no API
-  token on the workstation to check from the CLI).
 - `offgrid-metrics-export.timer` is disabled on the Pi — confirm whether R2
   export is intentionally manual-only right now.
 
@@ -104,3 +102,13 @@ minutes by the prune, `ambient.csv` unbounded.
 - Item 4 (udev symlink): e04ba65 — `/dev/magnum-rs485` live, supervisor
   reading through it.
 - Item 5 (CI workflow): 936512a — runs `unittest discover` on every push.
+  First runs failed on a real bug: three load tests were
+  timezone-dependent, green in Eastern and red on UTC runners. Fixed by
+  pinning the site zone in the test module (19bc473); verified green via
+  the now-authenticated `gh` CLI.
+- Item 6 phase 1 (per-device actor threads): 36e9577 — one thread owns all
+  I/O per device, writes queued onto the owning thread, last-good caching
+  with staleness WARNING conditions. Snapshot composition went from
+  worst-case ~10s of serialized device I/O to ~4ms cache reads, verified
+  live. Phase 2 (persistent Magnum listener, per-device ages in the API)
+  remains above.
