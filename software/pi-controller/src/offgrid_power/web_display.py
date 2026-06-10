@@ -1106,7 +1106,7 @@ def _status_text(snapshot: SupervisorSnapshot, status: str) -> str:
 
 def _soc_text(snapshot: SupervisorSnapshot) -> str:
     if snapshot.battery is None or snapshot.battery.state_of_charge is None:
-        return "SOC --"
+        return "--"
     return f"{snapshot.battery.state_of_charge.soc_percent}%"
 
 

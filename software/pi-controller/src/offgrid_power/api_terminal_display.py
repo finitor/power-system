@@ -85,7 +85,7 @@ def _status_line(status: dict, battery: dict) -> str:
     severity = status.get("severity") or status.get("status") or "UNKNOWN"
     soc = battery.get("soc_percent")
     if soc is None:
-        return f"Status:  {severity}"
+        return f"SOC:  --  Status:  {severity}"
     return f"SOC: {int(soc):3d}%  Status:  {severity}"
 
 

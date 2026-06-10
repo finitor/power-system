@@ -27,6 +27,7 @@ from offgrid_power.load import (
     LoadTotals,
     LoadTotalsTracker,
     LoadTracker,
+    LIVE_SOC_UNAVAILABLE,
     MIDNIGHT_SOC_UNAVAILABLE,
     estimate_load_average_today_text,
     estimate_load_current_a,
@@ -85,6 +86,19 @@ class LoadEstimateTest(unittest.TestCase):
         self.assertEqual(estimate_load_today_text(snapshot, 200, None), MIDNIGHT_SOC_UNAVAILABLE)
         self.assertIsNone(estimate_load_average_today_text(snapshot, 200, None))
         self.assertIsNone(estimate_load_remaining_text(snapshot, 200, None))
+
+    def test_load_today_attributes_missing_battery_data_not_midnight_log(self) -> None:
+        # During a CAN outage the failure is live SOC, even when the midnight
+        # baseline is also unavailable; blaming the midnight log is wrong.
+        captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+        no_battery = make_snapshot(
+            captured_at=captured_at,
+            classic=make_classic_telemetry(captured_at=captured_at),
+        )
+
+        self.assertEqual(estimate_load_today_text(no_battery, 200, None), LIVE_SOC_UNAVAILABLE)
+        self.assertEqual(estimate_load_today_text(no_battery, 200, 90), LIVE_SOC_UNAVAILABLE)
+        self.assertEqual(estimate_load_today_text(no_battery, None, 90), LIVE_SOC_UNAVAILABLE)
 
     def test_load_remaining_from_average_a_uses_amp_hours_not_voltage(self) -> None:
         snapshot = _load_snapshot(datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc))

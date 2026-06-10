@@ -77,6 +77,8 @@ class WebDisplayTest(unittest.TestCase):
         # display shows when sensors drop out.
         empty_html = render_kindle_snapshot(make_snapshot())
         self.assertIn("No data", empty_html)
+        self.assertIn("SOC --", empty_html)
+        self.assertNotIn("SOC SOC", empty_html)
 
         error_html = render_kindle_snapshot(make_snapshot(errors=["Battery CAN read failed: timeout"]))
         self.assertIn("<h2>Errors</h2>", error_html)

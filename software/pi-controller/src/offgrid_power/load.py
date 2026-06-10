@@ -14,6 +14,7 @@ from .supervisor import SupervisorSnapshot
 
 
 MIDNIGHT_SOC_UNAVAILABLE = "unavailable, midnight SOC was not logged"
+LIVE_SOC_UNAVAILABLE = "unavailable, battery SOC offline"
 ROLLING_LOAD_WINDOW = timedelta(hours=3)
 
 
@@ -333,9 +334,15 @@ def estimate_load_today_text(
     bank_capacity: float | None,
     midnight_soc_percent: int | None,
 ) -> str:
+    # Attribute the failure honestly: missing live battery data is not the
+    # same condition as a missing midnight baseline.
+    if _snapshot_soc_percent(snapshot) is None or bank_capacity is None or bank_capacity <= 0:
+        return LIVE_SOC_UNAVAILABLE
+    if midnight_soc_percent is None:
+        return MIDNIGHT_SOC_UNAVAILABLE
     today_ah = estimate_load_today_ah(snapshot, bank_capacity, midnight_soc_percent)
     if today_ah is None:
-        return MIDNIGHT_SOC_UNAVAILABLE
+        return LIVE_SOC_UNAVAILABLE
     return load_today_text(today_ah, today_ah / bank_capacity * 100)
 
 
