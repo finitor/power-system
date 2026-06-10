@@ -13,3 +13,9 @@ ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="23a3"
 # Stable name: USB enumeration order changes when adapters are added, so the
 # supervisor must never reference a bare /dev/ttyUSBn for the Magnum bus.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="magnum-rs485"
+
+# FT232R cable — Cubix BMS RS485 bench/diagnostic access. Keyed on serial
+# because FTDI 0403:6001 is shared with the (ordered) Waveshare EPEver
+# adapter. Caution: A50285BI is the stock serial on counterfeit FT232Rs;
+# verify the Waveshare's serial differs when it arrives.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="A50285BI", SYMLINK+="cubix-rs485"
