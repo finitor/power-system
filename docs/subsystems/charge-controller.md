@@ -24,7 +24,7 @@ The system is moving toward multiple PV sources. Code and documentation should r
 
 ## Array 1 Controller Selection
 
-Both candidates are ordered (2026-06). Working position: the **EPEver
+The EPEver is on hand (2026-06-10); the Victron order may be in limbo. Working position: the **EPEver
 TEP10425 is the probable pick** because of its higher PV input headroom —
 250 V max Voc at lowest temperature against the Victron's 150 V absolute
 limit, which rules out 4s strings of the CS6X-class modules outright. The
@@ -36,7 +36,11 @@ bench-confirmed before relying on them).
 EPEver manual notes (saved at `~/Dropbox/manuals/solar/TEP-Manual-EN-V1.1.pdf`):
 two PV inputs, IP20, common-negative grounding, local parameter setting,
 RS485 Modbus, built-in BMS communication port, and built-in CAN parallel
-communication port.
+communication port. The manual further reveals a native closed-loop BMS
+mode (BPRO/UBS) that follows BMS-published charge voltage/current limits
+directly — potentially making the supervisor's charge taper unnecessary on
+this controller. Integration details and the bench checklist:
+[epever-tep10425 research note](../research/epever-tep10425.md).
 
 If the Victron is installed, its battery-side protection needs a 120-125 A
 DC breaker (manual examples use 120 A for the 85 A output); tracked as
