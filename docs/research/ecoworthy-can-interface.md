@@ -1,4 +1,4 @@
-# Battery CAN Interface Research
+# Eco-Worthy CAN Interface Research
 
 ## Current Candidate
 
