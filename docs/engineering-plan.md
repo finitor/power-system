@@ -84,7 +84,19 @@ minutes by the prune, `ambient.csv` unbounded.
 ## 8. Operator actions — USER
 
 - Decide whether the SSD returns; item 7 sizing depends on it.
+- Verify the first GitHub Actions run succeeded (repo is private; no API
+  token on the workstation to check from the CLI).
+- `offgrid-metrics-export.timer` is disabled on the Pi — confirm whether R2
+  export is intentionally manual-only right now.
 
 ## Done
 
-(move completed items here with commit hashes)
+- Item 1 (deploy.sh, watcher retired): 2bd373a, 47321ec — verified with a
+  live self-updating deploy.
+- Item 2 (manifest): 31f71a3 — verified by fresh `pip install -e .` on
+  Python 3.12, 118 tests pass; suite now also runs on the Mac.
+- Item 3 (magnum tests): 31f71a3 — 9 tests from live-captured 2026-06-09
+  packets.
+- Item 4 (udev symlink): 5128731 — `/dev/magnum-rs485` live, supervisor
+  reading through it.
+- Item 5 (CI workflow): 31f71a3 — runs `unittest discover` on every push.
