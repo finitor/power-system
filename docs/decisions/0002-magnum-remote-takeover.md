@@ -61,3 +61,9 @@ charge settings from the live bus.
   settings the network protocol may not expose.
 - If validation shows the Pi cannot meet the availability bar, fall back to
   the interposer topology (option 3) and order a second RS-485 adapter.
+- Open blocker (2026-06-10): the active Custom CC/CV profile's parameters
+  are not carried in the remote's continuous broadcast at all — a live
+  panel edit of the CC limit produced no bus traffic (see research note).
+  The takeover cannot proceed until the conveyance mechanism (power-up
+  handshake, charge-start exchange, or request/response) is identified and
+  reproducible from the Pi.

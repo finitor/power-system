@@ -141,6 +141,39 @@ Confirmed 2026-06-09: the Pi can inject a valid remote packet onto the green net
 
 Monitoring and read-only telemetry work fine from a parallel tap with no changes needed. For control, the provisional decision (see `docs/decisions/0002-magnum-remote-takeover.md`) is option 1 — remove the ME-RC50 and have the Pi take over the remote's function — with the supervisor's Inverter/Charger display group as the visibility validation step, and option 3 as fallback if the Pi cannot meet the availability bar.
 
+## Custom CC/CV Settings Are Not Broadcast (2026-06-10)
+
+The ME-RC50 has a Custom CC/CV battery profile active with a 40 A charge
+current limit. Bench findings from bus captures:
+
+- Steady-state remote broadcast cycles exactly three footer pages: 0x00
+  (base), 0x80 (BMK), 0xA0 (AGS legacy). Within footer 0x00, bytes 16-19
+  alternate between two sub-pages each cycle (observed `00 00 17 00` and
+  `14 00 6e 00`; meaning not yet identified).
+- `charger_amps_pct` (base byte 4) reads 0 while the custom profile is
+  active — the standard charge-rate-% field is unused in custom mode.
+- A live edit of the custom CC limit (40 → 50 → 40 at the panel) produced
+  **zero observable bus traffic**: no changed bytes in any remote packet,
+  no new packet types, no additional footer pages during a 3-minute
+  capture spanning the edits.
+
+So the inverter must learn the custom CC/CV parameters by some path other
+than the continuous remote broadcast. Untested hypotheses, in rough order
+of plausibility:
+
+1. Sent once during the remote/inverter power-up or bus-join handshake.
+2. Sent when a charge cycle actually starts (AC input present).
+3. Request/response initiated by the inverter.
+
+Cheap future tests: capture from the moment the remote is power-cycled
+(briefly unplug its RJ11), and capture the bus when generator charging
+begins.
+
+**Implication for decision 0002 (remote takeover):** replacing the ME-RC50
+requires replicating whatever mechanism conveys custom CC/CV — currently
+unknown. This is a validation blocker to resolve before the remote comes
+off the wall.
+
 ## Control Policy
 
 For inverter on/off, use a state-aware command path:
