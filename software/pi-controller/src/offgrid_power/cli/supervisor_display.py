@@ -22,6 +22,7 @@ from offgrid_power.charger_taper import (
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
     ChargerTelemetry,
+    append_decision_log,
 )
 from offgrid_power.classic import ClassicClient
 from offgrid_power.magnum import MagnumClient
@@ -122,6 +123,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=_env_bool("CHARGER_CURRENT_TAPER_DRY_RUN", _env_bool("CLASSIC_CURRENT_TAPER_DRY_RUN", False)),
         help="Evaluate and log charger current taper decisions without writing settings",
+    )
+    parser.add_argument(
+        "--charger-taper-log-path",
+        default=os.getenv("CHARGER_TAPER_LOG_PATH", ""),
+        help="Append actionable taper decisions (incl. dry-run) to this CSV",
     )
     parser.add_argument("--classic-current-taper", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--classic-current-taper-dry-run", action="store_true", help=argparse.SUPPRESS)
@@ -293,6 +299,7 @@ def main() -> int:
                 enabled=charger_current_taper_enabled,
                 supervisor=supervisor,
                 snapshot=snapshot,
+                log_path=args.charger_taper_log_path,
             )
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
@@ -396,6 +403,7 @@ def apply_charger_current_taper(
     enabled: bool,
     supervisor: Supervisor,
     snapshot,
+    log_path: str = "",
 ) -> None:
     if charger_current_taper is None:
         return
@@ -406,6 +414,16 @@ def apply_charger_current_taper(
         if decision.target_current_a is None:
             return
         current = settings.current_limit_a if settings is not None else None
+        if decision.should_write:
+            append_decision_log(
+                log_path,
+                dry_run=dry_run or not enabled,
+                charge_stage=charger.charge_stage if charger is not None else None,
+                battery_voltage_v=charger.voltage_v if charger is not None else None,
+                current_limit_a=current,
+                decision=decision,
+                battery=snapshot.battery,
+            )
         if dry_run:
             if decision.should_write:
                 print(

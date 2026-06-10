@@ -18,6 +18,7 @@ from offgrid_power.canbus import (  # noqa: E402
     PylonStateOfCharge,
 )
 from offgrid_power.charger_taper import (  # noqa: E402
+    append_decision_log,
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
     ChargerTelemetry,
@@ -140,6 +141,43 @@ class ChargerTaperTest(unittest.TestCase):
                 min_cell_voltage_v=min_cell_v,
                 max_cell_voltage_v=max_cell_v,
             ),
+        )
+
+
+class DecisionLogTest(unittest.TestCase):
+    def test_appends_header_and_row(self) -> None:
+        from offgrid_power.charger_taper import ChargerCurrentTaperDecision
+
+        log_path = Path(__file__).resolve().parents[1] / ".tmp-test-taper-log.csv"
+        log_path.unlink(missing_ok=True)
+        try:
+            decision = ChargerCurrentTaperDecision(20.0, "dynamic taper", should_write=True)
+            append_decision_log(
+                str(log_path),
+                dry_run=True,
+                charge_stage="Absorb",
+                battery_voltage_v=54.21,
+                current_limit_a=80.0,
+                decision=decision,
+                battery=None,
+            )
+            rows = log_path.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(rows[0].split(",")[0:3], ["captured_at", "mode", "charge_stage"])
+            self.assertIn("dry-run,Absorb,54.21,80.0,20.0,dynamic taper", rows[1])
+        finally:
+            log_path.unlink(missing_ok=True)
+
+    def test_empty_path_is_a_noop(self) -> None:
+        from offgrid_power.charger_taper import ChargerCurrentTaperDecision
+
+        append_decision_log(
+            "",
+            dry_run=True,
+            charge_stage=None,
+            battery_voltage_v=None,
+            current_limit_a=None,
+            decision=ChargerCurrentTaperDecision(None, "x"),
+            battery=None,
         )
 
 

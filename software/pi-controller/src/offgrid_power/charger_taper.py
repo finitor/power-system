@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 
 from .canbus import PylonCanSnapshot
 
@@ -174,3 +177,68 @@ def _interpolate(value: float, x0: float, y0: float, x1: float, y1: float) -> fl
         return y1
     fraction = min(1.0, max(0.0, (value - x0) / (x1 - x0)))
     return y0 + (y1 - y0) * fraction
+
+
+TAPER_LOG_FIELDS = [
+    "captured_at",
+    "mode",
+    "charge_stage",
+    "battery_voltage_v",
+    "current_limit_a",
+    "target_current_a",
+    "reason",
+    "soc_percent",
+    "max_cell_v",
+    "cell_delta_mv",
+]
+
+
+def append_decision_log(
+    path: str,
+    *,
+    dry_run: bool,
+    charge_stage: str | None,
+    battery_voltage_v: float | None,
+    current_limit_a: float | None,
+    decision: ChargerCurrentTaperDecision,
+    battery: PylonCanSnapshot | None,
+    captured_at: datetime | None = None,
+) -> None:
+    """Append one actionable taper decision to a durable CSV.
+
+    The dry-run validation record must survive reboots (journald on the Pi
+    may be volatile), so decisions land next to the other telemetry logs.
+    """
+    if not path:
+        return
+    soc = max_cell_v = delta_mv = None
+    if battery is not None:
+        if battery.state_of_charge is not None:
+            soc = battery.state_of_charge.soc_percent
+        extended = battery.extended_measurements
+        if extended is not None and extended.max_cell_voltage_v is not None:
+            max_cell_v = extended.max_cell_voltage_v
+            if extended.min_cell_voltage_v is not None:
+                delta_mv = round((extended.max_cell_voltage_v - extended.min_cell_voltage_v) * 1000)
+
+    log_path = Path(path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    needs_header = not log_path.exists() or log_path.stat().st_size == 0
+    with log_path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=TAPER_LOG_FIELDS)
+        if needs_header:
+            writer.writeheader()
+        writer.writerow(
+            {
+                "captured_at": (captured_at or datetime.now(timezone.utc)).isoformat(),
+                "mode": "dry-run" if dry_run else "live",
+                "charge_stage": charge_stage or "",
+                "battery_voltage_v": "" if battery_voltage_v is None else f"{battery_voltage_v:.2f}",
+                "current_limit_a": "" if current_limit_a is None else f"{current_limit_a:.1f}",
+                "target_current_a": "" if decision.target_current_a is None else f"{decision.target_current_a:.1f}",
+                "reason": decision.reason,
+                "soc_percent": "" if soc is None else soc,
+                "max_cell_v": "" if max_cell_v is None else f"{max_cell_v:.3f}",
+                "cell_delta_mv": "" if delta_mv is None else delta_mv,
+            }
+        )
