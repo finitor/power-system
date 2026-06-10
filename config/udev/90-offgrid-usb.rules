@@ -10,3 +10,6 @@ ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", ATTR{idProduct}=="606f"
 
 # Prolific PL2303 — DSD TECH SH-U11H Magnum RS485 adapter
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="23a3", ATTR{power/control}="on"
+# Stable name: USB enumeration order changes when adapters are added, so the
+# supervisor must never reference a bare /dev/ttyUSBn for the Magnum bus.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="magnum-rs485"
