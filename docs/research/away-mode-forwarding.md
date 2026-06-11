@@ -46,6 +46,28 @@ goes dark with no way back.
 - Toggling the **whole inverter** (not a Starlink-only relay) is the
   correct choice precisely because the inverter's own idle draw is the
   thing being saved. A dedicated Starlink relay would not recover that.
+- Confirmed topology: **Starlink (Gen 2 actuated dish) is the only AC load
+  left connected while away** — all other branch breakers in the
+  distribution panel are physically left open. So cycling the whole
+  inverter cleanly powers exactly Starlink and nothing else.
+
+## Why AC, not DC (BOM decision)
+
+DC powering Starlink directly was preferred but rejected on cost. Starlink
+wants a regulated, non-48 V "odd" voltage; the battery bus swings
+44.8-58.4 V, which spans *both sides* of that target, so it needs a true
+**buck-boost** converter (buck-only or boost-only cannot cover the range),
+at ~100 W and with Starlink's proprietary connectorization. That converter
+plus accessories dominated the BOM, so Starlink runs from its stock AC
+supply off the inverter instead.
+
+Consequence and irony: powering Starlink from AC is what introduces the
+inverter idle-draw cost, which this feature then mostly reclaims by cycling
+the inverter. The feature is software buying back the efficiency the
+buck-boost hardware would have provided. If a cheap Starlink DC injector or
+buck-boost ever appears, the better architecture flips to DC-powering
+Starlink behind a DC load switch (relay/MOSFET) — no inverter cycling, no
+AC idle draw at all — but that is a hardware change, not this feature.
 
 ## Sequencing (state machine sketch)
 
@@ -64,10 +86,9 @@ goes dark with no way back.
 - **Occupancy signal.** Start with an explicit manual "away mode" flag set
   before leaving — simplest and safest. Inferring occupancy from load
   patterns is a later refinement, not a v1.
-- **Starlink AC topology.** Confirm Starlink is the only/primary AC load
-  when away (so cycling the whole inverter is acceptable), and how it
-  behaves across hard power cycles (boot time, dish heater inrush in
-  winter).
+- **Starlink behavior across hard power cycles** — boot/acquisition time
+  and actuated-dish/heater inrush in winter. (Sole-AC-load topology is
+  resolved: other breakers left open.)
 - **Link-up detection.** What does the supervisor poll to know Starlink is
   online — ping a known host, check the dish's local status endpoint?
 - **Fail-safe direction.** A missed OFF toggle wastes idle power (not
