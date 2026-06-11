@@ -65,3 +65,33 @@ Worth reopening only if a concrete need appears, e.g.:
    what gets transmitted on this bus.
 3. Keep the FT232R cable dedicated to bench/diagnostic use; the supervisor's
    operational telemetry stays on CAN.
+
+## Permanent cell-monitoring tap — feasibility (2026-06-11)
+
+A spare KL0823B 2-wire adapter exists and is electrically right (9600 baud,
+2-wire). The adapter is not the blocker; three things are:
+
+1. **Protocol is undecoded.** CAN already gives min/max cell + delta +
+   locations, which is what the taper needs. RS485 adds the full 16-cell
+   array and per-cell temps — *nice-to-have, not need-to-have*. Realizing
+   it requires the frame-capture/reverse-engineering above (or finding an
+   existing Pace/JBD-family decoder) — that is the real cost.
+2. **It is an active, transmitting interaction, unlike our other taps.**
+   CAN and Magnum are passive listens. A BMS RS485 poll means the Pi
+   *queries* the pack and the pack responds — the supervisor would be
+   transmitting onto the battery's bus. That is a higher-trust action than
+   listening, and a wedged BMS comm MCU was already seen once after a
+   service session (2026-06-10 journal). A persistent poller raises that
+   exposure.
+3. **Port/contention.** Which RJ45: the service port (then Companion
+   sessions and the poller contend — one master at a time) or the
+   inverter-facing RS485 (set to Pylon, nominally free since we read the
+   inverter path via CAN, but repurposing it risks the BMS's master/slave
+   or protocol state). Must be settled before tapping.
+
+Verdict: keep on the shelf as the proven path to cell granularity. Pursue
+only when a concrete need appears (weak-cell hunt, taper-knee refinement) —
+and even then, decode read-only against the bench FT232R first; promote to
+a permanent supervisor poller only after the transmit interaction is
+understood and shown safe. Note the spare shares the Magnum adapter's CH340
+VID:PID, so a port-path udev rule is required if both run at once.
