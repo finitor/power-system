@@ -24,6 +24,14 @@ charge settings). This is banked as a known capability, not built (see
 research note). It does not change the rejection: charge-parameter control
 still cannot coexist with the remote, which was the actual goal.
 
+Addendum 2026-06-11: the toggle now has an identified concrete application
+— away-mode log forwarding (keep the inverter off while the cabin is
+unoccupied, wake it periodically to power Starlink for a telemetry export).
+The real driver is eliminating the inverter's ~25-50 W idle draw while
+away, not the forwarding itself. Design note:
+[away-mode-forwarding.md](../research/away-mode-forwarding.md). Building the
+state-aware toggle write path is gated on that feature being committed.
+
 ## Context
 
 The Pi reads the Magnum inverter/charger over RS-485 from a parallel tap on
