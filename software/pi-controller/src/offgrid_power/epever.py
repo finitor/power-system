@@ -65,6 +65,7 @@ class EpeverChargeSettings:
     under_voltage_warning_v: float
     low_voltage_disconnect_v: float
     discharging_limit_voltage_v: float
+    max_charging_current_a: float | None = None
 
 
 class EpeverClient:
@@ -100,11 +101,51 @@ class EpeverClient:
             temperatures = read_input_registers(client, 0x3110, 2, self.unit)
             soc = read_input_registers(client, 0x311A, 1, self.unit)
             status = read_input_registers(client, 0x3200, 2, self.unit)
-            settings = read_holding_registers(client, 0x9000, 15, self.unit)
+            settings = read_holding_registers(client, 0x9000, 20, self.unit)
             return (
                 decode_telemetry(rated, live, temperatures, soc, status, captured_at),
                 decode_settings(settings, captured_at),
             )
+        finally:
+            client.close()
+
+    def write_max_charging_current(self, current_a: float) -> EpeverChargeSettings:
+        """Write BAT Max Charging Current and return the settings readback.
+
+        Solar Guardian uses Modbus function 0x10 even for one-register writes
+        on this controller. The register is centiamps: 100.00 A -> 10000.
+        """
+        if current_a < 1.0 or current_a > 100.0:
+            raise ValueError(f"EPEver charging current out of range: {current_a}")
+        raw_current = round(current_a * 100)
+        if raw_current < 0 or raw_current > 0xFFFF:
+            raise ValueError(f"EPEver charging current out of range: {current_a}")
+
+        client = ModbusSerialClient(
+            port=self.device,
+            baudrate=self.baud,
+            parity="N",
+            stopbits=1,
+            bytesize=8,
+            timeout=self.timeout,
+        )
+        if not client.connect():
+            raise ConnectionError(f"Could not open {self.device}")
+        try:
+            response = client.write_registers(address=0x9013, values=[raw_current], device_id=self.unit)
+            if response.isError():
+                raise RuntimeError(f"EPEver current-limit write failed: {response}")
+            settings = decode_settings(
+                read_holding_registers(client, 0x9000, 20, self.unit),
+                datetime.now(timezone.utc),
+            )
+            readback = settings.max_charging_current_a
+            if readback is None or abs(readback - current_a) >= 0.1:
+                raise RuntimeError(
+                    "EPEver current-limit readback mismatch: "
+                    f"wrote {current_a:.1f} A, read {readback!r} A"
+                )
+            return settings
         finally:
             client.close()
 
@@ -142,6 +183,7 @@ def decode_telemetry(
 
 def decode_settings(settings: list[int], captured_at: datetime | None = None) -> EpeverChargeSettings:
     battery_type_code = settings[0]
+    max_charging_current_a = settings[19] / 100 if len(settings) > 19 else None
     return EpeverChargeSettings(
         captured_at=captured_at or datetime.now(timezone.utc),
         battery_type_code=battery_type_code,
@@ -160,6 +202,7 @@ def decode_settings(settings: list[int], captured_at: datetime | None = None) ->
         under_voltage_warning_v=settings[12] / 100,
         low_voltage_disconnect_v=settings[13] / 100,
         discharging_limit_voltage_v=settings[14] / 100,
+        max_charging_current_a=max_charging_current_a,
     )
 
 

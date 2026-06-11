@@ -51,6 +51,37 @@ class EpeverDecodeTest(unittest.TestCase):
         self.assertEqual(settings.boost_voltage_v, 54.7)
         self.assertEqual(settings.float_voltage_v, 53.6)
         self.assertEqual(settings.low_voltage_disconnect_v, 49.7)
+        self.assertIsNone(settings.max_charging_current_a)
+
+    def test_decodes_max_charging_current_when_present(self) -> None:
+        settings = decode_settings(
+            [
+                6,
+                198,
+                300,
+                6400,
+                6000,
+                6000,
+                5830,
+                5760,
+                5520,
+                5280,
+                5040,
+                4880,
+                4800,
+                4440,
+                4240,
+                0,
+                0,
+                0,
+                0,
+                10000,
+            ],
+            captured_at=CAPTURED_AT,
+        )
+
+        self.assertEqual(settings.equalize_voltage_v, 58.3)
+        self.assertEqual(settings.max_charging_current_a, 100.0)
 
 
 if __name__ == "__main__":

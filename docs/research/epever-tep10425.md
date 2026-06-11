@@ -78,6 +78,153 @@ BPRO=21.
   the TEP10425 answers the standard EPEver Modbus RTU registers and which
   are writable.
 
+## Solar Guardian RS485 sniff session (2026-06-11)
+
+Bench setup:
+
+- Solar Guardian ran on a Windows 8.1 PC through a DSD TECH SH-U11H
+  USB-RS485 adapter, recognized as a Prolific PL2303GC serial port on
+  `COM6`.
+- A KL0823B 2-wire USB-RS485 adapter on the Raspberry Pi passively sniffed
+  the same A/B pair at 115200 baud, device address 1, with CPE ON.
+- Sniffer log path on the Pi during the session:
+  `~/power-system/data/epever-solar-guardian-sniff.log`.
+- No PV was connected, so charge-output and PV-current observations were
+  harmless zero-output tests.
+- Wiring observation: the SH-U11H ground connection was inadvertently
+  removed during the session with no apparent effect on Solar Guardian
+  communication. The TEP10425 COM port appears to tolerate two-wire A/B
+  control in this bench setup, though pin 8 GND remains the documented
+  reference connection when available.
+- Follow-up burn-in decision: move supervisor EPEver control to the
+  KL0823B 2-wire CH340 adapter for a multi-day trial, leaving Magnum
+  telemetry/control disconnected and the Magnum operated from the OEM
+  remote. The udev symlink `/dev/epever-rs485` temporarily points at the
+  CH340 adapter for this trial.
+
+Critical behavioral finding: **charge-control voltage writes appear to
+require Battery Type = User.** With the local lithium/LiFePO4 preset active,
+Solar Guardian either would not expose individual voltage writes or the
+controller did not retain the attempted voltage change. After switching
+Battery Type to `User`, Solar Guardian successfully wrote the battery
+control voltage block and read back the changed equalization voltage. Treat
+User profile as a precondition for any supervisor-owned voltage control.
+
+Solar Guardian writes normal Modbus RTU function `0x10` (Write Multiple
+Registers). No special unlock transaction was observed. Earlier single
+register `0x06` writes were not accepted by this controller, so the working
+writer should use `0x10`, including for one-register writes.
+
+### Holding-register writes and settings
+
+Battery-control voltage block, written as one block starting at `0x9007`
+with count 12. Values are centivolts (`raw / 100 = V`). This is the
+production-safe way to change charge voltages: read the full block,
+modify the intended fields, validate ordering, and write the full block
+back.
+
+| Register | Solar Guardian label | Observed raw | Observed value |
+|---:|---|---:|---:|
+| `0x9007` | Overvoltage Disconnect Voltage | 6400 | 64.00 V |
+| `0x9008` | Charging Limit Voltage | 6000 | 60.00 V |
+| `0x9009` | Overvoltage Recovery Voltage | 6000 | 60.00 V |
+| `0x900A` | Equalization Charging Voltage | 5830 | 58.30 V |
+| `0x900B` | Bulk Charging Voltage | 5760 | 57.60 V |
+| `0x900C` | Float Charging Voltage | 5520 | 55.20 V |
+| `0x900D` | Bulk Voltage Recovery Voltage | 5280 | 52.80 V |
+| `0x900E` | Low Voltage Recovery Voltage | 5040 | 50.40 V |
+| `0x900F` | Undervoltage Alarm Recovery Voltage | 4880 | 48.80 V |
+| `0x9010` | Undervoltage Alarm Voltage | 4800 | 48.00 V |
+| `0x9011` | Low Voltage Disconnect Voltage | 4440 | 44.40 V |
+| `0x9012` | Discharging Voltage Limit Voltage | 4240 | 42.40 V |
+
+Captured block write after changing Equalization Charging Voltage to
+58.3 V:
+
+```text
+01 10 90 07 00 0c 18
+  19 00 17 70 17 70 16 c6 16 80 15 90
+  14 a0 13 b0 13 10 12 c0 11 58 10 90
+  38 76
+```
+
+Current and related control registers:
+
+| Register | Solar Guardian label | Encoding | Observed behavior |
+|---:|---|---|---|
+| `0x9001` | Battery Capacity | Ah | Read back 198 Ah after user test edits. |
+| `0x9004` | Screen Backlight Time | seconds | Read back 60. |
+| `0x9005` | Screen Cycle Time | seconds | Read back 2. |
+| `0x9013` | BAT Max Charging Current | centiamps (`raw / 100 = A`) | Write 99 A -> 100 A produced raw `0x2710` = 10000 = 100.00 A. This is the primary taper knob. |
+| `0x9014` | Bulk Charging Time | minutes | Read back 10. |
+| `0x9015` | Equalize Charging Time | minutes | Read back 10. |
+| `0x9019..0x901B` | Device Time | encoded date/time | Read as a 3-register block; encoding not decoded yet. |
+| `0x901E` | Device Temperature Upper Limit | centidegrees C | Read back 8500 = 85.00 C. |
+| `0x901F` | Device Over Temperature Recovery | centidegrees C | Read back 7500 = 75.00 C. |
+| `0x9038` | Battery Charging Mode | enum | Read `0`, displayed as Voltage. |
+| `0x9039` | Full Charge Protection SOC | percent | Read back 99. |
+| `0x903A` | Full Charge Protection Recovery SOC | percent | Read back 95. |
+| `0x903C` | Low Battery Alarm Recovery SOC | percent | Read back 10. |
+| `0x903D` | Low Battery Alarm SOC | percent | Read back 8. |
+| `0x903F` | Data Record Period | minutes | Read back 10. |
+| `0x9040` | BMS Protocol | enum | Read back 32. |
+| `0x9041` | Use BMS Settings | enum | Read `1`, displayed as ON. |
+| `0x9042` | PV Connection Mode | enum | Read `0`, displayed as Independent. |
+| `0x9043` | Simulate BMS Mode | enum | Read `0`, displayed as Disable. |
+| `0x9045` | Device ID | address | Read back 1. |
+| `0x9046` | Device Baud Rate | baud / 100 | Read `1152`, displayed as 115200 Bd. |
+| `0x9047` | Parallel Max Charging Current | amps | Write 1199 was not retained; write 1190 was accepted; restored to 1200. Treat as 10 A step. |
+| `0x9049` | PV Restart Charging Period | minutes | Read back 10. |
+
+Unknown or avoid-for-now settings observed on the Battery Parameter tab:
+`0x9017`, `0x901C`, and `0x901D` appear tied to temperature or lithium/BMS
+limits but were not decoded in this session. Do not write them until
+mapped.
+
+### Home/status polling
+
+Solar Guardian's Home page continuously polls input registers with
+function `0x04`. The page labels in the screenshot align with these
+blocks:
+
+| Register/block | Observed/label mapping |
+|---:|---|
+| `0x300F` | PV Amount; observed `2`. |
+| `0x3100..0x3103` | PV electrical block; zero with no PV connected. |
+| `0x3108..0x310B` | Additional PV/current/power block; zero with no PV connected. |
+| `0x3114` | Battery Voltage; observed around `0x14d6..0x14d9` = 53.34-53.37 V. |
+| `0x3117..0x311A` | Battery/status detail block; includes device temperature at `0x311A` (`0x07DA` = 20.10 C observed). |
+| `0x311E..0x3121` | Additional live/status block; zero during no-PV test. |
+| `0x3200` | Device/status word; Home showed device Normal. |
+| `0x3202..0x3203` | Charging/fault status; Home showed Not Charging. |
+| `0x3205` | Additional status/fault flag; Home showed Device OverHeat: No. |
+| `0x3301..0x3302` | Energy/statistic block; observed nonzero value on Home. |
+| `0x330B..0x3312` | Generation counters; repeated raw `0x0130` = 304 = 3.04 kWh for day/month/year/total. |
+| `0x3402` | Consumption/other energy counter; observed zero. |
+
+The sniffer grouped each Home polling burst into one long line, so those
+log lines report `crc=bad` for the aggregate buffer. The individual
+Modbus request/response frames inside the burst are still usable and match
+the Solar Guardian UI values.
+
+### Control conclusions from sniffing
+
+- Production voltage control should use User battery type, read-modify-write
+  of `0x9007..0x9012`, and local validation of the controller's voltage
+  ordering rules before any write.
+- Production current taper should use `0x9013` BAT Max Charging Current,
+  encoded in centiamps. The manual range for TEP10425 is 1-100 A, step
+  1 A.
+- `0x9047` Parallel Max Charging Current is real and writable, but it is a
+  parallel-system ceiling rather than the normal taper knob. It appears to
+  require 10 A increments.
+- No true charger enable/disable register was discovered. Until proven
+  otherwise, "disable" must be implemented by conservative current/voltage
+  targets or by an external hardware/PV disconnect path.
+- A later PV-connected test should repeat the Home-page sniff while the
+  controller is actually charging, to map the charging-current/power fields
+  and status-bit transitions under load.
+
 ## Operational gotchas spotted
 
 - **CPE (Com Port Enable)**, default ON: if set OFF, external comms shut

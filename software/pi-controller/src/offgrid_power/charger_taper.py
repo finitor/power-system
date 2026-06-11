@@ -10,7 +10,7 @@ from pathlib import Path
 from .canbus import PylonCanSnapshot
 
 
-ACTIVE_CHARGE_STAGES = {"Absorb", "BulkMppt", "Float", "FloatMppt"}
+ACTIVE_CHARGE_STAGES = {"Absorb", "BulkMppt", "Float", "FloatMppt", "Boost"}
 STOP_CHARGE_STAGES = {"Equalize", "EqMppt"}
 
 

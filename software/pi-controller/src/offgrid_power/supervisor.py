@@ -158,6 +158,19 @@ class Supervisor:
             return
         write()
 
+    def write_epever_max_charging_current(self, current_a: float) -> None:
+        """Write EPEver BAT Max Charging Current via the device actor thread."""
+        if self.epever is None:
+            raise RuntimeError("no EPEver adapter configured")
+
+        def write() -> None:
+            self.epever.write_max_charging_current(current_a)
+
+        if self._readers is not None and "epever" in self._readers:
+            self._readers["epever"].submit(write)
+            return
+        write()
+
     def read_snapshot(self) -> SupervisorSnapshot:
         if self._readers is not None:
             devices, errors, stale_candidates = self._collect_from_readers()

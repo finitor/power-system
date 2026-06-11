@@ -126,6 +126,12 @@ def parse_args() -> argparse.Namespace:
         help="Evaluate and log charger current taper decisions without writing settings",
     )
     parser.add_argument(
+        "--charger-current-taper-target",
+        choices=["classic", "epever"],
+        default=os.getenv("CHARGER_CURRENT_TAPER_TARGET", "classic"),
+        help="Charge controller whose current limit is adjusted by the taper loop",
+    )
+    parser.add_argument(
         "--charger-taper-log-path",
         default=os.getenv("CHARGER_TAPER_LOG_PATH", ""),
         help="Append actionable taper decisions (incl. dry-run) to this CSV",
@@ -327,6 +333,7 @@ def main() -> int:
                 enabled=charger_current_taper_enabled,
                 supervisor=supervisor,
                 snapshot=snapshot,
+                target=args.charger_current_taper_target,
                 log_path=args.charger_taper_log_path,
             )
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
@@ -431,13 +438,18 @@ def apply_charger_current_taper(
     enabled: bool,
     supervisor: Supervisor,
     snapshot,
+    target: str = "classic",
     log_path: str = "",
 ) -> None:
     if charger_current_taper is None:
         return
     try:
-        charger = _classic_charger_telemetry(snapshot)
-        settings = _classic_current_settings(snapshot)
+        if target == "epever":
+            charger = _epever_charger_telemetry(snapshot)
+            settings = _epever_current_settings(snapshot)
+        else:
+            charger = _classic_charger_telemetry(snapshot)
+            settings = _classic_current_settings(snapshot)
         decision = charger_current_taper.decide(charger, settings, snapshot.battery)
         if decision.target_current_a is None:
             return
@@ -462,15 +474,22 @@ def apply_charger_current_taper(
             return
         if not enabled or not decision.should_write:
             return
-        if supervisor.classic is None:
-            return
-        supervisor.write_classic_charge_settings(
-            battery_current_limit_a=decision.target_current_a,
-            persist=False,
-        )
+        if target == "epever":
+            if supervisor.epever is None:
+                return
+            target_current_a = max(1.0, decision.target_current_a)
+            supervisor.write_epever_max_charging_current(target_current_a)
+        else:
+            if supervisor.classic is None:
+                return
+            target_current_a = decision.target_current_a
+            supervisor.write_classic_charge_settings(
+                battery_current_limit_a=target_current_a,
+                persist=False,
+            )
         print(
-            "Charger current taper: classic.0 "
-            f"{current:.1f}A -> {decision.target_current_a:.1f}A ({decision.reason})",
+            f"Charger current taper: {target} "
+            f"{current:.1f}A -> {target_current_a:.1f}A ({decision.reason})",
             file=sys.stderr,
         )
     except Exception as exc:  # noqa: BLE001 - taper should never kill telemetry/display.
@@ -490,6 +509,21 @@ def _classic_current_settings(snapshot) -> ChargerCurrentSettings | None:
     if snapshot.classic_settings is None:
         return None
     return ChargerCurrentSettings(current_limit_a=snapshot.classic_settings.battery_current_limit_a)
+
+
+def _epever_charger_telemetry(snapshot) -> ChargerTelemetry | None:
+    if snapshot.epever is None:
+        return None
+    return ChargerTelemetry(
+        voltage_v=snapshot.epever.battery_voltage_v,
+        charge_stage=snapshot.epever.charging_status,
+    )
+
+
+def _epever_current_settings(snapshot) -> ChargerCurrentSettings | None:
+    if snapshot.epever_settings is None or snapshot.epever_settings.max_charging_current_a is None:
+        return None
+    return ChargerCurrentSettings(current_limit_a=snapshot.epever_settings.max_charging_current_a)
 
 
 def _env_bool(name: str, default: bool) -> bool:
