@@ -914,7 +914,7 @@ class AccessLogger:
 
 def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
     lines: list[str] = []
-    lines.extend(["<h2>Charge Controller 0</h2>", "<table>"])
+    lines.extend(["<h2>Charge Controller 0 (Classic)</h2>", "<table>"])
     if snapshot.classic is None:
         lines.append(_row("State", "No data"))
     else:
@@ -950,7 +950,7 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
             )
     lines.append("</table>")
 
-    lines.extend(["<h2>Charge Controller 1</h2>", "<table>"])
+    lines.extend(["<h2>Charge Controller 1 (Epever)</h2>", "<table>"])
     if snapshot.epever is None:
         lines.append(_row("State", "No data"))
     else:

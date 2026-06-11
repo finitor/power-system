@@ -40,6 +40,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
             },
             "solar": [
                 {
+                    "id": "classic.0",
                     "pv_voltage_v": 91.2,
                     "pv_current_a": 4.5,
                     "last_voc_v": 101.0,
@@ -58,7 +59,27 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                         "float_voltage_v": 55.0,
                         "equalize_voltage_v": 55.6,
                     },
-                }
+                },
+                {
+                    "id": "epever.1",
+                    "pv_voltage_v": 0.0,
+                    "pv_current_a": 0.0,
+                    "pv_power_w": 0,
+                    "battery_voltage_v": 53.2,
+                    "battery_current_a": 0.0,
+                    "battery_power_w": 0,
+                    "charge_stage": "No charging",
+                    "state": "No charging",
+                    "rated_pv_voltage_v": 250.0,
+                    "rated_charging_current_a": 100.0,
+                    "temperatures_c": {"battery": 0.0, "device": 0.0},
+                    "settings": {
+                        "battery_type": "User",
+                        "boost_voltage_v": 54.7,
+                        "float_voltage_v": 53.6,
+                        "low_voltage_disconnect_v": 49.7,
+                    },
+                },
             ],
             "load": {"current_a": 4.0, "power_w": 212, "remaining_text": "46.0h"},
             "ambient": {"temperature_c": 18.2, "humidity_percent": None},
@@ -72,6 +93,10 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Cells                 Δ 6mV; min 2|14 3.312V; max 2|10 3.318V", rendered)
         self.assertIn("Charge Status         Stage: Float  State: MPPT or regulating voltage", rendered)
         self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V 0.5h  Float 55.0V  EQ 55.6V", rendered)
+        self.assertIn("Charge Controller 0 (Classic)\n", rendered)
+        self.assertIn("\n\nCharge Controller 1 (Epever)\n", rendered)
+        self.assertIn("Rated                 250V PV  100A charge", rendered)
+        self.assertIn("Charge Settings       Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", rendered)
         self.assertNotIn("Temps", rendered)
         self.assertIn("Battery terminal      17.0C", rendered)
         self.assertIn("CC0 FET               31.0C", rendered)

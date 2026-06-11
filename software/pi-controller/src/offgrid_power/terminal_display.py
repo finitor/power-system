@@ -231,7 +231,7 @@ def _missing_battery_lines(snapshot: SupervisorSnapshot) -> list[str]:
 
 def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
     lines: list[str] = []
-    lines.append("Charge Controller 0")
+    lines.append("Charge Controller 0 (Classic)")
     if snapshot.classic is None:
         lines.append("  No data")
     else:
@@ -248,7 +248,8 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         if snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))
 
-    lines.append("Charge Controller 1")
+    lines.append("")
+    lines.append("Charge Controller 1 (Epever)")
     if snapshot.epever is None:
         lines.append("  No data")
     else:

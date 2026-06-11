@@ -128,9 +128,11 @@ def _battery_lines(battery: dict | None) -> list[str]:
 def _solar_lines(solar: list[dict]) -> list[str]:
     lines: list[str] = []
     if not solar:
-        return ["Charge Controller 0", "  No data"]
+        return ["Charge Controller 0 (Classic)", "  No data"]
     for index, controller in enumerate(solar):
-        lines.append(f"Charge Controller {index}")
+        if lines:
+            lines.append("")
+        lines.append(_charge_controller_title(index, controller))
         pv_parts = [
             f"{_fmt(controller.get('pv_voltage_v'), 1)}V",
             f"{_fmt(controller.get('pv_current_a'), 1)}A",
@@ -193,6 +195,15 @@ def _solar_lines(solar: list[dict]) -> list[str]:
                 )
             lines.append(_row("Charge Settings", value))
     return lines
+
+
+def _charge_controller_title(index: int, controller: dict) -> str:
+    controller_id = controller.get("id")
+    if controller_id == "classic.0":
+        return f"Charge Controller {index} (Classic)"
+    if controller_id == "epever.1":
+        return f"Charge Controller {index} (Epever)"
+    return f"Charge Controller {index}"
 
 
 def _temperature_lines(payload: dict) -> list[str]:

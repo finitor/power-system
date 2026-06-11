@@ -67,7 +67,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("setInterval(tick, 60000)", html)
         self.assertNotIn('http-equiv="refresh"', html)
         self.assertIn("SOC 97%", html)
-        for section in ("Load", "Battery Bank", "Charge Controller 0", "Temperatures"):
+        for section in ("Load", "Battery Bank", "Charge Controller 0 (Classic)", "Temperatures"):
             self.assertIn(f"<h2>{section}</h2>", html)
         self.assertNotIn("<h2>Inverter/Charger</h2>", html)
         # Decoded values flow through to the page.
@@ -170,7 +170,7 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_snapshot(snapshot)
 
-        self.assertIn("<h2>Charge Controller 1</h2>", html)
+        self.assertIn("<h2>Charge Controller 1 (Epever)</h2>", html)
         self.assertIn("53.1V  0.0A  0W", html)
         self.assertIn("Stage: No charging", html)
         self.assertIn("Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", html)
