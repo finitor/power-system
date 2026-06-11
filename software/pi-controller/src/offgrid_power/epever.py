@@ -13,6 +13,7 @@ DEFAULT_BAUD = 115200
 DEFAULT_UNIT = 1
 
 BATTERY_TYPES = {
+    0: "User",
     1: "Sealed",
     2: "Gel",
     3: "Flooded",
@@ -184,24 +185,25 @@ def decode_telemetry(
 def decode_settings(settings: list[int], captured_at: datetime | None = None) -> EpeverChargeSettings:
     battery_type_code = settings[0]
     max_charging_current_a = settings[19] / 100 if len(settings) > 19 else None
+    voltage_offset = 7 if len(settings) > 18 else 3
     return EpeverChargeSettings(
         captured_at=captured_at or datetime.now(timezone.utc),
         battery_type_code=battery_type_code,
         battery_type=BATTERY_TYPES.get(battery_type_code, "unknown"),
         battery_capacity_ah=settings[1],
         temperature_compensation_mv_per_c_cell=_signed_16(settings[2]),
-        over_voltage_disconnect_v=settings[3] / 100,
-        charging_limit_voltage_v=settings[4] / 100,
-        over_voltage_reconnect_v=settings[5] / 100,
-        equalize_voltage_v=settings[6] / 100,
-        boost_voltage_v=settings[7] / 100,
-        float_voltage_v=settings[8] / 100,
-        boost_reconnect_voltage_v=settings[9] / 100,
-        low_voltage_reconnect_v=settings[10] / 100,
-        under_voltage_recover_v=settings[11] / 100,
-        under_voltage_warning_v=settings[12] / 100,
-        low_voltage_disconnect_v=settings[13] / 100,
-        discharging_limit_voltage_v=settings[14] / 100,
+        over_voltage_disconnect_v=settings[voltage_offset] / 100,
+        charging_limit_voltage_v=settings[voltage_offset + 1] / 100,
+        over_voltage_reconnect_v=settings[voltage_offset + 2] / 100,
+        equalize_voltage_v=settings[voltage_offset + 3] / 100,
+        boost_voltage_v=settings[voltage_offset + 4] / 100,
+        float_voltage_v=settings[voltage_offset + 5] / 100,
+        boost_reconnect_voltage_v=settings[voltage_offset + 6] / 100,
+        low_voltage_reconnect_v=settings[voltage_offset + 7] / 100,
+        under_voltage_recover_v=settings[voltage_offset + 8] / 100,
+        under_voltage_warning_v=settings[voltage_offset + 9] / 100,
+        low_voltage_disconnect_v=settings[voltage_offset + 10] / 100,
+        discharging_limit_voltage_v=settings[voltage_offset + 11] / 100,
         max_charging_current_a=max_charging_current_a,
     )
 

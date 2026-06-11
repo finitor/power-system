@@ -56,9 +56,13 @@ class EpeverDecodeTest(unittest.TestCase):
     def test_decodes_max_charging_current_when_present(self) -> None:
         settings = decode_settings(
             [
-                6,
+                0,
                 198,
                 300,
+                0,
+                0,
+                0,
+                0,
                 6400,
                 6000,
                 6000,
@@ -71,15 +75,12 @@ class EpeverDecodeTest(unittest.TestCase):
                 4800,
                 4440,
                 4240,
-                0,
-                0,
-                0,
-                0,
                 10000,
             ],
             captured_at=CAPTURED_AT,
         )
 
+        self.assertEqual(settings.battery_type, "User")
         self.assertEqual(settings.equalize_voltage_v, 58.3)
         self.assertEqual(settings.max_charging_current_a, 100.0)
 
