@@ -17,9 +17,37 @@ sys.path.insert(0, str(PACKAGE_SRC))
 from offgrid_power.canbus import CanFrame, decode_pylon_snapshot
 from offgrid_power.classic import ClassicTelemetry
 from offgrid_power.epever import EpeverChargeSettings, EpeverTelemetry
+from offgrid_power.magnum import MagnumSnapshot
 from offgrid_power.supervisor import SupervisorSnapshot
 
 DEFAULT_CAPTURED_AT = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+
+
+def make_magnum_snapshot(**overrides) -> MagnumSnapshot:
+    fields: dict = {
+        "captured_at": DEFAULT_CAPTURED_AT,
+        "dc_volts": 53.2,
+        "dc_amps": 4,
+        "ac_volts_out": 120,
+        "ac_volts_in": 0,
+        "ac_amps_in": 0,
+        "ac_amps_out": 1,
+        "ac_freq_hz": 60.0,
+        "inverter_on": True,
+        "charger_on": False,
+        "status_name": "INVERT",
+        "fault_name": "NONE",
+        "battery_temp_c": 25,
+        "transformer_temp_c": 37,
+        "fet_temp_c": 30,
+        "absorb_v": 54.4,
+        "float_v": 54.4,
+        "absorb_time_hr": 3.0,
+        "shore_amps": 30,
+        "charger_amps_pct": 0,
+    }
+    fields.update(overrides)
+    return MagnumSnapshot(**fields)
 
 
 def make_snapshot(**overrides) -> SupervisorSnapshot:

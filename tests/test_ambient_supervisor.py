@@ -278,9 +278,8 @@ class TerminalDisplayTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot)
 
-        for group in ("Load", "Battery Bank", "Charge Controller 0 (Classic)", "Temperatures"):
+        for group in ("Load", "Battery Bank", "Charge Controller 0 (Classic)", "Inverter/Charger", "Temperatures"):
             self.assertIn(group, rendered)
-        self.assertNotIn("Inverter/Charger", rendered)
         self.assertIn("21.5C", rendered)
         self.assertIn("44.0%", rendered)
         self.assertIn("52.41V", rendered)

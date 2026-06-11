@@ -81,6 +81,28 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     },
                 },
             ],
+            "inverter": {
+                "dc_volts": 53.2,
+                "dc_amps": 4,
+                "dc_power_w": 213,
+                "ac_volts_out": 120,
+                "ac_amps_out": 1,
+                "ac_freq_hz": 60.0,
+                "ac_volts_in": 0,
+                "ac_amps_in": 0,
+                "status_label": "Inverting",
+                "fault": "NONE",
+                "battery_temp_c": 25,
+                "transformer_temp_c": 37,
+                "fet_temp_c": 30,
+                "settings": {
+                    "absorb_v": 54.4,
+                    "float_v": 54.4,
+                    "absorb_time_hr": 3.0,
+                    "shore_amps": 30,
+                    "charger_amps_pct": 0,
+                },
+            },
             "load": {"current_a": 4.0, "power_w": 212, "remaining_text": "46.0h"},
             "ambient": {"temperature_c": 18.2, "humidity_percent": None},
         }
@@ -97,9 +119,15 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("\n\nCharge Controller 1 (Epever)\n", rendered)
         self.assertIn("Rated                 250V PV  100A charge", rendered)
         self.assertIn("Charge Settings       Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", rendered)
+        self.assertIn("\n\nInverter/Charger\n", rendered)
+        self.assertIn("DC                    53.2V  4A  213W", rendered)
+        self.assertIn("AC Output             120V  1A  60.0Hz", rendered)
+        self.assertIn("Status                Inverting", rendered)
+        self.assertIn("Charge Settings       Absorb 54.4V 3.0h  Float 54.4V  Shore 30A", rendered)
         self.assertNotIn("Temps", rendered)
         self.assertIn("Battery terminal      17.0C", rendered)
         self.assertIn("CC0 FET               31.0C", rendered)
+        self.assertIn("INV FET               30C", rendered)
         self.assertIn("Sensor 0 ambient temp 18.2C", rendered)
         self.assertNotIn("Press Ctrl-C", rendered)
 

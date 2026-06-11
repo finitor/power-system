@@ -46,6 +46,9 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
     lines.extend(_solar_lines(payload.get("solar") or []))
 
     lines.append("")
+    lines.extend(_inverter_charger_lines(payload.get("inverter")))
+
+    lines.append("")
     lines.extend(_temperature_lines(payload))
 
     errors = status.get("errors") or []
@@ -206,11 +209,68 @@ def _charge_controller_title(index: int, controller: dict) -> str:
     return f"Charge Controller {index}"
 
 
+def _inverter_charger_lines(inverter: dict | None) -> list[str]:
+    lines = ["Inverter/Charger"]
+    if inverter is None:
+        lines.append("  No data")
+        return lines
+
+    lines.append(
+        _row(
+            "DC",
+            f"{_fmt(inverter.get('dc_volts'), 1)}V  "
+            f"{_fmt(inverter.get('dc_amps'), 0)}A  "
+            f"{_fmt(inverter.get('dc_power_w'), 0)}W",
+        )
+    )
+
+    ac_out_parts = [f"{_fmt(inverter.get('ac_volts_out'), 0)}V"]
+    if inverter.get("ac_amps_out") is not None:
+        ac_out_parts.append(f"{_fmt(inverter.get('ac_amps_out'), 0)}A")
+    if inverter.get("ac_freq_hz") is not None:
+        ac_out_parts.append(f"{_fmt(inverter.get('ac_freq_hz'), 1)}Hz")
+    lines.append(_row("AC Output", "  ".join(ac_out_parts)))
+
+    ac_volts_in = inverter.get("ac_volts_in") or 0
+    if ac_volts_in > 0:
+        ac_in_parts = [f"{_fmt(ac_volts_in, 0)}V"]
+        if inverter.get("ac_amps_in") is not None:
+            ac_in_parts.append(f"{_fmt(inverter.get('ac_amps_in'), 0)}A")
+        lines.append(_row("AC Input", "  ".join(ac_in_parts)))
+    else:
+        lines.append(_row("AC Input", "0V  no source"))
+
+    status_label = inverter.get("status_label") or inverter.get("status") or "unknown"
+    fault = inverter.get("fault")
+    if fault and fault not in ("NONE", "UNKNOWN"):
+        status_label += f"  Fault: {fault.lower().replace('_', ' ')}"
+    lines.append(_row("Status", status_label))
+
+    settings = inverter.get("settings") or {}
+    settings_parts = []
+    if settings.get("charger_amps_pct") is not None and (settings.get("charger_amps_pct") or 0) > 0:
+        settings_parts.append(f"Limit {_fmt(settings.get('charger_amps_pct'), 0)}%")
+    if settings.get("absorb_v") is not None:
+        absorb = f"Absorb {_fmt(settings.get('absorb_v'), 1)}V"
+        if settings.get("absorb_time_hr") is not None:
+            absorb += f" {_fmt(settings.get('absorb_time_hr'), 1)}h"
+        settings_parts.append(absorb)
+    if settings.get("float_v") is not None:
+        settings_parts.append(f"Float {_fmt(settings.get('float_v'), 1)}V")
+    if settings.get("shore_amps") is not None:
+        settings_parts.append(f"Shore {_fmt(settings.get('shore_amps'), 0)}A")
+    if settings_parts:
+        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
+
+    return lines
+
+
 def _temperature_lines(payload: dict) -> list[str]:
     lines = ["Temperatures"]
     battery = payload.get("battery") or {}
     ambient = payload.get("ambient") or {}
     solar = payload.get("solar") or []
+    inverter = payload.get("inverter") or {}
     cell_min = battery.get("cell_temperature_min_c")
     cell_max = battery.get("cell_temperature_max_c")
     if cell_min is not None and cell_max is not None:
@@ -227,6 +287,12 @@ def _temperature_lines(payload: dict) -> list[str]:
             lines.append(_row(f"{prefix} PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
         if temps.get("device") is not None:
             lines.append(_row(f"{prefix} device", f"{_fmt(temps.get('device'), 1)}C"))
+    if inverter.get("battery_temp_c") is not None:
+        lines.append(_row("INV battery", f"{_fmt(inverter.get('battery_temp_c'), 0)}C"))
+    if inverter.get("transformer_temp_c") is not None:
+        lines.append(_row("INV transformer", f"{_fmt(inverter.get('transformer_temp_c'), 0)}C"))
+    if inverter.get("fet_temp_c") is not None:
+        lines.append(_row("INV FET", f"{_fmt(inverter.get('fet_temp_c'), 0)}C"))
     if ambient.get("temperature_c") is None:
         lines.append(_row("Sensor 0 ambient temp", "disconnected"))
     else:

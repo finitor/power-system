@@ -26,7 +26,7 @@ from offgrid_power.web_display import (
     snapshot_api_payload,
 )
 from offgrid_power.weather import WeatherReport
-from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_snapshot
+from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_magnum_snapshot, make_snapshot
 
 
 class WebDisplayTest(unittest.TestCase):
@@ -47,6 +47,7 @@ class WebDisplayTest(unittest.TestCase):
                     CanFrame(0x373, bytes.fromhex("4C0D5A0D21012201")),
                 ]
             ),
+            magnum=make_magnum_snapshot(),
         )
 
         html = render_kindle_snapshot(
@@ -67,13 +68,15 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("setInterval(tick, 60000)", html)
         self.assertNotIn('http-equiv="refresh"', html)
         self.assertIn("SOC 97%", html)
-        for section in ("Load", "Battery Bank", "Charge Controller 0 (Classic)", "Temperatures"):
+        for section in ("Load", "Battery Bank", "Charge Controller 0 (Classic)", "Inverter/Charger", "Temperatures"):
             self.assertIn(f"<h2>{section}</h2>", html)
-        self.assertNotIn("<h2>Inverter/Charger</h2>", html)
         # Decoded values flow through to the page.
         self.assertIn("5.1A  272W", html)
         self.assertIn("18.7h", html)
         self.assertIn("54.57V", html)
+        # Inverter/Charger telemetry renders.
+        self.assertIn("60.0Hz", html)
+        self.assertIn("Inverting", html)
 
     def test_renders_kindle_snapshot_with_empty_and_error_snapshots(self) -> None:
         # Degraded states must render, not raise: this is what the wall

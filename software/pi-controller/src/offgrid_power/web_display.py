@@ -143,6 +143,7 @@ def render_kindle_snapshot(
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot))
+    lines.extend(_inverter_charger_section(snapshot))
     lines.extend(_temperature_section(snapshot))
 
     if snapshot.errors:
@@ -978,6 +979,56 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
     return lines
 
 
+def _inverter_charger_section(snapshot: SupervisorSnapshot) -> list[str]:
+    lines = ["<h2>Inverter/Charger</h2>", "<table>"]
+    inv = snapshot.magnum
+    if inv is None:
+        lines.append(_row("State", "No data"))
+        lines.append("</table>")
+        return lines
+
+    lines.append(_row("DC", f"{inv.dc_volts:.1f}V  {inv.dc_amps}A  {inv.dc_power_w}W"))
+
+    ac_out_parts = [f"{inv.ac_volts_out}V"]
+    if inv.ac_amps_out is not None:
+        ac_out_parts.append(f"{inv.ac_amps_out}A")
+    if inv.ac_freq_hz is not None:
+        ac_out_parts.append(f"{inv.ac_freq_hz:.1f}Hz")
+    lines.append(_row("AC Output", "  ".join(ac_out_parts)))
+
+    if inv.ac_volts_in > 0:
+        ac_in_parts = [f"{inv.ac_volts_in}V"]
+        if inv.ac_amps_in is not None:
+            ac_in_parts.append(f"{inv.ac_amps_in}A")
+        lines.append(_row("AC Input", "  ".join(ac_in_parts)))
+    else:
+        lines.append(_row("AC Input", "0V  no source"))
+
+    status_text = inv.status_label()
+    fault = inv.fault_label()
+    if fault:
+        status_text += f"  Fault: {fault}"
+    lines.append(_row("Status", status_text))
+
+    settings_parts = []
+    if inv.charger_amps_pct is not None and inv.charger_amps_pct > 0:
+        settings_parts.append(f"Limit {inv.charger_amps_pct}%")
+    if inv.absorb_v is not None:
+        absorb = f"Absorb {inv.absorb_v:.1f}V"
+        if inv.absorb_time_hr is not None:
+            absorb += f" {inv.absorb_time_hr:.1f}h"
+        settings_parts.append(absorb)
+    if inv.float_v is not None:
+        settings_parts.append(f"Float {inv.float_v:.1f}V")
+    if inv.shore_amps is not None:
+        settings_parts.append(f"Shore {inv.shore_amps}A")
+    if settings_parts:
+        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
+
+    lines.append("</table>")
+    return lines
+
+
 def _load_section(load_summary: LoadSummary | None) -> list[str]:
     lines = ["<h2>Load</h2>", "<table>"]
     if load_summary is None:
@@ -1074,6 +1125,11 @@ def _temperature_section(snapshot: SupervisorSnapshot) -> list[str]:
             lines.append(_row("CC1 battery", f"{epever.battery_temp_c:.1f}C"))
         if epever.device_temp_c is not None:
             lines.append(_row("CC1 device", f"{epever.device_temp_c:.1f}C"))
+    if snapshot.magnum is not None:
+        inv = snapshot.magnum
+        lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))
+        lines.append(_row("INV transformer", f"{inv.transformer_temp_c}C"))
+        lines.append(_row("INV FET", f"{inv.fet_temp_c}C"))
     if snapshot.ambient is None:
         lines.append(_row("Sensor 0 ambient", "disconnected"))
     else:
