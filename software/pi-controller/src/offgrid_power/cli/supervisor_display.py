@@ -501,7 +501,7 @@ def _classic_charger_telemetry(snapshot) -> ChargerTelemetry | None:
         return None
     return ChargerTelemetry(
         voltage_v=snapshot.classic.battery_voltage_v,
-        charge_stage=snapshot.classic.charge_stage,
+        charge_stage=snapshot.classic.canonical_stage.value,
     )
 
 
@@ -516,7 +516,7 @@ def _epever_charger_telemetry(snapshot) -> ChargerTelemetry | None:
         return None
     return ChargerTelemetry(
         voltage_v=snapshot.epever.battery_voltage_v,
-        charge_stage=snapshot.epever.charging_status,
+        charge_stage=snapshot.epever.canonical_stage.value,
     )
 
 

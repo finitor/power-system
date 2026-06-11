@@ -86,6 +86,31 @@ mode is not that authority with this bank).
 | Controller temperature | Classic 200 | Medium | Watch thermal behavior |
 | Faults/alarms | Classic 200 | High | Needs exact message mapping |
 
+## Charge-Stage Vocabulary
+
+With two controllers feeding one staged-charging goal, their differing
+stage words are normalized to a single canonical vocabulary (the Classic's,
+which tracks industry-standard terms) in
+[`charge_stage.py`](../../software/pi-controller/src/offgrid_power/charge_stage.py).
+Internal logic (e.g. the current taper) and all displays consume the
+canonical stage; the controller's native word is shown in parentheses where
+it differs.
+
+| Canonical | Classic native | EPEver native |
+|---|---|---|
+| Bulk | BulkMppt | (folded into Boost) |
+| Absorb | Absorb | Boost |
+| Float | Float, FloatMppt | Float |
+| Equalize | Equalize | Equalize |
+| Resting | Resting, HyperVoc | No charging |
+
+The EPEver has no distinct bulk stage — it reports `Boost` for both the
+constant-current climb and the constant-voltage hold — so `Boost` maps to
+the canonical `Absorb`. An EPEver showing `Absorb` may therefore still be
+physically in the bulk phase. The Classic's `HyperVoc` (PV-overvoltage
+self-protection) normalizes to `Resting`; the `is_hypervoc` flag carries
+that detail separately for display.
+
 ## Local Modbus Probe
 
 The Classic is reachable on the LAN over Modbus TCP. Use the read-only probe script for quick local checks:

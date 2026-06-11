@@ -8,10 +8,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .canbus import PylonCanSnapshot
+from .charge_stage import ChargeStage
 
 
-ACTIVE_CHARGE_STAGES = {"Absorb", "BulkMppt", "Float", "FloatMppt", "Boost"}
-STOP_CHARGE_STAGES = {"Equalize", "EqMppt"}
+# Stages keyed by the canonical vocabulary (see charge_stage.py). Both
+# controllers' native stages are normalized before reaching the taper, so
+# this no longer needs to enumerate each device's dialect.
+ACTIVE_CHARGE_STAGES = {
+    ChargeStage.BULK.value,
+    ChargeStage.ABSORB.value,
+    ChargeStage.FLOAT.value,
+}
+STOP_CHARGE_STAGES = {ChargeStage.EQUALIZE.value}
 
 
 @dataclass(frozen=True)

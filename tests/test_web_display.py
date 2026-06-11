@@ -180,7 +180,8 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertIn("<h2>Charge Controller 1 (Epever)</h2>", html)
         self.assertIn("53.1V  0.0A  0W", html)
-        self.assertIn("Stage: No charging", html)
+        # EPEver "No charging" normalizes to canonical Resting, native in parens.
+        self.assertIn("Stage: Resting (No charging)", html)
         self.assertIn("Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", html)
 
     def test_renders_bms_protections_and_alarms(self) -> None:

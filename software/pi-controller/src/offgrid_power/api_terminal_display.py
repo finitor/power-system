@@ -158,10 +158,13 @@ def _solar_lines(solar: list[dict]) -> list[str]:
                 f"{_fmt(controller.get('battery_power_w'), 0)}W",
             )
         )
-        stage = controller.get("charge_stage")
+        native = controller.get("charge_stage")
+        canonical = controller.get("canonical_stage") or native
         state = controller.get("state")
-        stage_value = f"Stage: {stage or 'unknown'}"
-        if state is not None and state != stage:
+        stage_value = f"Stage: {canonical or 'unknown'}"
+        if native and native != canonical:
+            stage_value += f" ({native})"
+        if state is not None and state not in (canonical, native):
             stage_value += f"  State: {state}"
         lines.append(_row("Charge Status", stage_value))
         if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:

@@ -28,7 +28,7 @@ from offgrid_power.charger_taper import (  # noqa: E402
 class ChargerTaperTest(unittest.TestCase):
     def test_uses_bulk_current_below_top_knee(self) -> None:
         decision = ChargerCurrentTaperController().decide(
-            self._charger(voltage_v=52.9, stage="BulkMppt"),
+            self._charger(voltage_v=52.9, stage="Bulk"),
             self._settings(current_a=40.0),
             self._battery(soc=80, voltage_v=52.9, ccl_a=200.0),
         )
@@ -40,7 +40,7 @@ class ChargerTaperTest(unittest.TestCase):
         # Bulk must restore to the panel-configured limit, never beyond it,
         # regardless of BMS CCL headroom.
         decision = ChargerCurrentTaperController().decide(
-            self._charger(voltage_v=52.0, stage="BulkMppt"),
+            self._charger(voltage_v=52.0, stage="Bulk"),
             self._settings(current_a=80.0),
             self._battery(soc=60, voltage_v=52.0, ccl_a=200.0),
         )
@@ -59,7 +59,7 @@ class ChargerTaperTest(unittest.TestCase):
 
     def test_clamps_to_bms_ccl(self) -> None:
         decision = ChargerCurrentTaperController().decide(
-            self._charger(voltage_v=53.0, stage="BulkMppt"),
+            self._charger(voltage_v=53.0, stage="Bulk"),
             self._settings(current_a=80.0),
             self._battery(soc=80, voltage_v=53.0, ccl_a=40.0),
         )

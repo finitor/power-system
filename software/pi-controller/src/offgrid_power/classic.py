@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 
 from pymodbus.client import ModbusTcpClient
 
+from offgrid_power.charge_stage import ChargeStage, normalize_classic_stage
+
 
 DEFAULT_HOST = "192.168.0.10"
 DEFAULT_PORT = 502
@@ -112,6 +114,10 @@ class ClassicTelemetry:
     @property
     def is_hypervoc(self) -> bool:
         return self.charge_stage == "HyperVoc" or "HyperVoc" in self.active_flags
+
+    @property
+    def canonical_stage(self) -> ChargeStage:
+        return normalize_classic_stage(self.charge_stage)
 
 
 @dataclass(frozen=True)
