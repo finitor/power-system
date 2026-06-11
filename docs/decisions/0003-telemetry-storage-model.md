@@ -48,8 +48,8 @@ plus a small **`events`** table for irregular events.
 - **Query layer**: **DuckDB** as the one engine that spans the local SQLite
   and R2 object storage in a single query; optionally Grafana on the local
   SQLite for live dashboards.
-- **SQLite**: WAL mode, `noatime`; `/srv/offgrid` mounted on the SSD via the
-  existing `srv-offgrid.mount` unit; retention generous (keep raw at full
+- **SQLite**: WAL mode, `noatime`; `/srv/telemetry` mounted on the SSD via the
+  existing `srv-telemetry.mount` unit; retention generous (keep raw at full
   resolution for years — trivial on 500 GB).
 
 ## Benchmarks (2026-06-11, Apricorn SATAWire bridge on the powered hub)
@@ -154,7 +154,7 @@ Integrity is out of scope, so this builds to the live store directly (no
 prototype-only holdback). The SSD currently runs on the Apricorn bridge via
 the powered hub; the dedicated adapter swaps in later without code changes.
 
-1. Mount the SSD at `/srv/offgrid` (existing `srv-offgrid.mount`), ext4
+1. Mount the SSD at `/srv/telemetry` (existing `srv-telemetry.mount`), ext4
    `noatime`, SQLite WAL + `synchronous=NORMAL`.
 2. **Best-effort recorder:** wrap all store writes so any failure (corrupt,
    unwritable, unmounted) is caught, the DB is recreated on open failure,

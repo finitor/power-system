@@ -9,7 +9,7 @@ PYTHON="${OFFGRID_PYTHON:-${PROJECT_DIR}/.venv/bin/python}"
 DISPLAY_MODULE="${OFFGRID_DISPLAY_MODULE:-offgrid_power.cli.api_terminal_display}"
 DISPLAY_URL="${OFFGRID_DISPLAY_URL:-http://127.0.0.1:8081/api/v1/snapshot}"
 DISPLAY_INTERVAL="${OFFGRID_DISPLAY_INTERVAL:-5}"
-ERROR_LOG="${OFFGRID_CONSOLE_ERROR_LOG:-/srv/offgrid/logs/terminal-display.err.log}"
+ERROR_LOG="${OFFGRID_CONSOLE_ERROR_LOG:-/srv/telemetry/logs/terminal-display.err.log}"
 
 stop_console() {
   /usr/bin/tmux kill-session -t "${SESSION_NAME}" 2>/dev/null || true

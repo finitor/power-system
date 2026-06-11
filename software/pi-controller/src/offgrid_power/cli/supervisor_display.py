@@ -67,7 +67,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--weather-cache-path",
-        default=os.getenv("WEATHER_CACHE_PATH", "/srv/offgrid/data/weather-cache.json"),
+        default=os.getenv("WEATHER_CACHE_PATH", "/srv/telemetry/data/weather-cache.json"),
     )
     parser.add_argument(
         "--web-access-log-path",

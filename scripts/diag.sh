@@ -24,8 +24,8 @@ echo "watchdog: $(journalctl -u offgrid-can-watchdog -n 1 --no-pager --output ca
 curl -s --max-time 5 http://127.0.0.1:8081/api/v1/snapshot \
     | python3 "$(dirname "$0")/diag_api.py" || echo "api: unreachable"
 
-echo "taper: $(tail -1 /srv/offgrid/logs/charger-taper.csv 2>/dev/null || echo no decisions logged)"
+echo "taper: $(tail -1 /srv/telemetry/logs/charger-taper.csv 2>/dev/null || echo no decisions logged)"
 
-echo "inverter-events: $(tail -1 /srv/offgrid/logs/inverter-events.csv 2>/dev/null || echo none logged)"
+echo "inverter-events: $(tail -1 /srv/telemetry/logs/inverter-events.csv 2>/dev/null || echo none logged)"
 
 echo "kindle-port: $(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -A 'Kindle/3.0' http://127.0.0.1:8080/)"

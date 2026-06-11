@@ -6,7 +6,7 @@ The supervisor treats local SQLite as the authoritative telemetry log. WAN expor
 
 Use S3-compatible object storage, such as Cloudflare R2 or Backblaze B2, as a durable object-storage mailbox:
 
-1. `offgrid-supervisor` records compact supervisor snapshots and sparse device-settings snapshots in `/srv/offgrid/data/metrics.sqlite` on the SSD-backed data volume.
+1. `offgrid-supervisor` records compact supervisor snapshots and sparse device-settings snapshots in `/srv/telemetry/data/metrics.sqlite` on the SSD-backed data volume.
 2. `offgrid-r2-export` reads unexported local rows from SQLite.
 3. The exporter writes bounded gzip-compressed NDJSON batches to the bucket.
 4. Only after the object store accepts the object should the exporter mark those rows exported.
@@ -131,7 +131,7 @@ Weather records are included in the same append-only export ledger.
 Set these on the Pi for R2:
 
 ```sh
-METRICS_DB_PATH=/srv/offgrid/data/metrics.sqlite
+METRICS_DB_PATH=/srv/telemetry/data/metrics.sqlite
 R2_ACCOUNT_ID=...
 R2_ACCESS_KEY_ID=...
 R2_SECRET_ACCESS_KEY=...
@@ -149,7 +149,7 @@ R2_EXPORT_SLEEP_SECONDS=0
 Set these on the Pi for B2:
 
 ```sh
-METRICS_DB_PATH=/srv/offgrid/data/metrics.sqlite
+METRICS_DB_PATH=/srv/telemetry/data/metrics.sqlite
 B2_APPLICATION_KEY_ID=...
 B2_APPLICATION_KEY=...
 B2_BUCKET=magpie-metrics
