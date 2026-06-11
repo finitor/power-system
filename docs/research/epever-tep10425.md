@@ -238,6 +238,28 @@ the Solar Guardian UI values.
 - ARM and DSP firmware versions readable from the display — record them
   at commissioning.
 
+## Aligning charge voltages to the Classic
+
+With the Classic as the baseline, `scripts/epever-copy-from-classic.py`
+copies the charge voltages (and, unless `--no-current`, the charge-current
+limit) from the Classic to the EPEver:
+
+| Classic source | EPEver target | Register |
+|---|---|---|
+| absorb voltage | boost (absorption) voltage | 0x900B |
+| float voltage | float voltage | 0x900C |
+| equalize voltage | equalize voltage | 0x900A |
+| battery current limit | max charging current | 0x9013 |
+
+It is dry-run by default (prints the diff, writes nothing); `--write`
+applies. The voltage write is a read-modify-write of the 0x9007-0x9012 block
+(function 0x10) that overwrites only the three charge-voltage cells and
+preserves the protection thresholds (OVD/reconnect/LVD/discharge), which
+have no Classic counterpart. It aborts if a target exceeds the EPEver's own
+charging-limit ceiling (0x9008), and `EpeverClient.write_charge_voltages`
+refuses unless Battery Type = User (code 6). Stop the supervisor before
+running with `--write` so it isn't contending for the adapter.
+
 ## Bench checklist before installation
 
 1. Power from a bench supply / battery, connect Waveshare RS485 to the COM

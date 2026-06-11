@@ -10,10 +10,102 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
-from offgrid_power.epever import decode_settings, decode_telemetry
+from unittest import mock
+
+from offgrid_power.epever import EpeverClient, decode_settings, decode_telemetry
 
 
 CAPTURED_AT = datetime(2026, 6, 11, 13, 55, tzinfo=timezone.utc)
+
+
+class _Resp:
+    def __init__(self, registers):
+        self.registers = registers
+
+    def isError(self) -> bool:  # noqa: N802 - pymodbus interface name
+        return False
+
+
+class FakeModbusClient:
+    """In-memory EPEver holding-register file for write tests."""
+
+    # 0x9000-0x9013: type, capacity, temp-comp, then the 0x9007-0x9013 block.
+    BASE = {
+        0x9000: 6,     # Battery Type = User
+        0x9001: 100,
+        0x9002: 0xFFFD,  # temp comp, signed
+        0x9007: 6400,  # OVD
+        0x9008: 6000,  # charging limit
+        0x9009: 6000,  # OV reconnect
+        0x900A: 5830,  # equalize
+        0x900B: 5760,  # boost
+        0x900C: 5520,  # float
+        0x900D: 5280,  # boost reconnect
+        0x900E: 5040,
+        0x900F: 4880,
+        0x9010: 4800,
+        0x9011: 4440,  # LVD
+        0x9012: 4240,  # discharge limit
+        0x9013: 8000,  # max charging current
+    }
+
+    def __init__(self, **_):
+        self.regs = dict(self.BASE)
+        self.writes: list[tuple[int, list[int]]] = []
+
+    def connect(self) -> bool:
+        return True
+
+    def read_holding_registers(self, address, count, device_id):
+        return _Resp([self.regs.get(address + i, 0) for i in range(count)])
+
+    def write_registers(self, address, values, device_id):
+        self.writes.append((address, list(values)))
+        for i, value in enumerate(values):
+            self.regs[address + i] = value
+        return _Resp(list(values))
+
+    def close(self) -> None:
+        pass
+
+
+class EpeverWriteTest(unittest.TestCase):
+    def test_write_charge_voltages_is_read_modify_write(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            settings = EpeverClient().write_charge_voltages(
+                equalize_v=58.4, boost_v=54.8, float_v=54.4
+            )
+
+        # One block write covering 0x9007-0x9012.
+        block_writes = [w for w in fake.writes if w[0] == 0x9007]
+        self.assertEqual(len(block_writes), 1)
+        self.assertEqual(len(block_writes[0][1]), 12)
+        # Targeted cells changed...
+        self.assertEqual(fake.regs[0x900A], 5840)
+        self.assertEqual(fake.regs[0x900B], 5480)
+        self.assertEqual(fake.regs[0x900C], 5440)
+        # ...protections preserved.
+        self.assertEqual(fake.regs[0x9007], 6400)
+        self.assertEqual(fake.regs[0x9011], 4440)
+        self.assertEqual(fake.regs[0x9012], 4240)
+        self.assertEqual(settings.boost_voltage_v, 54.8)
+
+    def test_write_charge_voltages_requires_user_battery_type(self) -> None:
+        fake = FakeModbusClient()
+        fake.regs[0x9000] = 0  # not User
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            with self.assertRaisesRegex(RuntimeError, "Battery Type must be User"):
+                EpeverClient().write_charge_voltages(boost_v=54.8)
+        self.assertEqual(fake.writes, [])
+
+    def test_write_charge_voltages_partial_only_touches_named_cell(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            EpeverClient().write_charge_voltages(float_v=54.0)
+        self.assertEqual(fake.regs[0x900C], 5400)
+        self.assertEqual(fake.regs[0x900B], 5760)  # boost untouched
+        self.assertEqual(fake.regs[0x900A], 5830)  # equalize untouched
 
 
 class EpeverDecodeTest(unittest.TestCase):

@@ -156,6 +156,72 @@ class EpeverClient:
         finally:
             client.close()
 
+    def write_charge_voltages(
+        self,
+        *,
+        equalize_v: float | None = None,
+        boost_v: float | None = None,
+        float_v: float | None = None,
+    ) -> EpeverChargeSettings:
+        """Read-modify-write the equalize/boost/float charge voltages.
+
+        The voltage block 0x9007-0x9012 (centivolts) is written as a unit via
+        function 0x10, so we read the live block, overwrite only the named
+        cells, and write the whole block back. The protection thresholds
+        (OVD/reconnect/LVD/discharge) are preserved untouched. Precondition:
+        Battery Type must already be User (code 6); the controller rejects
+        charge-voltage writes otherwise.
+        """
+        targets = {0x900A: equalize_v, 0x900B: boost_v, 0x900C: float_v}
+        if all(v is None for v in targets.values()):
+            raise ValueError("write_charge_voltages: nothing to write")
+        for label, value in (("equalize", equalize_v), ("boost", boost_v), ("float", float_v)):
+            if value is not None and not (0.0 < value <= 65.0):
+                raise ValueError(f"EPEver {label} voltage out of range: {value}")
+
+        client = ModbusSerialClient(
+            port=self.device,
+            baudrate=self.baud,
+            parity="N",
+            stopbits=1,
+            bytesize=8,
+            timeout=self.timeout,
+        )
+        if not client.connect():
+            raise ConnectionError(f"Could not open {self.device}")
+        try:
+            battery_type_code = read_holding_registers(client, 0x9000, 1, self.unit)[0]
+            if battery_type_code != 6:
+                raise RuntimeError(
+                    "EPEver Battery Type must be User (6) before charge-voltage "
+                    f"writes; controller reports code {battery_type_code} "
+                    f"({BATTERY_TYPES.get(battery_type_code, 'unknown')})"
+                )
+            block = read_holding_registers(client, 0x9007, 12, self.unit)
+            for address, value in targets.items():
+                if value is not None:
+                    block[address - 0x9007] = round(value * 100)
+            response = client.write_registers(address=0x9007, values=block, device_id=self.unit)
+            if response.isError():
+                raise RuntimeError(f"EPEver voltage-block write failed: {response}")
+            settings = decode_settings(
+                read_holding_registers(client, 0x9000, 20, self.unit),
+                datetime.now(timezone.utc),
+            )
+            for label, value, readback in (
+                ("equalize", equalize_v, settings.equalize_voltage_v),
+                ("boost", boost_v, settings.boost_voltage_v),
+                ("float", float_v, settings.float_voltage_v),
+            ):
+                if value is not None and abs(readback - value) >= 0.01:
+                    raise RuntimeError(
+                        f"EPEver {label} readback mismatch: "
+                        f"wrote {value:.2f} V, read {readback:.2f} V"
+                    )
+            return settings
+        finally:
+            client.close()
+
 
 def decode_telemetry(
     rated: list[int],
