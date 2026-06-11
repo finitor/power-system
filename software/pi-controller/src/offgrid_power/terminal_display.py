@@ -241,13 +241,7 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         classic = snapshot.classic
         lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V"))
         lines.append(_row("Output", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"))
-        canonical = classic.canonical_stage.value
-        stage_value = f"Stage: {canonical}"
-        if classic.charge_stage != canonical:
-            stage_value += f" ({classic.charge_stage})"
-        if classic.state not in (canonical, classic.charge_stage):
-            stage_value += f"  State: {classic.state}"
-        lines.append(_row("Charge Status", stage_value))
+        lines.append(_row("Charge Status", classic.stage.render(classic.state)))
         if classic.is_hypervoc:
             lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
         lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
@@ -262,11 +256,7 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         epever = snapshot.epever
         lines.append(_row("PV", f"{epever.pv_voltage_v:.1f}V  {epever.pv_current_a:.1f}A  {epever.pv_power_w}W"))
         lines.append(_row("Output", f"{epever.battery_voltage_v:.1f}V  {epever.battery_current_a:.1f}A  {epever.battery_power_w}W"))
-        epever_canonical = epever.canonical_stage.value
-        epever_stage = f"Stage: {epever_canonical}"
-        if epever.charging_status != epever_canonical:
-            epever_stage += f" ({epever.charging_status})"
-        lines.append(_row("Charge Status", epever_stage))
+        lines.append(_row("Charge Status", epever.stage.render()))
         rated = f"{epever.rated_pv_voltage_v:.0f}V PV  {epever.rated_charging_current_a:.0f}A charge"
         lines.append(_row("Rated", rated))
         if snapshot.epever_settings is not None:

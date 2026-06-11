@@ -96,6 +96,13 @@ Internal logic (e.g. the current taper) and all displays consume the
 canonical stage; the controller's native word is shown in parentheses where
 it differs.
 
+The normalization lives below the API: each controller's API data block
+carries the stage as a `{canonical, vendor}` pair (`NormalizedStage`), where
+`vendor` is set only when the native word adds information beyond the
+canonical name. Renderers stay vendor-agnostic — they display the canonical
+name and append `vendor` in parens only when present — so no renderer needs
+to know any controller's stage dialect.
+
 | Canonical | Classic native | EPEver native |
 |---|---|---|
 | Bulk | BulkMppt | (folded into Boost) |

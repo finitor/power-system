@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 
 from pymodbus.client import ModbusSerialClient
 
-from offgrid_power.charge_stage import ChargeStage, normalize_epever_stage
+from offgrid_power.charge_stage import (
+    ChargeStage,
+    NormalizedStage,
+    epever_stage,
+    normalize_epever_stage,
+)
 
 
 DEFAULT_DEVICE = "/dev/epever-rs485"
@@ -51,6 +56,10 @@ class EpeverTelemetry:
     @property
     def canonical_stage(self) -> ChargeStage:
         return normalize_epever_stage(self.charging_status)
+
+    @property
+    def stage(self) -> NormalizedStage:
+        return epever_stage(self.charging_status)
 
 
 @dataclass(frozen=True)

@@ -24,7 +24,8 @@ def main() -> int:
     battery = p.get("battery") or {}
     print(f"battery: soc={battery.get('soc_percent')} v={battery.get('voltage_v')} a={battery.get('current_a')}")
     solar = (p.get("solar") or [{}])[0]
-    print(f"classic: w={solar.get('battery_power_w')} stage={solar.get('charge_stage')}")
+    stage = (solar.get("charge_stage") or {}).get("canonical")
+    print(f"classic: w={solar.get('battery_power_w')} stage={stage}")
     inverter = p.get("inverter") or {}
     print(f"magnum: dc={inverter.get('dc_volts')}V status={inverter.get('status_label')}")
     ambient = p.get("ambient") or {}

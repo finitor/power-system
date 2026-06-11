@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 
 from pymodbus.client import ModbusTcpClient
 
-from offgrid_power.charge_stage import ChargeStage, normalize_classic_stage
+from offgrid_power.charge_stage import (
+    ChargeStage,
+    NormalizedStage,
+    classic_stage,
+    normalize_classic_stage,
+)
 
 
 DEFAULT_HOST = "192.168.0.10"
@@ -118,6 +123,10 @@ class ClassicTelemetry:
     @property
     def canonical_stage(self) -> ChargeStage:
         return normalize_classic_stage(self.charge_stage)
+
+    @property
+    def stage(self) -> NormalizedStage:
+        return classic_stage(self.charge_stage)
 
 
 @dataclass(frozen=True)

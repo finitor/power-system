@@ -20,6 +20,7 @@ state is observable rather than hidden behind ordinary "not charging".
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 
 
@@ -67,3 +68,48 @@ def normalize_epever_stage(native: str | None) -> ChargeStage:
     if native is None:
         return ChargeStage.UNKNOWN
     return _EPEVER_MAP.get(native, ChargeStage.UNKNOWN)
+
+
+@dataclass(frozen=True)
+class NormalizedStage:
+    """A charge stage carrying both its canonical name and, when it adds
+    information, the controller's native word.
+
+    This is the unit serialized into API data blocks and handed to renderers,
+    so renderers never need vendor-specific knowledge: they display the
+    canonical name and, only if ``vendor`` is present, the native word in
+    parentheses.
+    """
+
+    canonical: str
+    vendor: str | None  # set only when the native word differs from canonical
+
+    def as_dict(self) -> dict[str, str | None]:
+        return {"canonical": self.canonical, "vendor": self.vendor}
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "NormalizedStage":
+        if not data:
+            return cls(canonical=ChargeStage.UNKNOWN.value, vendor=None)
+        return cls(canonical=data.get("canonical") or ChargeStage.UNKNOWN.value, vendor=data.get("vendor"))
+
+    def render(self, state: str | None = None) -> str:
+        text = f"Stage: {self.canonical}"
+        if self.vendor:
+            text += f" ({self.vendor})"
+        if state and state not in (self.canonical, self.vendor):
+            text += f"  State: {state}"
+        return text
+
+
+def _normalized(canonical: ChargeStage, native: str | None) -> NormalizedStage:
+    vendor = native if native and native != canonical.value else None
+    return NormalizedStage(canonical=canonical.value, vendor=vendor)
+
+
+def classic_stage(native: str | None) -> NormalizedStage:
+    return _normalized(normalize_classic_stage(native), native)
+
+
+def epever_stage(native: str | None) -> NormalizedStage:
+    return _normalized(normalize_epever_stage(native), native)

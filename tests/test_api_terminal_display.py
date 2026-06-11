@@ -47,7 +47,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     "battery_voltage_v": 54.8,
                     "battery_current_a": 7.1,
                     "battery_power_w": 389,
-                    "charge_stage": "Float",
+                    "charge_stage": {"canonical": "Float", "vendor": None},
                     "state": "MPPT or regulating voltage",
                     "daily_energy_kwh": 5.8,
                     "daily_amp_hours_ah": 106,
@@ -68,8 +68,8 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     "battery_voltage_v": 53.2,
                     "battery_current_a": 0.0,
                     "battery_power_w": 0,
-                    "charge_stage": "No charging",
-                    "state": "No charging",
+                    "charge_stage": {"canonical": "Resting", "vendor": "No charging"},
+                    "state": None,
                     "rated_pv_voltage_v": 250.0,
                     "rated_charging_current_a": 100.0,
                     "temperatures_c": {"battery": 0.0, "device": 0.0},
@@ -114,6 +114,8 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Flow                  53.04V  -1.2A  -64W  discharging", rendered)
         self.assertIn("Cells                 Δ 6mV; min 2|14 3.312V; max 2|10 3.318V", rendered)
         self.assertIn("Charge Status         Stage: Float  State: MPPT or regulating voltage", rendered)
+        # EPEver block: canonical first, vendor word in parens, no vendor knowledge in renderer.
+        self.assertIn("Charge Status         Stage: Resting (No charging)", rendered)
         self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V 0.5h  Float 55.0V  EQ 55.6V", rendered)
         self.assertIn("Charge Controller 0 (Classic)\n", rendered)
         self.assertIn("\n\nCharge Controller 1 (Epever)\n", rendered)

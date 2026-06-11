@@ -2,6 +2,9 @@ import unittest
 
 from offgrid_power.charge_stage import (
     ChargeStage,
+    NormalizedStage,
+    classic_stage,
+    epever_stage,
     normalize_classic_stage,
     normalize_epever_stage,
 )
@@ -56,6 +59,33 @@ class ChargeStageTest(unittest.TestCase):
     def test_canonical_renders_as_plain_word(self) -> None:
         self.assertEqual(ChargeStage.ABSORB.value, "Absorb")
         self.assertEqual(f"{ChargeStage.BULK.value}", "Bulk")
+
+
+class NormalizedStageTest(unittest.TestCase):
+    def test_vendor_present_only_when_it_differs(self) -> None:
+        # EPEver Boost differs from canonical Absorb -> vendor carried.
+        self.assertEqual(epever_stage("Boost"), NormalizedStage("Absorb", "Boost"))
+        # EPEver Float == canonical Float -> no vendor noise.
+        self.assertEqual(epever_stage("Float"), NormalizedStage("Float", None))
+        # Classic BulkMppt -> canonical Bulk, native carried.
+        self.assertEqual(classic_stage("BulkMppt"), NormalizedStage("Bulk", "BulkMppt"))
+
+    def test_render_is_vendor_agnostic(self) -> None:
+        self.assertEqual(NormalizedStage("Absorb", "Boost").render(), "Stage: Absorb (Boost)")
+        self.assertEqual(NormalizedStage("Float", None).render(), "Stage: Float")
+        self.assertEqual(
+            NormalizedStage("Bulk", "BulkMppt").render("MPPT tracking"),
+            "Stage: Bulk (BulkMppt)  State: MPPT tracking",
+        )
+        # State that merely echoes the stage adds nothing.
+        self.assertEqual(NormalizedStage("Resting", None).render("Resting"), "Stage: Resting")
+
+    def test_dict_roundtrip(self) -> None:
+        pair = epever_stage("Boost")
+        self.assertEqual(pair.as_dict(), {"canonical": "Absorb", "vendor": "Boost"})
+        self.assertEqual(NormalizedStage.from_dict(pair.as_dict()), pair)
+        # Missing/empty block degrades to Unknown rather than raising.
+        self.assertEqual(NormalizedStage.from_dict(None).canonical, ChargeStage.UNKNOWN.value)
 
 
 if __name__ == "__main__":

@@ -696,8 +696,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
             "last_voc_v": classic.last_voc_v,
             "highest_input_voltage_v": classic.highest_input_voltage_v,
             "charge_stage_code": classic.charge_stage_code,
-            "charge_stage": classic.charge_stage,
-            "canonical_stage": classic.canonical_stage.value,
+            "charge_stage": classic.stage.as_dict(),
             "state_code": classic.state_code,
             "state": classic.state,
             "info_flags": classic.info_flags,
@@ -735,9 +734,8 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 "battery_soc_percent": epever.battery_soc_percent,
                 "rated_pv_voltage_v": epever.rated_pv_voltage_v,
                 "rated_charging_current_a": epever.rated_charging_current_a,
-                "charge_stage": epever.charging_status,
-                "canonical_stage": epever.canonical_stage.value,
-                "state": epever.charging_status,
+                "charge_stage": epever.stage.as_dict(),
+                "state": None,
                 "status_raw": epever.status_raw,
                 "temperatures_c": {
                     "battery": epever.battery_temp_c,
@@ -946,7 +944,7 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
             [
                 _row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V"),
                 _row("Output", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"),
-                _row("Charge Status", _stage_value(classic.canonical_stage.value, classic.charge_stage, classic.state)),
+                _row("Charge Status", classic.stage.render(classic.state)),
                 *(
                     [
                         _row(
@@ -982,7 +980,7 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
             [
                 _row("PV", f"{epever.pv_voltage_v:.1f}V  {epever.pv_current_a:.1f}A  {epever.pv_power_w}W"),
                 _row("Output", f"{epever.battery_voltage_v:.1f}V  {epever.battery_current_a:.1f}A  {epever.battery_power_w}W"),
-                _row("Charge Status", _stage_value(epever.canonical_stage.value, epever.charging_status)),
+                _row("Charge Status", epever.stage.render()),
                 _row("Rated", f"{epever.rated_pv_voltage_v:.0f}V PV  {epever.rated_charging_current_a:.0f}A charge"),
             ]
         )
@@ -1216,17 +1214,6 @@ def _battery_state(current_a: float) -> str:
     if current_a < -BATTERY_IDLE_CURRENT_A:
         return "discharging"
     return "idle"
-
-
-def _stage_value(canonical: str, native: str, state: str | None = None) -> str:
-    # Canonical (normalized) stage is primary; show the controller's native
-    # word in parens when it differs so nothing is hidden.
-    stage_value = f"Stage: {canonical}"
-    if native and native != canonical:
-        stage_value = f"{stage_value} ({native})"
-    if state and state not in (canonical, native):
-        stage_value = f"{stage_value}  State: {state}"
-    return stage_value
 
 
 def _status_text(snapshot: SupervisorSnapshot, status: str) -> str:
