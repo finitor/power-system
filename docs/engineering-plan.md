@@ -78,18 +78,10 @@ Phase 2 (TODO):
 
 ## 7. SD card durability — SUPERSEDED by decision 0003
 
-Resolved by the 500 GB SSD + WAL + dropping the rewrite-heavy CSVs;
-see [decision 0003](decisions/0003-telemetry-storage-model.md) for the
-telemetry storage redesign that replaces this item.
-
-With the SSD removed, all telemetry writes land on the SD card: sqlite every
-60s, `load-samples.csv` appended every 5s and fully rewritten every 5
-minutes by the prune, `ambient.csv` unbounded.
-
-- Enable sqlite WAL mode and `synchronous=NORMAL` for the metrics store.
-- Prune `load-samples.csv` via write-temp-then-rename, not in-place rewrite.
-- Bound or rotate `ambient.csv`.
-- The real fix is restoring dedicated storage; document remount procedure.
+The SD-wear concern (sqlite every 60 s, CSVs rewritten whole every 5 min,
+unbounded logs) is resolved by the 500 GB SSD + WAL + dropping the
+rewrite-heavy CSVs. The telemetry storage redesign that replaces this item
+is [decision 0003](decisions/0003-telemetry-storage-model.md).
 
 ## 8. Public-repo preparation — DONE
 
@@ -100,9 +92,9 @@ sequence and the deploy.sh self-update lesson.
 
 ## 9. Operator actions — USER
 
-- Decide whether the SSD returns; item 7 sizing depends on it.
 - `offgrid-metrics-export.timer` is disabled on the Pi — confirm whether R2
-  export is intentionally manual-only right now.
+  export is intentionally manual-only right now (re-enable as part of
+  decision 0003 once the export format is settled).
 
 ## Done
 
