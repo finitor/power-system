@@ -19,3 +19,8 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="m
 # adapter. Caution: A50285BI is the stock serial on counterfeit FT232Rs;
 # verify the Waveshare's serial differs when it arrives.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="A50285BI", SYMLINK+="cubix-rs485"
+
+# RTL8153 gigabit NIC built into the bench (port-powered) hub: unused, and
+# bus-powered draw competes with the Pi's shared USB budget. Deauthorize so
+# it never enumerates; delete this rule if the NIC is ever wanted.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0bda", ATTR{idProduct}=="8153", ATTR{authorized}="0"
