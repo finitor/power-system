@@ -20,6 +20,13 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="e
 # verify the Waveshare's serial differs when it arrives.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="A50285BI", SYMLINK+="cubix-rs485"
 
+# KL0823B 2-wire USB-RS485 adapter — Magnum network read-only tap (CH340).
+# Keyed on VID:PID because CH340s carry no unique serial; this is the only
+# CH340 in the fleet today. NOTE: the official Eco-Worthy BMS cable is also
+# CH340-based — if one is ever added, switch one of them to a port-path rule.
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", ATTR{power/control}="on"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="magnum-rs485"
+
 # RTL8153 gigabit NIC built into the bench (port-powered) hub: unused, and
 # bus-powered draw competes with the Pi's shared USB budget. Deauthorize so
 # it never enumerates; delete this rule if the NIC is ever wanted.

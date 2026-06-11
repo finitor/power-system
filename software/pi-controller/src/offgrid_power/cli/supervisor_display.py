@@ -26,6 +26,7 @@ from offgrid_power.charger_taper import (
 )
 from offgrid_power.classic import ClassicClient
 from offgrid_power.epever import EpeverClient
+from offgrid_power.magnum import MagnumClient
 from offgrid_power.config import load_config
 from offgrid_power.load import LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
@@ -180,7 +181,7 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--magnum-device",
         default=os.getenv("MAGNUM_DEVICE", ""),
-        help="Deprecated no-op: Magnum telemetry is disabled while the OEM remote is used",
+        help="Serial device for the Magnum RS-485 read-only telemetry tap; empty disables",
     )
     parser.add_argument(
         "--no-ambient",
@@ -228,9 +229,9 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
             protocol=args.battery_can_protocol,
         )
 
-    # Magnum telemetry is intentionally disabled while the OEM remote is the
-    # operating interface for the inverter/charger.
-    magnum = None
+    # Magnum is a read-only telemetry tap (the OEM remote remains the
+    # operating interface for the inverter/charger; see decision 0002).
+    magnum = MagnumClient(args.magnum_device) if args.magnum_device else None
     epever = (
         EpeverClient(
             device=args.epever_device,
