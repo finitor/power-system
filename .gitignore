@@ -32,8 +32,13 @@ build/
 *.db
 logs/
 data/*.csv
+data/*.log
 data/raw/
 data/local/
+data/can-experiments/
+
+# Bench capture/experiment artifacts created on the Pi (not repo content)
+external/
 
 # Generated exports
 *.bak
