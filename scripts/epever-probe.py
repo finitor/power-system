@@ -8,9 +8,9 @@ Strictly read-only.
 Wiring (COM port RJ45 -> RS485 adapter): pin 6 = A+, pin 3 = B-, pin 8 = GND.
 Pin 1 carries +5VDC -- leave it disconnected.
 
-    power-system/.venv/bin/python scripts/epever-probe.py [--device /dev/magnum-rs485]
+    power-system/.venv/bin/python scripts/epever-probe.py [--device /dev/epever-rs485]
 
-Stop the supervisor first if the borrowed adapter is its Magnum port
+Stop the supervisor first before opening the EPEver adapter directly
 (sudo systemctl stop offgrid-supervisor), and restart it afterwards.
 """
 
@@ -63,7 +63,7 @@ def dump_block(client, kind: str, label: str, address: int, count: int, unit: in
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--device", default="/dev/magnum-rs485")
+    parser.add_argument("--device", default="/dev/epever-rs485")
     parser.add_argument("--unit", type=int, default=1, help="Modbus device id (EPEver default 1)")
     parser.add_argument("--baud", type=int, default=0, help="Force a baud rate instead of auto-try")
     args = parser.parse_args()

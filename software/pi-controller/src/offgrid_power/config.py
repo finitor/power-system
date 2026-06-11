@@ -15,6 +15,14 @@ class ClassicConfig:
 
 
 @dataclass(frozen=True)
+class EpeverConfig:
+    device: str = ""
+    baud: int = 115200
+    unit: int = 1
+    timeout_s: float = 1.5
+
+
+@dataclass(frozen=True)
 class DisplayConfig:
     refresh_seconds: float = 30.0
     clear_screen: bool = True
@@ -38,6 +46,7 @@ class AmbientConfig:
 @dataclass(frozen=True)
 class SupervisorConfig:
     classic: ClassicConfig
+    epever: EpeverConfig
     display: DisplayConfig
     battery_can: BatteryCanConfig
     ambient: AmbientConfig
@@ -67,6 +76,12 @@ def load_config() -> SupervisorConfig:
             port=env_int("CLASSIC_PORT", 502),
             device_id=env_int("CLASSIC_DEVICE_ID", 10),
             timeout_s=env_float("CLASSIC_TIMEOUT_SECONDS", 3.0),
+        ),
+        epever=EpeverConfig(
+            device=os.getenv("EPEVER_DEVICE", ""),
+            baud=env_int("EPEVER_BAUD", 115200),
+            unit=env_int("EPEVER_UNIT", 1),
+            timeout_s=env_float("EPEVER_TIMEOUT_SECONDS", 1.5),
         ),
         display=DisplayConfig(
             refresh_seconds=env_float("SUPERVISOR_REFRESH_SECONDS", 30.0),

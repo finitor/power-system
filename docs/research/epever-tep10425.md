@@ -53,6 +53,11 @@ charger-agnostic by design).
 | 6 | RS485-A |
 | 8 | GND |
 
+Bench wiring note with the DSD TECH SH-U11H adapter: the working connection is
+controller pin 3 (RS485-B) to adapter A/D+, controller pin 6 (RS485-A) to
+adapter B/D-, and pin 8 to adapter GND. Pin 1 is +5V and must remain
+disconnected.
+
 **Port 9** (RTS/BMS/CAN multiplexed): correction to the accessories-section
 reading — the BMS-Link module is only needed for *other* manufacturers'
 BMS protocols. **Pylon-protocol batteries connect directly to port 9 with

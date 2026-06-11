@@ -46,9 +46,6 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
     lines.extend(_solar_lines(payload.get("solar") or []))
 
     lines.append("")
-    lines.extend(_inverter_charger_lines(payload.get("inverter")))
-
-    lines.append("")
     lines.extend(_temperature_lines(payload))
 
     errors = status.get("errors") or []
@@ -134,12 +131,18 @@ def _solar_lines(solar: list[dict]) -> list[str]:
         return ["Charge Controller 0", "  No data"]
     for index, controller in enumerate(solar):
         lines.append(f"Charge Controller {index}")
+        pv_parts = [
+            f"{_fmt(controller.get('pv_voltage_v'), 1)}V",
+            f"{_fmt(controller.get('pv_current_a'), 1)}A",
+        ]
+        if controller.get("last_voc_v") is not None:
+            pv_parts.append(f"Voc {_fmt(controller.get('last_voc_v'), 1)}V")
+        elif controller.get("pv_power_w") is not None:
+            pv_parts.append(f"{_fmt(controller.get('pv_power_w'), 0)}W")
         lines.append(
             _row(
                 "PV",
-                f"{_fmt(controller.get('pv_voltage_v'), 1)}V  "
-                f"{_fmt(controller.get('pv_current_a'), 1)}A  "
-                f"Voc {_fmt(controller.get('last_voc_v'), 1)}V",
+                "  ".join(pv_parts),
             )
         )
         lines.append(
@@ -156,78 +159,39 @@ def _solar_lines(solar: list[dict]) -> list[str]:
         if state is not None and state != stage:
             stage_value += f"  State: {state}"
         lines.append(_row("Charge Status", stage_value))
-        lines.append(
-            _row(
-                "Production Today",
-                f"{_fmt(controller.get('daily_energy_kwh'), 1)}kWh  "
-                f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah",
-            )
-        )
-        settings = controller.get("settings")
-        if settings is not None:
+        if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
             lines.append(
                 _row(
-                    "Charge Settings",
+                    "Production Today",
+                    f"{_fmt(controller.get('daily_energy_kwh'), 1)}kWh  "
+                    f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah",
+                )
+            )
+        if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
+            lines.append(
+                _row(
+                    "Rated",
+                    f"{_fmt(controller.get('rated_pv_voltage_v'), 0)}V PV  "
+                    f"{_fmt(controller.get('rated_charging_current_a'), 0)}A charge",
+                )
+            )
+        settings = controller.get("settings")
+        if settings is not None:
+            if "current_limit_a" in settings:
+                value = (
                     f"Limit {_fmt(settings.get('current_limit_a'), 1)}A  "
                     f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V {_fmt(_hours(settings.get('absorb_time_s')), 1)}h  "
                     f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
-                    f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V",
+                    f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V"
                 )
-            )
-    return lines
-
-
-def _inverter_charger_lines(inverter: dict | None) -> list[str]:
-    lines = ["Inverter/Charger"]
-    if inverter is None:
-        lines.append("  No data")
-        return lines
-
-    dc_parts = [
-        f"{_fmt(inverter.get('dc_volts'), 1)}V",
-        f"{_fmt(inverter.get('dc_amps'), 0)}A",
-        f"{_fmt(inverter.get('dc_power_w'), 0)}W",
-    ]
-    lines.append(_row("DC", "  ".join(dc_parts)))
-
-    ac_out_parts = [f"{_fmt(inverter.get('ac_volts_out'), 0)}V"]
-    if inverter.get("ac_amps_out") is not None:
-        ac_out_parts.append(f"{_fmt(inverter.get('ac_amps_out'), 0)}A")
-    if inverter.get("ac_freq_hz") is not None:
-        ac_out_parts.append(f"{_fmt(inverter.get('ac_freq_hz'), 1)}Hz")
-    lines.append(_row("AC Output", "  ".join(ac_out_parts)))
-
-    ac_volts_in = inverter.get("ac_volts_in") or 0
-    if ac_volts_in > 0:
-        ac_in_parts = [f"{_fmt(ac_volts_in, 0)}V"]
-        if inverter.get("ac_amps_in") is not None:
-            ac_in_parts.append(f"{_fmt(inverter.get('ac_amps_in'), 0)}A")
-        lines.append(_row("AC Input", "  ".join(ac_in_parts)))
-    else:
-        lines.append(_row("AC Input", "0V  no source"))
-
-    status_label = inverter.get("status_label") or inverter.get("status") or "unknown"
-    fault = inverter.get("fault")
-    if fault and fault not in ("NONE", "UNKNOWN"):
-        status_label += f"  Fault: {fault.lower().replace('_', ' ')}"
-    lines.append(_row("Status", status_label))
-
-    settings = inverter.get("settings") or {}
-    settings_parts = []
-    if settings.get("charger_amps_pct") is not None and (settings.get("charger_amps_pct") or 0) > 0:
-        settings_parts.append(f"Limit {_fmt(settings.get('charger_amps_pct'), 0)}%")
-    if settings.get("absorb_v") is not None:
-        absorb = f"Absorb {_fmt(settings.get('absorb_v'), 1)}V"
-        if settings.get("absorb_time_hr") is not None:
-            absorb += f" {_fmt(settings.get('absorb_time_hr'), 1)}h"
-        settings_parts.append(absorb)
-    if settings.get("float_v") is not None:
-        settings_parts.append(f"Float {_fmt(settings.get('float_v'), 1)}V")
-    if settings.get("shore_amps") is not None:
-        settings_parts.append(f"Shore {_fmt(settings.get('shore_amps'), 0)}A")
-    if settings_parts:
-        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
-
+            else:
+                value = (
+                    f"Type {settings.get('battery_type') or 'unknown'}  "
+                    f"Boost {_fmt(settings.get('boost_voltage_v'), 1)}V  "
+                    f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
+                    f"LVD {_fmt(settings.get('low_voltage_disconnect_v'), 1)}V"
+                )
+            lines.append(_row("Charge Settings", value))
     return lines
 
 
@@ -236,25 +200,22 @@ def _temperature_lines(payload: dict) -> list[str]:
     battery = payload.get("battery") or {}
     ambient = payload.get("ambient") or {}
     solar = payload.get("solar") or []
-    inverter = payload.get("inverter") or {}
     cell_min = battery.get("cell_temperature_min_c")
     cell_max = battery.get("cell_temperature_max_c")
     if cell_min is not None and cell_max is not None:
         lines.append(_row("Battery cells", f"{_fmt(cell_min, 1)}-{_fmt(cell_max, 1)}C"))
-    if solar:
-        temps = (solar[0].get("temperatures_c") or {})
+    for index, controller in enumerate(solar):
+        temps = controller.get("temperatures_c") or {}
+        prefix = f"CC{index}"
         if temps.get("battery") is not None:
-            lines.append(_row("Battery terminal", f"{_fmt(temps.get('battery'), 1)}C"))
+            label = "Battery terminal" if index == 0 else f"{prefix} battery"
+            lines.append(_row(label, f"{_fmt(temps.get('battery'), 1)}C"))
         if temps.get("fet") is not None:
-            lines.append(_row("CC0 FET", f"{_fmt(temps.get('fet'), 1)}C"))
+            lines.append(_row(f"{prefix} FET", f"{_fmt(temps.get('fet'), 1)}C"))
         if temps.get("pcb") is not None:
-            lines.append(_row("CC0 PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
-    if inverter.get("battery_temp_c") is not None:
-        lines.append(_row("INV battery", f"{_fmt(inverter.get('battery_temp_c'), 0)}C"))
-    if inverter.get("transformer_temp_c") is not None:
-        lines.append(_row("INV transformer", f"{_fmt(inverter.get('transformer_temp_c'), 0)}C"))
-    if inverter.get("fet_temp_c") is not None:
-        lines.append(_row("INV FET", f"{_fmt(inverter.get('fet_temp_c'), 0)}C"))
+            lines.append(_row(f"{prefix} PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
+        if temps.get("device") is not None:
+            lines.append(_row(f"{prefix} device", f"{_fmt(temps.get('device'), 1)}C"))
     if ambient.get("temperature_c") is None:
         lines.append(_row("Sensor 0 ambient temp", "disconnected"))
     else:

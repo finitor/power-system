@@ -9,7 +9,7 @@ User=@OFFGRID_USER@
 Group=@OFFGRID_USER@
 WorkingDirectory=@PROJECT_DIR@
 Environment=CLASSIC_HOST=192.168.0.10
-Environment=MAGNUM_DEVICE=/dev/magnum-rs485
+Environment=EPEVER_DEVICE=/dev/epever-rs485
 Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
 # Ensure data and log directories exist; creates them on the SD card if /srv/offgrid is not mounted.
@@ -18,7 +18,7 @@ ExecStartPre=+/bin/chown -R @OFFGRID_USER@:@OFFGRID_USER@ /srv/offgrid
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up
-ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --web-display --web-port 8081 --weather --weather-cache-path /srv/offgrid/data/weather-cache.json --interval 5 --no-terminal-display --web-access-log-path /srv/offgrid/logs/web-display-access.log --load-sample-log-path /srv/offgrid/data/load-samples.csv --metrics-db-path /srv/offgrid/data/metrics.sqlite --metrics-snapshot-interval 60 --metrics-settings-interval 3600 --ambient-log-path /srv/offgrid/logs/ambient.csv
+ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --epever-device ${EPEVER_DEVICE} --web-display --web-port 8081 --weather --weather-cache-path /srv/offgrid/data/weather-cache.json --interval 5 --no-terminal-display --web-access-log-path /srv/offgrid/logs/web-display-access.log --load-sample-log-path /srv/offgrid/data/load-samples.csv --metrics-db-path /srv/offgrid/data/metrics.sqlite --metrics-snapshot-interval 60 --metrics-settings-interval 3600 --ambient-log-path /srv/offgrid/logs/ambient.csv
 Restart=on-failure
 RestartSec=5
 

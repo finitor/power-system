@@ -16,6 +16,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.canbus import CanFrame, decode_pylon_snapshot
 from offgrid_power.classic import ClassicTelemetry
+from offgrid_power.epever import EpeverChargeSettings, EpeverTelemetry
 from offgrid_power.supervisor import SupervisorSnapshot
 
 DEFAULT_CAPTURED_AT = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
@@ -26,6 +27,8 @@ def make_snapshot(**overrides) -> SupervisorSnapshot:
         "captured_at": DEFAULT_CAPTURED_AT,
         "classic": None,
         "classic_settings": None,
+        "epever": None,
+        "epever_settings": None,
         "battery": None,
         "battery_can_health": None,
         "ambient": None,
@@ -62,6 +65,52 @@ def make_classic_telemetry(captured_at: datetime | None = None, **overrides) -> 
     }
     fields.update(overrides)
     return ClassicTelemetry(**fields)
+
+
+def make_epever_telemetry(captured_at: datetime | None = None, **overrides) -> EpeverTelemetry:
+    fields: dict = {
+        "captured_at": captured_at or DEFAULT_CAPTURED_AT,
+        "pv_voltage_v": 0.0,
+        "pv_current_a": 0.0,
+        "pv_power_w": 0.0,
+        "battery_voltage_v": 53.11,
+        "battery_current_a": 0.0,
+        "battery_power_w": 0,
+        "battery_soc_percent": None,
+        "battery_temp_c": 0.0,
+        "device_temp_c": 0.0,
+        "status_raw": 0,
+        "charging_status": "No charging",
+        "rated_battery_voltage_v": 4.2,
+        "rated_charging_current_a": 0.04,
+        "rated_pv_voltage_v": 250.0,
+    }
+    fields.update(overrides)
+    return EpeverTelemetry(**fields)
+
+
+def make_epever_settings(captured_at: datetime | None = None, **overrides) -> EpeverChargeSettings:
+    fields: dict = {
+        "captured_at": captured_at or DEFAULT_CAPTURED_AT,
+        "battery_type_code": 6,
+        "battery_type": "User",
+        "battery_capacity_ah": 200,
+        "temperature_compensation_mv_per_c_cell": 300,
+        "over_voltage_disconnect_v": 0.01,
+        "charging_limit_voltage_v": 0.6,
+        "over_voltage_reconnect_v": 0.02,
+        "equalize_voltage_v": 0.04,
+        "boost_voltage_v": 54.7,
+        "float_voltage_v": 53.6,
+        "boost_reconnect_voltage_v": 53.6,
+        "low_voltage_reconnect_v": 53.3,
+        "under_voltage_recover_v": 53.3,
+        "under_voltage_warning_v": 50.0,
+        "low_voltage_disconnect_v": 49.7,
+        "discharging_limit_voltage_v": 48.0,
+    }
+    fields.update(overrides)
+    return EpeverChargeSettings(**fields)
 
 
 def make_battery_snapshot(soc_percent: int = 92):

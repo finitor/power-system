@@ -46,6 +46,6 @@ Live communication paths as configured today:
 |---|---|---|---|
 | MidNite Classic 200 | Modbus TCP | 192.168.0.10:502, device id 10 | Supervisor reads telemetry and reads/writes charge settings (charger current taper) |
 | Eco-Worthy Cubix bank | CAN 500 kbit/s | `can0` via SH-C31G, listen-only | Pylon-protocol frames; BMS may go silent at idle and recover under load |
-| MagnaSine MS4448PAE | Magnum network RS485 19200 8N1 | `/dev/magnum-rs485` (udev symlink to SH-U11H) | Parallel tap on the green network port; RJ45 breakout pin 6 → A/D+, pin 3 → B/D-; pins 4 (+14 V) and 5 (GND) left disconnected |
+| MagnaSine MS4448PAE | OEM remote | ME-RC50 | Monitor and control from the OEM remote until further notice; supervisor Magnum telemetry is disabled |
 | Victron BlueSolar MPPT 150/85 | VE.Can RJ45 | TBD on arrival | Telemetry path to be planned if selected |
-| EPEver TEP10425 | RS485 Modbus RJ45 | TBD on arrival | Via Waveshare isolated USB-RS485 (`epever-rs485-adapter`); bench-confirm writable registers before relying on control |
+| EPEver TEP10425 | RS485 Modbus RJ45 | `/dev/epever-rs485` (udev symlink to SH-U11H) | COM RJ45 pin 3 -> adapter A/D+, pin 6 -> adapter B/D-, pin 8 -> GND; read-only telemetry enabled |

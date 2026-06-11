@@ -12,6 +12,7 @@ from .supervisor import SupervisorSnapshot
 
 if TYPE_CHECKING:
     from .classic import ClassicChargeSettings
+    from .epever import EpeverChargeSettings
     from .load import LoadSummary
 
 CHANGED_DIGIT_START = "\033[93m"
@@ -147,9 +148,6 @@ def render_snapshot(
     lines.extend(_charge_controller_lines(snapshot))
 
     lines.append("")
-    lines.extend(_inverter_charger_lines(snapshot))
-
-    lines.append("")
     lines.extend(_temperature_lines(snapshot))
 
     if snapshot.errors:
@@ -233,13 +231,11 @@ def _missing_battery_lines(snapshot: SupervisorSnapshot) -> list[str]:
 
 def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
     lines: list[str] = []
-    controllers = [(0, snapshot.classic)]
-    for index, classic in controllers:
-        lines.append(f"Charge Controller {index}")
-        if classic is None:
-            lines.append("  No data")
-            continue
-
+    lines.append("Charge Controller 0")
+    if snapshot.classic is None:
+        lines.append("  No data")
+    else:
+        classic = snapshot.classic
         lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V"))
         lines.append(_row("Output", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"))
         stage_value = f"Stage: {classic.charge_stage}"
@@ -249,8 +245,21 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         if classic.is_hypervoc:
             lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
         lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
-        if index == 0 and snapshot.classic_settings is not None:
+        if snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))
+
+    lines.append("Charge Controller 1")
+    if snapshot.epever is None:
+        lines.append("  No data")
+    else:
+        epever = snapshot.epever
+        lines.append(_row("PV", f"{epever.pv_voltage_v:.1f}V  {epever.pv_current_a:.1f}A  {epever.pv_power_w}W"))
+        lines.append(_row("Output", f"{epever.battery_voltage_v:.1f}V  {epever.battery_current_a:.1f}A  {epever.battery_power_w}W"))
+        lines.append(_row("Charge Status", f"Stage: {epever.charging_status}"))
+        rated = f"{epever.rated_pv_voltage_v:.0f}V PV  {epever.rated_charging_current_a:.0f}A charge"
+        lines.append(_row("Rated", rated))
+        if snapshot.epever_settings is not None:
+            lines.append(_epever_charge_settings_line(snapshot.epever_settings))
     return lines
 
 
@@ -264,52 +273,14 @@ def _charge_settings_line(settings: ClassicChargeSettings) -> str:
     )
 
 
-def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
-    lines = ["Inverter/Charger"]
-    inv = snapshot.magnum
-    if inv is None:
-        lines.append("  No data")
-        return lines
-
-    lines.append(_row("DC", f"{inv.dc_volts:.1f}V  {inv.dc_amps}A  {inv.dc_power_w}W"))
-
-    ac_out_parts = [f"{inv.ac_volts_out}V"]
-    if inv.ac_amps_out is not None:
-        ac_out_parts.append(f"{inv.ac_amps_out}A")
-    if inv.ac_freq_hz is not None:
-        ac_out_parts.append(f"{inv.ac_freq_hz:.1f}Hz")
-    lines.append(_row("AC Output", "  ".join(ac_out_parts)))
-
-    if inv.ac_volts_in > 0:
-        ac_in_parts = [f"{inv.ac_volts_in}V"]
-        if inv.ac_amps_in is not None:
-            ac_in_parts.append(f"{inv.ac_amps_in}A")
-        lines.append(_row("AC Input", "  ".join(ac_in_parts)))
-    else:
-        lines.append(_row("AC Input", "0V  no source"))
-
-    status_text = inv.status_label()
-    fault = inv.fault_label()
-    if fault:
-        status_text += f"  Fault: {fault}"
-    lines.append(_row("Status", status_text))
-
-    settings_parts = []
-    if inv.charger_amps_pct is not None and inv.charger_amps_pct > 0:
-        settings_parts.append(f"Limit {inv.charger_amps_pct}%")
-    if inv.absorb_v is not None:
-        absorb = f"Absorb {inv.absorb_v:.1f}V"
-        if inv.absorb_time_hr is not None:
-            absorb += f" {inv.absorb_time_hr:.1f}h"
-        settings_parts.append(absorb)
-    if inv.float_v is not None:
-        settings_parts.append(f"Float {inv.float_v:.1f}V")
-    if inv.shore_amps is not None:
-        settings_parts.append(f"Shore {inv.shore_amps}A")
-    if settings_parts:
-        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
-
-    return lines
+def _epever_charge_settings_line(settings: EpeverChargeSettings) -> str:
+    return _row(
+        "Charge Settings",
+        f"Type {settings.battery_type}  "
+        f"Boost {settings.boost_voltage_v:.1f}V  "
+        f"Float {settings.float_voltage_v:.1f}V  "
+        f"LVD {settings.low_voltage_disconnect_v:.1f}V",
+    )
 
 
 def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
@@ -327,11 +298,12 @@ def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
         lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
         lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
-    if snapshot.magnum is not None:
-        inv = snapshot.magnum
-        lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))
-        lines.append(_row("INV transformer", f"{inv.transformer_temp_c}C"))
-        lines.append(_row("INV FET", f"{inv.fet_temp_c}C"))
+    if snapshot.epever is not None:
+        epever = snapshot.epever
+        if epever.battery_temp_c is not None:
+            lines.append(_row("CC1 battery", f"{epever.battery_temp_c:.1f}C"))
+        if epever.device_temp_c is not None:
+            lines.append(_row("CC1 device", f"{epever.device_temp_c:.1f}C"))
     if snapshot.ambient is None:
         lines.append(_row("Sensor 0 ambient temp", "disconnected"))
     else:

@@ -5,12 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import time
+from typing import TYPE_CHECKING
 
 from .ambient import AmbientDhtClient, AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
 from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_health
 from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
-from .magnum import MagnumClient, MagnumSnapshot
+from .epever import EpeverChargeSettings, EpeverClient, EpeverTelemetry
 from .readers import DeviceReading, PollingReader
+
+if TYPE_CHECKING:
+    from .magnum import MagnumClient, MagnumSnapshot
 
 
 STATUS_OK = "OK"
@@ -29,6 +33,8 @@ class SupervisorSnapshot:
     captured_at: datetime
     classic: ClassicTelemetry | None
     classic_settings: ClassicChargeSettings | None
+    epever: EpeverTelemetry | None
+    epever_settings: EpeverChargeSettings | None
     battery: PylonCanSnapshot | None
     battery_can_health: CanBusHealth | None
     ambient: AmbientTelemetry | None
@@ -71,12 +77,14 @@ class Supervisor:
         battery: BatteryCanClient | None = None,
         battery_can_interface: str | None = None,
         magnum: MagnumClient | None = None,
+        epever: EpeverClient | None = None,
     ) -> None:
         self.classic = classic
         self.ambient = ambient
         self.battery = battery
         self.battery_can_interface = battery_can_interface
         self.magnum = magnum
+        self.epever = epever
         self._status_condition_counts: dict[str, int] = {}
         self._readers: dict[str, PollingReader] | None = None
 
@@ -94,6 +102,8 @@ class Supervisor:
         readers: dict[str, PollingReader] = {}
         if self.classic is not None:
             readers["classic"] = PollingReader("classic", self.classic.read, interval_s)
+        if self.epever is not None:
+            readers["epever"] = PollingReader("epever", self.epever.read, interval_s)
         if self.battery is not None:
             readers["battery"] = PollingReader(
                 "battery",
@@ -173,6 +183,8 @@ class Supervisor:
             captured_at=datetime.now(timezone.utc),
             classic=devices["classic"],
             classic_settings=classic_settings,
+            epever=devices["epever"],
+            epever_settings=devices["epever_settings"],
             battery=battery,
             battery_can_health=battery_can_health,
             ambient=devices["ambient"],
@@ -187,6 +199,8 @@ class Supervisor:
         devices: dict = {
             "classic": None,
             "classic_settings": None,
+            "epever": None,
+            "epever_settings": None,
             "battery": None,
             "ambient": None,
             "magnum": None,
@@ -197,6 +211,12 @@ class Supervisor:
                 devices["classic"], devices["classic_settings"] = self.classic.read()
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Classic read failed: {exc}")
+
+        if self.epever is not None:
+            try:
+                devices["epever"], devices["epever_settings"] = self.epever.read()
+            except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
+                errors.append(f"EPEver read failed: {exc}")
 
         if self.ambient is not None:
             try:
@@ -224,11 +244,13 @@ class Supervisor:
     # alerting behave identically in both modes.
     _READER_ERROR_PREFIXES = {
         "classic": "Classic read failed",
+        "epever": "EPEver read failed",
         "battery": "Battery CAN read failed",
         "magnum": "Magnum read failed",
     }
     _READER_LABELS = {
         "classic": "Charge controller",
+        "epever": "EPEver charge controller",
         "battery": "Battery CAN",
         "magnum": "Magnum inverter",
     }
@@ -241,6 +263,8 @@ class Supervisor:
         devices: dict = {
             "classic": None,
             "classic_settings": None,
+            "epever": None,
+            "epever_settings": None,
             "battery": None,
             "ambient": None,
             "magnum": None,
@@ -259,6 +283,8 @@ class Supervisor:
             if reading.value is not None:
                 if name == "classic":
                     devices["classic"], devices["classic_settings"] = reading.value
+                elif name == "epever":
+                    devices["epever"], devices["epever_settings"] = reading.value
                 else:
                     devices[name] = reading.value
 

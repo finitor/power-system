@@ -25,7 +25,7 @@ from offgrid_power.charger_taper import (
     append_decision_log,
 )
 from offgrid_power.classic import ClassicClient
-from offgrid_power.magnum import InverterEventTracker, MagnumClient, append_inverter_event_log
+from offgrid_power.epever import EpeverClient
 from offgrid_power.config import load_config
 from offgrid_power.load import LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
@@ -142,6 +142,14 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--classic-device-id", type=int, default=config.classic.device_id)
     parser.add_argument("--classic-timeout", type=float, default=config.classic.timeout_s)
     parser.add_argument("--no-classic", action="store_true", help="Disable MidNite Classic reads")
+    parser.add_argument(
+        "--epever-device",
+        default=config.epever.device,
+        help="Serial device for EPEver RS-485 Modbus RTU; empty disables",
+    )
+    parser.add_argument("--epever-baud", type=int, default=config.epever.baud)
+    parser.add_argument("--epever-unit", type=int, default=config.epever.unit)
+    parser.add_argument("--epever-timeout", type=float, default=config.epever.timeout_s)
     parser.add_argument("--battery-can-interface", default="can0", help="SocketCAN battery interface")
     parser.add_argument("--battery-can-bitrate", type=int, default=500000, help="SocketCAN battery interface bitrate")
     parser.add_argument("--battery-can-seconds", type=float, default=1.5, help="Seconds to collect battery CAN frames")
@@ -172,7 +180,7 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--magnum-device",
         default=os.getenv("MAGNUM_DEVICE", ""),
-        help="Serial device for Magnum RS-485 bus (e.g. /dev/ttyUSB0); empty disables",
+        help="Deprecated no-op: Magnum telemetry is disabled while the OEM remote is used",
     )
     parser.add_argument(
         "--no-ambient",
@@ -220,7 +228,19 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
             protocol=args.battery_can_protocol,
         )
 
-    magnum = MagnumClient(args.magnum_device) if args.magnum_device else None
+    # Magnum telemetry is intentionally disabled while the OEM remote is the
+    # operating interface for the inverter/charger.
+    magnum = None
+    epever = (
+        EpeverClient(
+            device=args.epever_device,
+            baud=args.epever_baud,
+            unit=args.epever_unit,
+            timeout=args.epever_timeout,
+        )
+        if args.epever_device
+        else None
+    )
 
     return Supervisor(
         classic=None
@@ -235,6 +255,7 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         battery=battery,
         battery_can_interface=battery_can_interface,
         magnum=magnum,
+        epever=epever,
     )
 
 
@@ -283,7 +304,6 @@ def main() -> int:
         if charger_current_taper_enabled or charger_current_taper_dry_run
         else None
     )
-    inverter_event_tracker = InverterEventTracker()
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache, weather_service)
     previous_poll_render: str | None = None
@@ -313,9 +333,6 @@ def main() -> int:
             record_metrics(metric_recorder, snapshot, load_summary)
             record_weather_metrics(metric_recorder, weather_service)
             append_ambient_log(args.ambient_log_path, snapshot)
-            inverter_event = inverter_event_tracker.observe(snapshot.magnum, snapshot.battery)
-            if inverter_event is not None:
-                append_inverter_event_log(args.inverter_event_log_path, inverter_event)
             next_read = time.monotonic() + args.interval
             if args.no_terminal_display:
                 if args.once:

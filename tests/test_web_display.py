@@ -26,7 +26,7 @@ from offgrid_power.web_display import (
     snapshot_api_payload,
 )
 from offgrid_power.weather import WeatherReport
-from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_snapshot
+from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_snapshot
 
 
 class WebDisplayTest(unittest.TestCase):
@@ -67,8 +67,9 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("setInterval(tick, 60000)", html)
         self.assertNotIn('http-equiv="refresh"', html)
         self.assertIn("SOC 97%", html)
-        for section in ("Load", "Battery Bank", "Charge Controller 0", "Inverter/Charger", "Temperatures"):
+        for section in ("Load", "Battery Bank", "Charge Controller 0", "Temperatures"):
             self.assertIn(f"<h2>{section}</h2>", html)
+        self.assertNotIn("<h2>Inverter/Charger</h2>", html)
         # Decoded values flow through to the page.
         self.assertIn("5.1A  272W", html)
         self.assertIn("18.7h", html)
@@ -161,6 +162,19 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("Stage: Resting", html)
         self.assertNotIn("State: Resting", html)
 
+    def test_renders_epever_charge_controller_group(self) -> None:
+        snapshot = make_snapshot(
+            epever=make_epever_telemetry(),
+            epever_settings=make_epever_settings(),
+        )
+
+        html = render_kindle_snapshot(snapshot)
+
+        self.assertIn("<h2>Charge Controller 1</h2>", html)
+        self.assertIn("53.1V  0.0A  0W", html)
+        self.assertIn("Stage: No charging", html)
+        self.assertIn("Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", html)
+
     def test_renders_bms_protections_and_alarms(self) -> None:
         snapshot = make_snapshot(
             battery=PylonCanSnapshot(
@@ -206,6 +220,8 @@ class WebDisplayTest(unittest.TestCase):
     def test_routes_api_snapshot_as_json(self) -> None:
         snapshot = make_snapshot(
             classic=make_classic_telemetry(),
+            epever=make_epever_telemetry(),
+            epever_settings=make_epever_settings(),
             battery=make_battery_snapshot(soc_percent=92),
         )
 
@@ -230,9 +246,11 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["status"]["severity"], "OK")
         self.assertEqual(payload["battery"]["soc_percent"], 92)
         self.assertAlmostEqual(payload["battery"]["voltage_v"], 53.04)
-        self.assertEqual(payload["solar"][0]["id"], "classic.0")
+        self.assertEqual([controller["id"] for controller in payload["solar"]], ["classic.0", "epever.1"])
         self.assertEqual(payload["solar"][0]["daily_amp_hours_ah"], 108)
         self.assertIsNone(payload["solar"][0]["settings"])
+        self.assertEqual(payload["solar"][1]["battery_voltage_v"], 53.11)
+        self.assertEqual(payload["solar"][1]["settings"]["battery_type"], "User")
         self.assertEqual(payload["load"]["estimated_autonomy_hours"], 46.0)
 
     def test_snapshot_api_payload_includes_charge_controller_settings(self) -> None:

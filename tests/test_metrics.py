@@ -26,6 +26,8 @@ class MetricsTest(unittest.TestCase):
             captured_at=snapshot.captured_at,
             classic=snapshot.classic,
             classic_settings=snapshot.classic_settings,
+            epever=snapshot.epever,
+            epever_settings=snapshot.epever_settings,
             battery=snapshot.battery,
             battery_can_health=snapshot.battery_can_health,
             ambient=snapshot.ambient,
@@ -303,6 +305,8 @@ class MetricsTest(unittest.TestCase):
                 pcb_temp_c=29.0,
             ),
             classic_settings=classic_settings,
+            epever=None,
+            epever_settings=None,
             battery=decode_pylon_snapshot(
                 [
                     CanFrame(0x355, bytes([92, 0, 100, 0, 0, 0, 0, 0])),
