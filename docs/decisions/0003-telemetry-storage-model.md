@@ -62,16 +62,42 @@ plus a small **`events`** table for irregular events.
 - R2 export re-points to the canonical tables (their export columns already
   exist) and changes serialization to Parquet — adds a Parquet writer
   dependency (e.g. pyarrow) on the export side.
-- **Hardware constraint:** the SSD must not run on bus power — a ~2-3 W USB
-  draw is the most likely trigger of the 5 V sag that wedges the CAN
-  adapter (the reason the powered hub exists). Mount it only on the powered
-  adapter (pending) or a powered hub.
+- **Hardware constraint:** the SSD's ~2-3 W must not come off the Pi's
+  shared USB rail — that draw is the likely trigger of the 5 V sag that
+  wedges the CAN adapter. It is fine on externally-supplied power: the
+  dedicated powered SATA adapter (pending), OR a bus-powered adapter
+  plugged into the powered Waveshare hub (the hub feeds it from its own
+  PSU), subject to that hub's spare headroom. Prototyping via the hub is
+  acceptable; see the prototyping caveats below before trusting it with the
+  live store.
 - Supersedes engineering-plan item 7 (SD-card durability): the SSD plus WAL
   plus dropping the rewrite-heavy CSVs resolves it.
 
+## Prototyping caveats (bus-powered adapter on the powered hub)
+
+The cheap SATA bridge is fine to validate the *software* path, but do not
+migrate the live `/srv/offgrid` onto it until proven. Three reasons,
+beyond hub PSU headroom:
+
+- **UAS resets.** Cheap JMicron/ASMedia bridges often misbehave under the
+  UAS driver on a Pi (link resets, mid-write drops). Watch `dmesg` for
+  `usb ... reset` / `uas` errors over a day; if seen, blacklist UAS for
+  that VID:PID via a `usb-storage.quirks=...:u` kernel param.
+- **No TRIM/SMART** likely passes through a cheap bridge — fine for a log
+  store, but no wear telemetry.
+- **Power-loss flush integrity unknown.** A bridge that lies about FUA/flush
+  can corrupt SQLite on sudden power loss (BMS cutoff, etc.) even with WAL.
+  This is the specific reason to wait for the dedicated adapter before the
+  store is production — and to bench a power-cycle test first.
+
+Safe prototype path: mount at a scratch path (e.g. `/mnt/ssd-test`), run a
+*parallel* metrics DB or a soak/benchmark there, survive a deliberate
+power-cycle, and only then consider hosting the live `/srv/offgrid`.
+
 ## Phased implementation
 
-1. SSD on a powered adapter; `/srv/offgrid` mounted on it; SQLite WAL.
+1. SSD on a powered adapter (or the powered hub for prototyping per above);
+   `/srv/offgrid` mounted on it; SQLite WAL.
 2. Wire `snapshot_metric_samples()` into the live recorder; add the
    `events` table; migrate taper/inverter/load writers off CSV.
 3. Drop `web-display-access.log`; drop the `supervisor_snapshots` writer
