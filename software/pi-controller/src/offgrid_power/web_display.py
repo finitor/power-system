@@ -62,6 +62,10 @@ def format_kindle_time(captured_at: datetime) -> str:
     return captured_at.astimezone().strftime("%H:%M:%S %Z")
 
 
+KINDLE_RETRY_SECONDS = 5
+KINDLE_LIVE_SENTINEL = "offgrid-live"
+
+
 def _kindle_refresh_script(refresh_seconds: int) -> str:
     """In-place XHR refresher for the Kindle wall display.
 
@@ -69,34 +73,48 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
     one reload lands while the server is down (the browser swaps in its
     native error page, which carries no refresh). This script never
     navigates -- it fetches the page and swaps document.body.innerHTML on
-    success, silently retrying on failure, so the display self-recovers
-    from Pi reboots, supervisor restarts, and Wi-Fi drops. ES3-only for
-    the Kindle Touch's 2011 WebKit.
+    success, so the display self-recovers from Pi reboots, supervisor
+    restarts, and Wi-Fi drops. ES3-only for the Kindle Touch's 2011 WebKit.
+
+    Adaptive cadence (recursive setTimeout, not a fixed setInterval): when
+    the fetched page is the live dashboard (carries KINDLE_LIVE_SENTINEL),
+    refresh slowly (refresh_seconds). When it is anything else -- the nginx
+    "stand by" page, the snapshot-unavailable page, a non-200, or a failed
+    fetch -- retry fast (KINDLE_RETRY_SECONDS) so recovery after a restart
+    is seconds, not a full slow cycle. The injected stand-by page's own
+    <meta refresh> is inert (it is swapped in as body content, never
+    navigated to), so this timer is the only thing that drives recovery.
     """
     return (
         '<script type="text/javascript">\n'
         "(function() {\n"
+        f"  var LIVE_MS = {refresh_seconds * 1000}, RETRY_MS = {KINDLE_RETRY_SECONDS * 1000};\n"
+        f"  var SENTINEL = '{KINDLE_LIVE_SENTINEL}';\n"
+        "  function schedule(ms) { setTimeout(tick, ms); }\n"
         "  function tick() {\n"
         "    var x = new XMLHttpRequest();\n"
         "    var url = window.location.pathname + '?k=' + (new Date()).getTime();\n"
         "    x.open('GET', url, true);\n"
         "    x.onreadystatechange = function() {\n"
-        "      if (x.readyState !== 4 || x.status !== 200) { return; }\n"
+        "      if (x.readyState !== 4) { return; }\n"
+        "      if (x.status !== 200) { schedule(RETRY_MS); return; }\n"
         "      var t = x.responseText;\n"
         "      // Markers built by concatenation so this script's own source\n"
         "      // can never match them (it lives in the fetched head).\n"
         "      var bo = '<bo' + 'dy';\n"
         "      var bc = '</bo' + 'dy>';\n"
         "      var i = t.indexOf(bo);\n"
-        "      if (i < 0) { return; }\n"
+        "      if (i < 0) { schedule(RETRY_MS); return; }\n"
         "      i = t.indexOf('>', i);\n"
         "      var j = t.lastIndexOf(bc);\n"
-        "      if (i < 0 || j < 0 || j <= i) { return; }\n"
+        "      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }\n"
         "      document.body.innerHTML = t.substring(i + 1, j);\n"
+        "      schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);\n"
         "    };\n"
+        "    x.onerror = function() { schedule(RETRY_MS); };\n"
         "    x.send(null);\n"
         "  }\n"
-        f"  setInterval(tick, {refresh_seconds * 1000});\n"
+        "  schedule(LIVE_MS);\n"
         "})();\n"
         "</script>"
     )
@@ -136,6 +154,7 @@ def render_kindle_snapshot(
         "</style>",
         "</head>",
         "<body>",
+        f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -208,6 +227,7 @@ def render_kindle_weather(
         "</style>",
         "</head>",
         "<body>",
+        f"<!-- {KINDLE_LIVE_SENTINEL} -->",
     ]
     if too_stale:
         lines.extend(

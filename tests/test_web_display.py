@@ -65,8 +65,12 @@ class WebDisplayTest(unittest.TestCase):
         # it never navigates, so a Pi reboot can't strand the browser on a
         # native error page.
         self.assertIn("XMLHttpRequest", html)
-        self.assertIn("setInterval(tick, 60000)", html)
+        # Adaptive cadence: slow when live, fast-retry otherwise.
+        self.assertIn("LIVE_MS = 60000", html)
+        self.assertIn("RETRY_MS = 5000", html)
         self.assertNotIn('http-equiv="refresh"', html)
+        # Live-page sentinel drives the slow cadence (and recovery detection).
+        self.assertIn("offgrid-live", html)
         self.assertIn("SOC 97%", html)
         for section in ("Load", "Battery Bank", "Charge Controller 0 (Classic)", "Inverter/Charger", "Temperatures"):
             self.assertIn(f"<h2>{section}</h2>", html)
@@ -119,6 +123,7 @@ class WebDisplayTest(unittest.TestCase):
         html = render_kindle_weather(report)
 
         self.assertIn("XMLHttpRequest", html)
+        self.assertIn("offgrid-live", html)  # live page → slow cadence
         # Derived formatting: weather code text, wind direction, moon phase name.
         self.assertIn("Cabin: rain", html)
         self.assertIn("18km/h  32km/h gust  W", html)
@@ -332,6 +337,9 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn('<meta http-equiv="refresh" content="10">', html)
         self.assertIn("Snapshot unavailable", html)
         self.assertIn("CAN bus warming up", html)
+        # No live sentinel → the wall display's refresher fast-retries until
+        # the real dashboard returns, rather than waiting a full slow cycle.
+        self.assertNotIn("offgrid-live", html)
 
     def test_snapshot_cache_returns_latest_snapshot(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()
