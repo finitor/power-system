@@ -178,7 +178,8 @@ class EpeverClient:
         function 0x10, so we read the live block, overwrite only the named
         cells, and write the whole block back. The protection thresholds
         (OVD/reconnect/LVD/discharge) are preserved untouched. Precondition:
-        Battery Type must already be User (code 6); the controller rejects
+        Battery Type must already be User (the EPEver register reports this as
+        code 0, though 6 also maps to User); the controller rejects
         charge-voltage writes otherwise.
         """
         targets = {0x900A: equalize_v, 0x900B: boost_v, 0x900C: float_v}
@@ -200,9 +201,9 @@ class EpeverClient:
             raise ConnectionError(f"Could not open {self.device}")
         try:
             battery_type_code = read_holding_registers(client, 0x9000, 1, self.unit)[0]
-            if battery_type_code != 6:
+            if BATTERY_TYPES.get(battery_type_code) != "User":
                 raise RuntimeError(
-                    "EPEver Battery Type must be User (6) before charge-voltage "
+                    "EPEver Battery Type must be User before charge-voltage "
                     f"writes; controller reports code {battery_type_code} "
                     f"({BATTERY_TYPES.get(battery_type_code, 'unknown')})"
                 )

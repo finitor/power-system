@@ -93,11 +93,19 @@ class EpeverWriteTest(unittest.TestCase):
 
     def test_write_charge_voltages_requires_user_battery_type(self) -> None:
         fake = FakeModbusClient()
-        fake.regs[0x9000] = 0  # not User
+        fake.regs[0x9000] = 1  # Sealed, not User
         with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
             with self.assertRaisesRegex(RuntimeError, "Battery Type must be User"):
                 EpeverClient().write_charge_voltages(boost_v=54.8)
         self.assertEqual(fake.writes, [])
+
+    def test_write_charge_voltages_accepts_user_code_zero(self) -> None:
+        # The EPEver reports User as code 0 (6 also maps to User); both pass.
+        fake = FakeModbusClient()
+        fake.regs[0x9000] = 0
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            EpeverClient().write_charge_voltages(boost_v=54.8)
+        self.assertEqual(fake.regs[0x900B], 5480)
 
     def test_write_charge_voltages_partial_only_touches_named_cell(self) -> None:
         fake = FakeModbusClient()
