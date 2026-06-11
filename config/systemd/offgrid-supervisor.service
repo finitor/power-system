@@ -2,6 +2,11 @@
 Description=Off-grid power supervisor display
 After=network-online.target
 Wants=network-online.target
+# The console display BindsTo this unit, so it dies whenever the supervisor
+# is stopped (e.g. to free the EPEver adapter for a direct write). Upholds
+# makes systemd revive the console automatically once the supervisor is back,
+# so a plain `systemctl start offgrid-supervisor` restores the desktop display.
+Upholds=offgrid-console.service
 
 [Service]
 Type=simple
