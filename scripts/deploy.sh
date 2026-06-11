@@ -74,11 +74,11 @@ PYTHONPATH="${PROJECT_DIR}/software/pi-controller/src" "${VENV}/bin/python" -m u
 
 echo "== restart =="
 sudo systemctl restart offgrid-supervisor
-sudo systemctl restart offgrid-console
 sudo systemctl reload nginx
 
 echo "== health =="
 sleep 6
+sudo systemctl start offgrid-console
 systemctl is-active offgrid-supervisor offgrid-console nginx
 code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/healthz)"
 echo "supervisor /healthz: ${code}"
