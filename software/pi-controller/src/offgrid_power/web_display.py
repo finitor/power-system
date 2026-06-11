@@ -245,7 +245,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">Updated: {escape(updated)}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">As of: {escape(updated)}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Conditions</h2>",
                 "<p>Weather unavailable.</p>",
@@ -260,7 +260,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(report.label)}: {escape(condition)}<br>Updated: {escape(updated)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(report.label)}: {escape(condition)}<br>As of: {escape(updated)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Current</h2>",
                 "<table>",
