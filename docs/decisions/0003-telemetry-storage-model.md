@@ -154,8 +154,21 @@ Integrity is out of scope, so this builds to the live store directly (no
 prototype-only holdback). The SSD currently runs on the Apricorn bridge via
 the powered hub; the dedicated adapter swaps in later without code changes.
 
-1. Mount the SSD at `/srv/telemetry` (existing `srv-telemetry.mount`), ext4
-   `noatime`, SQLite WAL + `synchronous=NORMAL`.
+**Current state (2026-06-11):** the path rename to `/srv/telemetry` is done,
+but the live store still sits on the **SD card** — the fstab entry there
+references the *old removed* SSD's UUID (`8d7214f5…`, absent, `nofail`), so
+`/srv/telemetry` is just a directory on the SD root. The new SSD
+(`8e8a4fee…`) is formatted and mounted at `/mnt/ssd-test`. Deliberate
+decision: **leave the store on SD until phase 1 work begins** — no point
+cutting the live store onto the prototype-bridge SSD before any storage code
+changes. Phase 1 performs the cutover.
+
+1. **SSD cutover (do this when phase work starts, not before):** unmount
+   `/mnt/ssd-test`; repoint the fstab entry from the old UUID `8d7214f5…` to
+   the new SSD `8e8a4fee…` at `/srv/telemetry`; move the existing store
+   (`/srv/telemetry/{data,logs}`) onto the SSD; mount it. ext4 `noatime`,
+   SQLite WAL + `synchronous=NORMAL`. (The `srv-telemetry.mount` generated
+   unit follows the fstab change.)
 2. **Best-effort recorder:** wrap all store writes so any failure (corrupt,
    unwritable, unmounted) is caught, the DB is recreated on open failure,
    and the supervisor loop is never affected.
