@@ -76,7 +76,11 @@ Phase 2 (TODO):
 - Surface per-device ages in the API payload (staleness is currently only a
   status condition).
 
-## 7. SD card durability — TODO (background)
+## 7. SD card durability — SUPERSEDED by decision 0003
+
+Resolved by the 500 GB SSD + WAL + dropping the rewrite-heavy CSVs;
+see [decision 0003](decisions/0003-telemetry-storage-model.md) for the
+telemetry storage redesign that replaces this item.
 
 With the SSD removed, all telemetry writes land on the SD card: sqlite every
 60s, `load-samples.csv` appended every 5s and fully rewritten every 5
