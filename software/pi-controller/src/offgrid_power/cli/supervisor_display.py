@@ -181,7 +181,7 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--magnum-device",
         default=os.getenv("MAGNUM_DEVICE", ""),
-        help="Serial device for the Magnum RS-485 read-only telemetry tap; empty disables",
+        help="Serial device for the Magnum RS-485 telemetry tap (read-only by policy); empty disables",
     )
     parser.add_argument(
         "--no-ambient",
@@ -229,8 +229,9 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
             protocol=args.battery_can_protocol,
         )
 
-    # Magnum is a read-only telemetry tap (the OEM remote remains the
-    # operating interface for the inverter/charger; see decision 0002).
+    # Magnum telemetry tap. Read-only by policy (the OEM remote remains the
+    # operating interface; decision 0002), but the path is TX-capable if an
+    # inverter-toggle write is ever wanted.
     magnum = MagnumClient(args.magnum_device) if args.magnum_device else None
     epever = (
         EpeverClient(

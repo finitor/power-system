@@ -20,7 +20,9 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="e
 # verify the Waveshare's serial differs when it arrives.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="A50285BI", SYMLINK+="cubix-rs485"
 
-# KL0823B 2-wire USB-RS485 adapter — Magnum network read-only tap (CH340).
+# KL0823B 2-wire USB-RS485 adapter — Magnum network tap (CH340).
+# Read-only by policy (decision 0002); the adapter can transmit if an
+# inverter-toggle write path is ever built.
 # Keyed on VID:PID because CH340s carry no unique serial; this is the only
 # CH340 in the fleet today. NOTE: the official Eco-Worthy BMS cable is also
 # CH340-based — if one is ever added, switch one of them to a port-path rule.
