@@ -16,7 +16,7 @@ class ChargeStageTest(unittest.TestCase):
             "Float": ChargeStage.FLOAT,
             "FloatMppt": ChargeStage.FLOAT,
             "Equalize": ChargeStage.EQUALIZE,
-            "HyperVoc": ChargeStage.RESTING,
+            "HyperVoc": ChargeStage.HYPERVOC,
         }
         for native, canonical in cases.items():
             self.assertEqual(normalize_classic_stage(native), canonical, native)
@@ -37,6 +37,16 @@ class ChargeStageTest(unittest.TestCase):
         self.assertEqual(
             normalize_epever_stage("Boost"),
             normalize_classic_stage("Absorb"),
+        )
+
+    def test_hypervoc_is_distinct_from_resting(self) -> None:
+        # Protection state, observable, and supported by only one vendor.
+        self.assertEqual(normalize_classic_stage("HyperVoc"), ChargeStage.HYPERVOC)
+        self.assertNotEqual(ChargeStage.HYPERVOC, ChargeStage.RESTING)
+        # The EPEver has no such state; its map never emits HYPERVOC.
+        self.assertNotIn(
+            ChargeStage.HYPERVOC,
+            {normalize_epever_stage(s) for s in ("No charging", "Boost", "Float", "Equalize")},
         )
 
     def test_unknown_and_none_are_unknown(self) -> None:

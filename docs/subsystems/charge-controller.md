@@ -102,14 +102,19 @@ it differs.
 | Absorb | Absorb | Boost |
 | Float | Float, FloatMppt | Float |
 | Equalize | Equalize | Equalize |
-| Resting | Resting, HyperVoc | No charging |
+| Resting | Resting | No charging |
+| HyperVoc | HyperVoc | *(not supported)* |
 
 The EPEver has no distinct bulk stage — it reports `Boost` for both the
 constant-current climb and the constant-voltage hold — so `Boost` maps to
 the canonical `Absorb`. An EPEver showing `Absorb` may therefore still be
-physically in the bulk phase. The Classic's `HyperVoc` (PV-overvoltage
-self-protection) normalizes to `Resting`; the `is_hypervoc` flag carries
-that detail separately for display.
+physically in the bulk phase.
+
+Not every canonical stage is supported by every vendor, which is expected:
+each controller's map only emits the values it can reach. `HyperVoc`
+(the Classic's PV-overvoltage self-protection) is Classic-only and is kept
+distinct from `Resting` so the protection state stays observable rather than
+hidden behind ordinary "not charging".
 
 ## Local Modbus Probe
 
