@@ -1,6 +1,7 @@
 id,category,item,manufacturer,model,qty,status,rating,interface,purpose,vendor_url,notes
 pi,controller,Raspberry Pi,Raspberry Pi,3 Model B v1.2,1,installed,5 V,GPIO/USB/Ethernet/Wi-Fi/Bluetooth,Supervisory controller and logger,,1 GB RAM; 4x USB 2.0; 40-pin GPIO
 usb-hub,controller,Powered USB hub,Waveshare,USB 3.2-Gen1-HUB-4U,1,installed,external 5 V / USB bus,USB 3.2 Gen 1 upstream / 4 downstream,Isolates telemetry adapter bus power from the Pi,,Installed inline 2026-06-09 to eliminate 5 V brownouts that were dropping the CAN adapter
+bench-usb-hub,controller,USB hub (bus-powered),Weme,RTS5411-based 3-port + RTL8153 ethernet,1,installed,USB bus power (shared Pi budget),USB 3.0 upstream / 3 USB ports + gigabit jack,Bench expansion; keyboard/mouse fallback,,Bus-powered: keep operational telemetry adapters on the powered Waveshare hub. Built-in RTL8153 NIC deauthorized via udev (0bda:8153) to cut power draw; delete that rule to re-enable
 dc-12v,power,48V to 12V DC-DC converter,Victron Energy,Orion-Tr IP43 48/12-9 (110 W),1,installed,48 V in / 12 V 9 A out,48 V bus to 12 V control bus,12 V control rail for thermostat and relay/SSR/fan loads,,Installed and working
 dc-5v,power,48V to 5V DC-DC converter,Mean Well,DDR-60L-5,1,on-hand,48 V in / 5 V 60 W out,DIN rail,Pi 5 V supply,,
 kindle-display,display,Kindle wall display,Amazon,Kindle Touch (jailbroken),1,installed,battery / USB charge,Wi-Fi browser,Wall display for supervisor dashboard,,Bookmarked to port 8080; see docs/subsystems/display-services.md
