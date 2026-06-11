@@ -2,8 +2,8 @@
 
 Append-only narrative record of working sessions: what was tried, what
 broke, what was measured, what was learned. One file per significant
-session, named `YYYY-MM-DD.md` (suffix `-b`, `-c` for multiple sessions in
-a day).
+session, named `YYYY-MM-DD.md`. If a day gets a second session, rename the
+first to `-a` and continue `-b`, `-c`, ... so the files sort in order.
 
 How this relates to the other documents:
 
