@@ -5,6 +5,33 @@ Plan for rebuilding the supervisory Raspberry Pi on Raspberry Pi OS Lite
 downtime. The power system can be manually monitored and controlled while the
 supervisor is offline.
 
+## Current Status
+
+Parked on 2026-06-12 while waiting for a second microSD card. Do not overwrite
+the current working card.
+
+Completed preparation:
+
+- Migration backup created from the live Pi:
+  `backups/pi-migration/offgrid-blueberry-20260612T120203Z.tar.gz` on the
+  workstation, with a copy left on the Pi under `~/offgrid-backups/`.
+- Backup contents were inspected and include `/etc/offgrid-power.env`, systemd
+  units, udev rules, nginx config, SSH material, `/srv/telemetry`, and
+  `/var/lib/offgrid`.
+- Current Pi redeployed cleanly at Git commit `2456d2f`.
+- Pi-side test suite passed: 171 tests.
+- Live health check passed: supervisor, console, nginx, CAN watchdog timer, and
+  metrics export timer active; `/healthz` and Kindle nginx path returned OK.
+- Current boot card identified as a 64 GB-class Samsung card from 2018
+  (`mmcblk0`, 59.6 GiB, product `GC2QT`), still serving as the rollback card.
+- `/srv/telemetry` is on the external Samsung SSD 840 EVO 500 GB, not on the
+  boot microSD.
+
+Resume only after acquiring a new high-endurance microSD card. Preferred
+target: 128 GB high-endurance microSDXC, UHS-I U1/U3, A1 or A2, from a reputable
+vendor. The SanDisk 128 GB High Endurance card
+`SDSQQNR-128G-GN6IA` is an acceptable target.
+
 ## Goal
 
 Move the Pi from its current OS image to a clean 64-bit Lite install so modern
@@ -66,27 +93,24 @@ and a supervisor deploy.
 
 ## High-Level Procedure
 
-1. Commit and push any workstation changes that should exist on the Pi.
-2. Make the backup script real enough to create one timestamped migration
-   bundle from the live Pi.
-3. Run the backup and copy the bundle off the Pi.
-4. Optionally image the old SD card as a full rollback artifact.
-5. Flash Raspberry Pi OS Lite 64-bit and configure SSH, hostname, locale,
-   timezone, and network.
-6. Boot the Pi and confirm SSH access by hostname and IP.
-7. Install the small OS package set needed by the supervisor:
-   `git`, `python3`, `python3-venv`, `python3-pip`, `can-utils`, `tmux`,
-   `nginx`, `curl`, `rsync`, and build tools needed by Python wheels.
-8. Clone or restore the repo checkout.
-9. Create `.venv`, install the project editable, and install sensor extras if
-   the GPIO sensor path is active.
-10. Restore `/etc/offgrid-power.env`, telemetry data, udev rules, nginx config,
-    and any SSH/Git credentials needed for deploys.
-11. Run `scripts/deploy.sh` from the Pi checkout to render service templates,
-    install config, run tests, restart services, and health-check the result.
-12. Reboot once and repeat the health checks.
-13. Only after telemetry is healthy, try installing and running Codex CLI
+1. Leave the current working microSD card untouched as the physical rollback.
+2. Flash the new microSD with Raspberry Pi OS Lite 64-bit and configure SSH,
+   hostname, locale, timezone, and network.
+3. Boot the Pi from the new card and confirm SSH access by hostname and IP.
+4. Clone the repo:
+   `git clone git@github.com:finitor/power-system.git ~/power-system`.
+5. Copy the migration backup archive to the new Pi.
+6. Restore local config and telemetry:
+   `cd ~/power-system && scripts/restore-config.sh --apply ~/offgrid-blueberry-20260612T120203Z.tar.gz`.
+7. Bootstrap packages, venv, config rendering, tests, restart, and deploy
+   health checks: `scripts/install-pi.sh`.
+8. Run `scripts/health-check.sh`.
+9. Reboot once and repeat `scripts/health-check.sh`.
+10. Only after telemetry is healthy, try installing and running Codex CLI
     locally. Treat performance or memory problems as a separate follow-up.
+
+Preparation steps 1-3 from the original plan are already complete as of
+2026-06-12; see Current Status above.
 
 ## Validation
 
@@ -132,12 +156,12 @@ survived at least one deploy, one reboot, and a representative telemetry run.
 
 ## Prep Work To Do In Repo
 
-- Replace `scripts/backup-config.sh` with a real migration backup command.
-- Replace `scripts/restore-config.sh` with a conservative restore helper, or
-  document manual restore commands if a scripted restore is too risky.
-- Replace `scripts/install-pi.sh` with the minimal package and venv bootstrap
-  for Raspberry Pi OS Lite 64-bit.
-- Replace `scripts/health-check.sh` with the validation commands above.
+- Done: `scripts/backup-config.sh` creates a timestamped migration backup.
+- Done: `scripts/restore-config.sh` restores local config and telemetry with an
+  explicit `--apply` guard.
+- Done: `scripts/install-pi.sh` installs the minimal package and venv bootstrap
+  for Raspberry Pi OS Lite 64-bit, then runs deploy.
+- Done: `scripts/health-check.sh` runs the validation checks above.
 - Add the chosen OS image and package baseline to `docs/maintenance.md` after
   the migration.
 
@@ -145,10 +169,10 @@ survived at least one deploy, one reboot, and a representative telemetry run.
 
 - Which exact Raspberry Pi OS Lite 64-bit image should be pinned as the
   migration baseline?
-- Is the current Pi SD card being replaced, or should the old card be preserved
-  and a new card flashed?
+- Which exact card was purchased and installed?
 - Should `/srv/telemetry` stay on the SD card for the migration, or move to
-  external storage during the rebuild?
+  external storage during the rebuild? Current state is external SSD mounted at
+  `/srv/telemetry`.
 - Does the rebuilt Lite image need a local desktop console immediately, or can
   that wait until after telemetry is healthy?
 - Does local Codex CLI need authenticated interactive use on the Pi, or only
