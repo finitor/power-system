@@ -65,6 +65,7 @@ install -m 755 config/desktop/open-offgrid-console "${HOME}/.local/bin/open-offg
 render config/desktop/offgrid-console.desktop > "${HOME}/.config/autostart/offgrid-console.desktop"
 sudo systemctl daemon-reload
 sudo systemctl enable --now --quiet offgrid-can-watchdog.timer
+sudo systemctl enable --now --quiet offgrid-metrics-export.timer
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=tty
 sudo nginx -t -q

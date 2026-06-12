@@ -24,7 +24,7 @@ from offgrid_power.r2_export import build_export_batch, mark_batch_exported
 
 
 class R2ExportTest(unittest.TestCase):
-    def test_build_export_batch_uses_unexported_flat_records(self) -> None:
+    def test_batches_are_single_table_and_date_partitioned(self) -> None:
         with sqlite3.connect(":memory:") as connection:
             initialize_metrics_db(connection)
             sample = self._insert_sample(connection)
@@ -34,11 +34,11 @@ class R2ExportTest(unittest.TestCase):
 
             self.assertIsNotNone(batch)
             assert batch is not None
-            self.assertEqual(batch.row_count, 2)
-            self.assertEqual(batch.records, (("sample", 1), ("event", 1)))
+            self.assertEqual(batch.row_count, 1)
+            self.assertEqual(batch.records, (("sample", 1),))
             self.assertRegex(
                 batch.object_key,
-                r"^metrics/20\d{6}T\d{6}Z-[0-9a-f]{32}\.ndjson\.gz$",
+                r"^metrics/samples/date=2026-06-05/20\d{6}T\d{6}Z-[0-9a-f]{32}\.ndjson\.gz$",
             )
             records = [json.loads(line) for line in gzip.decompress(batch.body).decode("utf-8").splitlines()]
             self.assertEqual(records[0]["record_type"], "sample")
@@ -49,17 +49,50 @@ class R2ExportTest(unittest.TestCase):
             self.assertEqual(records[0]["value"], 91.0)
             self.assertEqual(records[0]["unit"], "%")
             self.assertEqual(records[0]["tags"], {"pack": "0"})
-            self.assertEqual(records[1]["record_type"], "event")
-            self.assertEqual(records[1]["record_id"], event.event_id())
-            self.assertEqual(records[1]["source"], "magnum")
-            self.assertEqual(records[1]["event"], "lbco_cutout")
-            self.assertEqual(records[1]["detail"]["fault"], "LOW_BAT")
+
+            # Events drain after samples, into their own partition.
+            mark_batch_exported(connection, batch, "2026-06-05T12:05:00+00:00")
+            event_batch = build_export_batch(connection, site_id="cabin", prefix="metrics", limit=10)
+            assert event_batch is not None
+            self.assertEqual(event_batch.records, (("event", 1),))
+            self.assertRegex(
+                event_batch.object_key,
+                r"^metrics/events/date=2026-06-05/20\d{6}T\d{6}Z-[0-9a-f]{32}\.ndjson\.gz$",
+            )
+            records = [json.loads(line) for line in gzip.decompress(event_batch.body).decode("utf-8").splitlines()]
+            self.assertEqual(records[0]["record_type"], "event")
+            self.assertEqual(records[0]["record_id"], event.event_id())
+            self.assertEqual(records[0]["event"], "lbco_cutout")
+            self.assertEqual(records[0]["detail"]["fault"], "LOW_BAT")
+
+    def test_batches_split_by_capture_date_oldest_first(self) -> None:
+        with sqlite3.connect(":memory:") as connection:
+            initialize_metrics_db(connection)
+            self._insert_sample(connection)  # 2026-06-05
+            late = MetricSample(
+                captured_at=datetime(2026, 6, 6, 9, 0, tzinfo=timezone.utc),
+                source="battery",
+                metric="soc",
+                value=88.0,
+                unit="%",
+            )
+            _insert_samples(connection, [late])
+
+            first = build_export_batch(connection, site_id="cabin", prefix="metrics", limit=10)
+            assert first is not None
+            self.assertIn("/date=2026-06-05/", first.object_key)
+            self.assertEqual(first.row_count, 1)
+            mark_batch_exported(connection, first, "2026-06-06T12:05:00+00:00")
+
+            second = build_export_batch(connection, site_id="cabin", prefix="metrics", limit=10)
+            assert second is not None
+            self.assertIn("/date=2026-06-06/", second.object_key)
+            self.assertEqual(second.row_count, 1)
 
     def test_mark_batch_exported_stamps_rows_and_batch(self) -> None:
         with sqlite3.connect(":memory:") as connection:
             initialize_metrics_db(connection)
             self._insert_sample(connection)
-            self._insert_event(connection)
             batch = build_export_batch(connection, site_id="cabin", prefix="metrics", limit=10)
             assert batch is not None
 
@@ -72,13 +105,9 @@ class R2ExportTest(unittest.TestCase):
             sample_status = connection.execute(
                 "SELECT exported_at, export_batch_id FROM samples WHERE id = 1"
             ).fetchone()
-            event_status = connection.execute(
-                "SELECT exported_at, export_batch_id FROM events WHERE id = 1"
-            ).fetchone()
 
-            self.assertEqual(export_batch, (batch.object_key, 2, "uploaded"))
+            self.assertEqual(export_batch, (batch.object_key, 1, "uploaded"))
             self.assertEqual(sample_status, ("2026-06-05T12:05:00+00:00", batch.batch_id))
-            self.assertEqual(event_status, ("2026-06-05T12:05:00+00:00", batch.batch_id))
 
     def test_build_export_batch_skips_exported_records(self) -> None:
         with sqlite3.connect(":memory:") as connection:

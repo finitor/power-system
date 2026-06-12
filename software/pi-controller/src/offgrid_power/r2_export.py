@@ -162,35 +162,49 @@ def export_metrics_once(db_path: str | Path, config: R2Config, limit: int = 5000
     )
 
 
+# Per-table export streams. Each batch holds one table and one local
+# capture date, so every object has a uniform schema and lands under a
+# hive-style date partition that DuckDB can prune
+# (e.g. metrics/samples/date=2026-06-12/<ts>-<batch>.ndjson.gz).
+_EXPORT_TABLES = ("samples", "events")
+
+
 def build_export_batch(
     connection: sqlite3.Connection,
     site_id: str,
     prefix: str,
     limit: int = 5000,
 ) -> ExportBatch | None:
-    records = _unexported_records(connection, limit)
-    if not records:
-        return None
-
-    payload_records = [_record_to_payload(record, site_id) for record in records]
-    body = gzip.compress(
-        "\n".join(json.dumps(record, sort_keys=True, separators=(",", ":")) for record in payload_records).encode("utf-8")
-        + b"\n"
-    )
-    content_sha256 = hashlib.sha256(body).hexdigest()
-    batch_id = content_sha256[:32]
-    created_at = datetime.now(timezone.utc)
-    object_key = f"{prefix.strip('/')}/{created_at:%Y%m%dT%H%M%SZ}-{batch_id}.ndjson.gz"
-    return ExportBatch(
-        batch_id=batch_id,
-        object_key=object_key,
-        body=body,
-        records=tuple((record["record_type"], record["id"]) for record in records),
-        row_count=len(payload_records),
-        min_row_id=min(record["id"] for record in records),
-        max_row_id=max(record["id"] for record in records),
-        content_sha256=content_sha256,
-    )
+    for table in _EXPORT_TABLES:
+        day = connection.execute(
+            f"SELECT MIN(substr(captured_at, 1, 10)) FROM {table} WHERE exported_at IS NULL"
+        ).fetchone()[0]
+        if day is None:
+            continue
+        records = _unexported_records(connection, table, day, limit)
+        payload_records = [_record_to_payload(record, site_id) for record in records]
+        body = gzip.compress(
+            "\n".join(json.dumps(record, sort_keys=True, separators=(",", ":")) for record in payload_records).encode("utf-8")
+            + b"\n"
+        )
+        content_sha256 = hashlib.sha256(body).hexdigest()
+        batch_id = content_sha256[:32]
+        created_at = datetime.now(timezone.utc)
+        object_key = (
+            f"{prefix.strip('/')}/{table}/date={day}/"
+            f"{created_at:%Y%m%dT%H%M%SZ}-{batch_id}.ndjson.gz"
+        )
+        return ExportBatch(
+            batch_id=batch_id,
+            object_key=object_key,
+            body=body,
+            records=tuple((record["record_type"], record["id"]) for record in records),
+            row_count=len(payload_records),
+            min_row_id=min(record["id"] for record in records),
+            max_row_id=max(record["id"] for record in records),
+            content_sha256=content_sha256,
+        )
+    return None
 
 
 def mark_batch_exported(connection: sqlite3.Connection, batch: ExportBatch, uploaded_at: str) -> None:
@@ -223,46 +237,44 @@ def mark_batch_exported(connection: sqlite3.Connection, batch: ExportBatch, uplo
         )
 
 
-def _unexported_records(connection: sqlite3.Connection, limit: int) -> list[dict]:
-    sample_rows = connection.execute(
-        """
-        SELECT id, sample_id, captured_at, source, metric, value, text, unit, tags_json
-        FROM samples
-        WHERE exported_at IS NULL
-        ORDER BY id
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
-    records = [
-        {
-            "record_type": "sample",
-            "id": row[0],
-            "sample_id": row[1],
-            "captured_at": row[2],
-            "source": row[3],
-            "metric": row[4],
-            "value": row[5],
-            "text": row[6],
-            "unit": row[7],
-            "tags_json": row[8],
-        }
-        for row in sample_rows
-    ]
-    remaining = limit - len(records)
-    if remaining <= 0:
-        return records
-    event_rows = connection.execute(
+def _unexported_records(connection: sqlite3.Connection, table: str, day: str, limit: int) -> list[dict]:
+    if table == "samples":
+        rows = connection.execute(
+            """
+            SELECT id, sample_id, captured_at, source, metric, value, text, unit, tags_json
+            FROM samples
+            WHERE exported_at IS NULL AND substr(captured_at, 1, 10) = ?
+            ORDER BY id
+            LIMIT ?
+            """,
+            (day, limit),
+        ).fetchall()
+        return [
+            {
+                "record_type": "sample",
+                "id": row[0],
+                "sample_id": row[1],
+                "captured_at": row[2],
+                "source": row[3],
+                "metric": row[4],
+                "value": row[5],
+                "text": row[6],
+                "unit": row[7],
+                "tags_json": row[8],
+            }
+            for row in rows
+        ]
+    rows = connection.execute(
         """
         SELECT id, event_id, captured_at, source, event, detail_json
         FROM events
-        WHERE exported_at IS NULL
+        WHERE exported_at IS NULL AND substr(captured_at, 1, 10) = ?
         ORDER BY id
         LIMIT ?
         """,
-        (remaining,),
+        (day, limit),
     ).fetchall()
-    records.extend(
+    return [
         {
             "record_type": "event",
             "id": row[0],
@@ -272,9 +284,8 @@ def _unexported_records(connection: sqlite3.Connection, limit: int) -> list[dict
             "event": row[4],
             "detail_json": row[5],
         }
-        for row in event_rows
-    )
-    return records
+        for row in rows
+    ]
 
 
 def _record_to_payload(record: dict, site_id: str) -> dict:

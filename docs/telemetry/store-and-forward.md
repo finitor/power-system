@@ -56,13 +56,14 @@ SELECT COUNT(*) FROM samples WHERE exported_at IS NULL;
 
 ## Object Format
 
-Batch object keys have this shape:
+Each batch holds one table and one local capture date, under a hive-style partition (oldest unexported date drains first):
 
 ```text
-metrics/YYYYMMDDTHHMMSSZ-<batch_id>.ndjson.gz
+metrics/samples/date=YYYY-MM-DD/YYYYMMDDTHHMMSSZ-<batch_id>.ndjson.gz
+metrics/events/date=YYYY-MM-DD/YYYYMMDDTHHMMSSZ-<batch_id>.ndjson.gz
 ```
 
-Each gzip-compressed NDJSON object carries flat sample and event records (Parquet is the planned next serialization per decision 0003):
+Serialization is gzipped NDJSON, not Parquet: the Pi is 32-bit (armv7l) and pyarrow ships no wheels for it (decision 0003, amended). DuckDB reads `.ndjson.gz` from S3 natively, and the layout already matches Parquet conventions, so a future 64-bit upgrade swaps only the serializer. Rows per object are uniform:
 
 ```json
 {"record_type":"sample","site_id":"cabin","record_id":"<sample sha256>","local_row_id":123,"captured_at":"2026-06-05T12:00:00+00:00","source":"battery","metric":"soc","value":91.0,"text":null,"unit":"%","tags":{}}
@@ -70,6 +71,26 @@ Each gzip-compressed NDJSON object carries flat sample and event records (Parque
 ```
 
 `local_row_id` is diagnostic only. Consumers should use the content-hash `record_id` as the idempotency key.
+
+## Ad Hoc Queries with DuckDB
+
+DuckDB has no armv7l wheel either, so analysis runs on the Mac (or any 64-bit box), spanning the bucket and a synced copy of the local store in one session:
+
+```sql
+INSTALL httpfs; LOAD httpfs;
+CREATE SECRET b2 (TYPE s3, KEY_ID '...', SECRET '...',
+                  ENDPOINT 's3.<region>.backblazeb2.com');
+
+-- archive in the bucket (partition-pruned by the date= path)
+SELECT captured_at, value
+FROM read_json('s3://<bucket>/metrics/samples/date=2026-06-*/*.ndjson.gz')
+WHERE source = 'battery' AND metric = 'soc';
+
+-- live store (scp blueberry.local:/srv/telemetry/data/metrics.sqlite first)
+ATTACH 'metrics.sqlite' (TYPE sqlite);
+SELECT captured_at, value FROM metrics.samples
+WHERE source = 'battery' AND metric = 'soc';
+```
 
 ## Cloudflare R2 Configuration
 
@@ -117,7 +138,7 @@ offgrid-r2-export
 
 ## Daily Timer
 
-`config/systemd/offgrid-metrics-export.timer` is currently disabled while the exporter is redesigned for the compact local schema. The intended schedule remains daily at 12:05 local time.
+`config/systemd/offgrid-metrics-export.timer` runs daily at 12:05 local time (re-enabled 2026-06-12; deploy.sh keeps it enabled).
 
 This timer is intended to line up with a future noon Starlink wake window when solar availability is usually good.
 

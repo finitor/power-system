@@ -199,11 +199,22 @@ changes. Phase 1 performs the cutover.
    charger-taper, inverter-events), and `web-display-access.log` are deleted
    outright — operator accepted a no-logging transition window rather than
    dual-running.
-6. R2 export → date-partitioned Parquet; verify DuckDB queries local + R2
-   uniformly. Re-enable `offgrid-metrics-export.timer`. **Partial
-   2026-06-12:** the exporter reads `metric_samples`/`events` (rows stamped
-   via their export columns; the `export_batch_records` ledger is retired),
-   still as gzipped NDJSON; Parquet is the remaining serialization change.
+6. ~~R2 export → date-partitioned Parquet~~ **Done 2026-06-12, amended:
+   date-partitioned gzipped NDJSON instead of Parquet.** The Pi runs
+   32-bit Raspbian (armv7l) and pyarrow ships no armv7l wheels (piwheels
+   included; verified by a failed `--only-binary` install), so Parquet
+   cannot be written on this host. The goal — one query engine spanning
+   local + object storage — survives the substitution: DuckDB reads
+   `.ndjson.gz` from S3 natively, and the exporter writes the
+   Parquet-style *layout* (per-table objects under hive partitions,
+   `metrics/{samples,events}/date=YYYY-MM-DD/<ts>-<batch>.ndjson.gz`,
+   uniform schema per object, oldest date drains first), so a future
+   64-bit OS upgrade swaps only the serializer. At this data volume
+   (a few MB/day gzipped) the columnar efficiency loss is irrelevant.
+   `offgrid-metrics-export.timer` re-enabled (daily 12:05). DuckDB
+   itself also has no armv7l wheel — ad hoc analysis runs on the Mac
+   (or any 64-bit box), querying B2 plus a synced copy of the SQLite
+   store.
 7. ~~Backfill optional~~ **Resolved 2026-06-12 — discarded.** Operator chose
    simplicity over history: the legacy tables were dropped from the live DB
    (14.4 MB → 416 KB after VACUUM) and the retired CSVs/access log deleted
