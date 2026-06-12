@@ -58,6 +58,12 @@ controller pin 3 (RS485-B) to adapter A/D+, controller pin 6 (RS485-A) to
 adapter B/D-, and pin 8 to adapter GND. Pin 1 is +5V and must remain
 disconnected.
 
+Bench wiring note with the KL0823B 2-wire adapter: when using a
+straight-through CAT-6 patch cable into a breakout, the working connection is
+controller pin 6 to adapter A and controller pin 3 to adapter B. The labels are
+therefore opposite the SH-U11H test wiring above; if telemetry is absent after
+moving the cable from a Magnum tap, swap A/B before changing anything else.
+
 **Port 9** (RTS/BMS/CAN multiplexed): correction to the accessories-section
 reading — the BMS-Link module is only needed for *other* manufacturers'
 BMS protocols. **Pylon-protocol batteries connect directly to port 9 with

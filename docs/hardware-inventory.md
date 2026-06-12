@@ -48,4 +48,4 @@ Live communication paths as configured today:
 | Eco-Worthy Cubix bank | CAN 500 kbit/s | `can0` via SH-C31G, listen-only | Pylon-protocol frames; BMS may go silent at idle and recover under load |
 | MagnaSine MS4448PAE | OEM remote | ME-RC50 | Monitor and control from the OEM remote until further notice; supervisor Magnum telemetry is disabled |
 | Victron BlueSolar MPPT 150/85 | VE.Can RJ45 | TBD on arrival | Telemetry path to be planned if selected |
-| EPEver TEP10425 | RS485 Modbus RJ45 | `/dev/epever-rs485` (temporarily udev symlink to KL0823B CH340 for 2-wire control burn-in) | COM RJ45 pin 3 -> adapter A/D+, pin 6 -> adapter B/D-; pin 8 GND is documented but bench comms also worked with A/B only |
+| EPEver TEP10425 | RS485 Modbus RJ45 | `/dev/epever-rs485` (temporarily udev symlink to KL0823B CH340 for 2-wire control burn-in) | KL0823B via straight-through CAT-6 breakout: COM RJ45 pin 6 -> adapter A, pin 3 -> adapter B; pin 8 GND is documented but bench comms also worked with A/B only |
