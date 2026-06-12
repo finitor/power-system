@@ -59,6 +59,8 @@ Example:
 
 `GET /api/v1/snapshot` returns the current display model. This is the primary API for terminal, web, Kindle, and future mobile live-status clients.
 
+Each charge controller's `charge_stage` is a `{ canonical, vendor }` pair: `canonical` is the normalized industry-standard stage shared across controllers (see [charge-controller.md](../subsystems/charge-controller.md#charge-stage-vocabulary)), and `vendor` is the controller's native word, present only when it differs from the canonical (otherwise `null`). Clients display the canonical and, if `vendor` is set, the native word in parens — no vendor-specific knowledge required.
+
 Example shape:
 
 ```json
@@ -99,7 +101,7 @@ Example shape:
       "pv_current_a": 7.4,
       "daily_energy_kwh": 3.8,
       "daily_amp_hours_ah": 72,
-      "charge_stage": "BulkMppt",
+      "charge_stage": { "canonical": "Bulk", "vendor": "BulkMppt" },
       "state": "MPPT or regulating voltage"
     }
   ],
