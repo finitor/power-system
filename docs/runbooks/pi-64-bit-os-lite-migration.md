@@ -171,7 +171,7 @@ sudo systemctl edit getty@tty1
 ```ini
 [Service]
 ExecStart=
-ExecStart=-/sbin/agetty --autologin tvetter --noclear %I $TERM
+ExecStart=-/sbin/agetty --autologin <user> --noclear %I $TERM
 ```
 
 and have the login shell exec `~/.local/bin/open-offgrid-console` when running
