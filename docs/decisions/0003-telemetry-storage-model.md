@@ -194,5 +194,8 @@ changes. Phase 1 performs the cutover.
    2026-06-12:** the exporter reads `metric_samples`/`events` (rows stamped
    via their export columns; the `export_batch_records` ledger is retired),
    still as gzipped NDJSON; Parquet is the remaining serialization change.
-7. Backfill optional — flatten existing snapshot JSON into `metric_samples`
-   once if the history is worth keeping, else discard.
+7. ~~Backfill optional~~ **Resolved 2026-06-12 — discarded.** Operator chose
+   simplicity over history: the legacy tables were dropped from the live DB
+   (14.4 MB → 416 KB after VACUUM) and the retired CSVs/access log deleted
+   from the SSD, the SD shadow copy, and the repo-local `data/` dir. The
+   flat store's first samples (2026-06-12) are the start of history.
