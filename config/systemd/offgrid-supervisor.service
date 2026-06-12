@@ -23,7 +23,7 @@ ExecStartPre=+/bin/chown -R @OFFGRID_USER@:@OFFGRID_USER@ /srv/telemetry
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up
-ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --epever-device ${EPEVER_DEVICE} --web-display --web-port 8081 --weather --weather-cache-path /srv/telemetry/data/weather-cache.json --interval 5 --no-terminal-display --web-access-log-path /srv/telemetry/logs/web-display-access.log --load-sample-log-path /srv/telemetry/data/load-samples.csv --metrics-db-path /srv/telemetry/data/metrics.sqlite --metrics-snapshot-interval 60 --metrics-settings-interval 3600 --ambient-log-path /srv/telemetry/logs/ambient.csv
+ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --epever-device ${EPEVER_DEVICE} --web-display --web-port 8081 --weather --weather-cache-path /srv/telemetry/data/weather-cache.json --interval 5 --no-terminal-display --metrics-db-path /srv/telemetry/data/metrics.sqlite --metrics-snapshot-interval 60
 Restart=on-failure
 RestartSec=5
 

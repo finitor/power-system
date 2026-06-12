@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import csv
+from collections import deque
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from pathlib import Path
 from threading import Lock
+from typing import Callable
 
 from .classic import ClassicTelemetry
 from .canbus import PylonCanSnapshot
@@ -93,11 +93,11 @@ class LoadSample:
 class LoadTracker:
     def __init__(
         self,
-        midnight_soc_log_path: str | None = "data/load-soc-baselines.csv",
+        midnight_soc_provider: Callable[[date], int | None] | None = None,
         sample_buffer: "LoadSampleBuffer | None" = None,
     ) -> None:
-        self.midnight_soc_log_path = Path(midnight_soc_log_path) if midnight_soc_log_path else None
-        self._midnight_soc_by_day: dict[str, int] | None = None
+        self.midnight_soc_provider = midnight_soc_provider
+        self._midnight_soc_by_day: dict[str, int | None] = {}
         self.sample_buffer = sample_buffer
 
     def update(self, snapshot: SupervisorSnapshot) -> LoadSummary | None:
@@ -140,69 +140,47 @@ class LoadTracker:
 
         captured_at = snapshot.captured_at.astimezone()
         day = captured_at.date().isoformat()
-        midnight_soc = self._read_midnight_soc_by_day().get(day)
-        if midnight_soc is not None:
-            return midnight_soc
+        if day in self._midnight_soc_by_day:
+            return self._midnight_soc_by_day[day]
 
         if _seconds_since_midnight(captured_at) <= 300:
             midnight_soc = snapshot.battery.state_of_charge.soc_percent
-            self._write_midnight_soc(day, captured_at, midnight_soc)
+            self._midnight_soc_by_day[day] = midnight_soc
             return midnight_soc
-        return None
 
-    def _read_midnight_soc_by_day(self) -> dict[str, int]:
-        if self._midnight_soc_by_day is not None:
-            return self._midnight_soc_by_day
-
-        self._midnight_soc_by_day = {}
-        if self.midnight_soc_log_path is None or not self.midnight_soc_log_path.exists():
-            return self._midnight_soc_by_day
-
-        with self.midnight_soc_log_path.open("r", newline="", encoding="utf-8") as handle:
-            for row in csv.DictReader(handle):
-                try:
-                    self._midnight_soc_by_day[row["day"]] = int(row["soc_percent"])
-                except (KeyError, ValueError):
-                    continue
-        return self._midnight_soc_by_day
-
-    def _write_midnight_soc(self, day: str, captured_at: datetime, soc_percent: int) -> None:
-        if self.midnight_soc_log_path is None:
-            return
-
-        baselines = self._read_midnight_soc_by_day()
-        if day in baselines:
-            return
-
-        self.midnight_soc_log_path.parent.mkdir(parents=True, exist_ok=True)
-        needs_header = not self.midnight_soc_log_path.exists() or self.midnight_soc_log_path.stat().st_size == 0
-        with self.midnight_soc_log_path.open("a", newline="", encoding="utf-8") as handle:
-            writer = csv.writer(handle)
-            if needs_header:
-                writer.writerow(["day", "captured_at", "soc_percent"])
-            writer.writerow([day, captured_at.isoformat(), soc_percent])
-        baselines[day] = soc_percent
+        # The supervisor's metric store keeps the SOC history; ask it once
+        # per day (a miss means the supervisor was down over midnight, and
+        # the store cannot gain a midnight sample retroactively).
+        midnight_soc = None
+        if self.midnight_soc_provider is not None:
+            midnight_soc = self.midnight_soc_provider(captured_at.date())
+        self._midnight_soc_by_day[day] = midnight_soc
+        return midnight_soc
 
 
 class LoadSampleBuffer:
-    FIELDNAMES = ["captured_at", "current_a", "power_w", "soc_percent", "voltage_v"]
+    """In-memory rolling load samples for the rolling-average display.
+
+    The durable copy lives in the metric store (source 'load'); seed() from
+    there at startup restores the rolling window across restarts.
+    """
 
     def __init__(
         self,
-        path: str | None = "data/load-samples.csv",
         retention: timedelta = timedelta(hours=24),
-        prune_interval: timedelta = timedelta(minutes=5),
     ) -> None:
-        self.path = Path(path) if path else None
         self.retention = retention
-        self.prune_interval = prune_interval
-        self._last_prune_at: datetime | None = None
+        self._samples: deque[LoadSample] = deque()
         self._lock = Lock()
 
-    def append(self, snapshot: SupervisorSnapshot, summary: LoadSummary) -> None:
-        if self.path is None:
-            return
+    def seed(self, samples: list[LoadSample]) -> None:
+        with self._lock:
+            for sample in sorted(samples, key=lambda sample: sample.captured_at):
+                self._samples.append(sample)
+            if self._samples:
+                self._prune_locked(self._samples[-1].captured_at)
 
+    def append(self, snapshot: SupervisorSnapshot, summary: LoadSummary) -> None:
         sample = LoadSample(
             captured_at=snapshot.captured_at.astimezone(),
             current_a=summary.current_a,
@@ -211,24 +189,14 @@ class LoadSampleBuffer:
             voltage_v=load_voltage_v(snapshot),
         )
         with self._lock:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            needs_header = not self.path.exists() or self.path.stat().st_size == 0
-            with self.path.open("a", newline="", encoding="utf-8") as handle:
-                writer = csv.DictWriter(handle, fieldnames=self.FIELDNAMES)
-                if needs_header:
-                    writer.writeheader()
-                writer.writerow(self._sample_row(sample))
-            if self._should_prune(sample.captured_at):
-                self._prune_locked(sample.captured_at)
+            self._samples.append(sample)
+            self._prune_locked(sample.captured_at)
 
     def samples(self, now: datetime | None = None, window: timedelta | None = None) -> list[LoadSample]:
-        if self.path is None or not self.path.exists():
-            return []
-
         reference = (now or datetime.now().astimezone()).astimezone()
         cutoff = reference - (window if window is not None else self.retention)
         with self._lock:
-            return [sample for sample in self._read_samples_locked() if sample.captured_at >= cutoff]
+            return [sample for sample in self._samples if sample.captured_at >= cutoff]
 
     def rolling_average(self, now: datetime | None = None, window: timedelta = timedelta(hours=1)) -> tuple[float, float] | None:
         samples = self.samples(now=now, window=window)
@@ -238,66 +206,10 @@ class LoadSampleBuffer:
         average_w = sum(sample.power_w for sample in samples) / len(samples)
         return average_a, average_w
 
-    def prune(self, now: datetime | None = None) -> None:
-        if self.path is None:
-            return
-        reference = (now or datetime.now().astimezone()).astimezone()
-        with self._lock:
-            self._prune_locked(reference)
-
-    def _should_prune(self, captured_at: datetime) -> bool:
-        if self._last_prune_at is None:
-            return True
-        return captured_at - self._last_prune_at >= self.prune_interval
-
     def _prune_locked(self, now: datetime) -> None:
-        if self.path is None or not self.path.exists():
-            return
-
         cutoff = now - self.retention
-        samples = [sample for sample in self._read_samples_locked() if sample.captured_at >= cutoff]
-        with self.path.open("w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=self.FIELDNAMES)
-            writer.writeheader()
-            for sample in samples:
-                writer.writerow(self._sample_row(sample))
-        self._last_prune_at = now
-
-    def _read_samples_locked(self) -> list[LoadSample]:
-        if self.path is None or not self.path.exists():
-            return []
-
-        samples: list[LoadSample] = []
-        with self.path.open("r", newline="", encoding="utf-8") as handle:
-            for row in csv.DictReader(handle):
-                sample = self._sample_from_row(row)
-                if sample is not None:
-                    samples.append(sample)
-        return samples
-
-    def _sample_row(self, sample: LoadSample) -> dict[str, str]:
-        return {
-            "captured_at": sample.captured_at.isoformat(),
-            "current_a": f"{sample.current_a:.3f}",
-            "power_w": str(sample.power_w),
-            "soc_percent": "" if sample.soc_percent is None else str(sample.soc_percent),
-            "voltage_v": "" if sample.voltage_v is None else f"{sample.voltage_v:.3f}",
-        }
-
-    def _sample_from_row(self, row: dict[str, str]) -> LoadSample | None:
-        try:
-            captured_at = datetime.fromisoformat(row["captured_at"]).astimezone()
-            soc_text = row.get("soc_percent", "")
-            voltage_text = row.get("voltage_v", "")
-            return LoadSample(
-                captured_at=captured_at,
-                current_a=float(row["current_a"]),
-                power_w=int(row["power_w"]),
-                soc_percent=None if not soc_text else int(soc_text),
-                voltage_v=None if not voltage_text else float(voltage_text),
-            )
-        except (KeyError, TypeError, ValueError):
-            return None
+        while self._samples and self._samples[0].captured_at < cutoff:
+            self._samples.popleft()
 
 
 def estimate_load_current_a(snapshot: SupervisorSnapshot) -> float | None:

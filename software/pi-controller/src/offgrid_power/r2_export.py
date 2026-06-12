@@ -194,6 +194,9 @@ def build_export_batch(
 
 
 def mark_batch_exported(connection: sqlite3.Connection, batch: ExportBatch, uploaded_at: str) -> None:
+    by_table = {"metric_sample": [], "event": []}
+    for record_type, record_id in batch.records:
+        by_table[record_type].append(record_id)
     with connection:
         connection.execute(
             """
@@ -211,110 +214,94 @@ def mark_batch_exported(connection: sqlite3.Connection, batch: ExportBatch, uplo
             ),
         )
         connection.executemany(
-            """
-            INSERT OR IGNORE INTO export_batch_records (batch_id, record_type, record_id)
-            VALUES (?, ?, ?)
-            """,
-            [(batch.batch_id, record_type, record_id) for record_type, record_id in batch.records],
+            "UPDATE metric_samples SET exported_at = ?, export_batch_id = ? WHERE id = ?",
+            [(uploaded_at, batch.batch_id, record_id) for record_id in by_table["metric_sample"]],
+        )
+        connection.executemany(
+            "UPDATE events SET exported_at = ?, export_batch_id = ? WHERE id = ?",
+            [(uploaded_at, batch.batch_id, record_id) for record_id in by_table["event"]],
         )
 
 
 def _unexported_records(connection: sqlite3.Connection, limit: int) -> list[dict]:
-    snapshot_rows = connection.execute(
+    sample_rows = connection.execute(
         """
-        SELECT snapshots.id, snapshots.captured_at, snapshots.snapshot_json
-        FROM supervisor_snapshots snapshots
-        LEFT JOIN export_batch_records records
-          ON records.record_type = 'supervisor_snapshot'
-         AND records.record_id = snapshots.id
-        WHERE records.record_id IS NULL
-        ORDER BY snapshots.id
+        SELECT id, sample_id, captured_at, source, metric, value, text, unit, tags_json
+        FROM metric_samples
+        WHERE exported_at IS NULL
+        ORDER BY id
         LIMIT ?
         """,
         (limit,),
     ).fetchall()
     records = [
         {
-            "record_type": "supervisor_snapshot",
+            "record_type": "metric_sample",
             "id": row[0],
-            "captured_at": row[1],
-            "payload_json": row[2],
+            "sample_id": row[1],
+            "captured_at": row[2],
+            "source": row[3],
+            "metric": row[4],
+            "value": row[5],
+            "text": row[6],
+            "unit": row[7],
+            "tags_json": row[8],
         }
-        for row in snapshot_rows
+        for row in sample_rows
     ]
     remaining = limit - len(records)
     if remaining <= 0:
         return records
-    settings_rows = connection.execute(
+    event_rows = connection.execute(
         """
-        SELECT settings.id, settings.captured_at, settings.device_id, settings.reason, settings.settings_json
-        FROM device_settings_snapshots settings
-        LEFT JOIN export_batch_records records
-          ON records.record_type = 'device_settings'
-         AND records.record_id = settings.id
-        WHERE records.record_id IS NULL
-        ORDER BY settings.id
+        SELECT id, event_id, captured_at, source, event, detail_json
+        FROM events
+        WHERE exported_at IS NULL
+        ORDER BY id
         LIMIT ?
         """,
         (remaining,),
     ).fetchall()
     records.extend(
         {
-            "record_type": "device_settings",
+            "record_type": "event",
             "id": row[0],
-            "captured_at": row[1],
-            "device_id": row[2],
-            "reason": row[3],
-            "payload_json": row[4],
+            "event_id": row[1],
+            "captured_at": row[2],
+            "source": row[3],
+            "event": row[4],
+            "detail_json": row[5],
         }
-        for row in settings_rows
-    )
-    remaining = limit - len(records)
-    if remaining <= 0:
-        return records
-    weather_rows = connection.execute(
-        """
-        SELECT weather.id, weather.captured_at, weather.raw_json
-        FROM weather_snapshots weather
-        LEFT JOIN export_batch_records records
-          ON records.record_type = 'weather_snapshot'
-         AND records.record_id = weather.id
-        WHERE records.record_id IS NULL
-        ORDER BY weather.id
-        LIMIT ?
-        """,
-        (remaining,),
-    ).fetchall()
-    records.extend(
-        {
-            "record_type": "weather_snapshot",
-            "id": row[0],
-            "captured_at": row[1],
-            "payload_json": row[2],
-        }
-        for row in weather_rows
+        for row in event_rows
     )
     return records
 
 
 def _record_to_payload(record: dict, site_id: str) -> dict:
-    payload = {
-        "record_type": record["record_type"],
+    if record["record_type"] == "metric_sample":
+        return {
+            "record_type": "metric_sample",
+            "site_id": site_id,
+            "record_id": record["sample_id"],
+            "local_row_id": record["id"],
+            "captured_at": record["captured_at"],
+            "source": record["source"],
+            "metric": record["metric"],
+            "value": record["value"],
+            "text": record["text"],
+            "unit": record["unit"],
+            "tags": _parse_tags(record["tags_json"]),
+        }
+    return {
+        "record_type": "event",
         "site_id": site_id,
-        "record_id": f"{record['record_type']}:{record['id']}",
+        "record_id": record["event_id"],
         "local_row_id": record["id"],
         "captured_at": record["captured_at"],
+        "source": record["source"],
+        "event": record["event"],
+        "detail": _parse_json_object(record["detail_json"]),
     }
-    if record["record_type"] == "supervisor_snapshot":
-        payload["snapshot"] = _parse_json_object(record["payload_json"])
-        return payload
-    if record["record_type"] == "weather_snapshot":
-        payload["weather"] = _parse_json_object(record["payload_json"])
-        return payload
-    payload["device_id"] = record["device_id"]
-    payload["reason"] = record["reason"]
-    payload["settings"] = _parse_json_object(record["payload_json"])
-    return payload
 
 
 def _parse_json_object(value: str) -> dict:
@@ -325,22 +312,6 @@ def _parse_json_object(value: str) -> dict:
     if isinstance(parsed, dict):
         return parsed
     return {"raw": value}
-
-
-def _row_to_record(row: tuple, site_id: str) -> dict:
-    row_id, sample_id, captured_at, source, metric, value, text, unit, tags_json = row
-    return {
-        "site_id": site_id,
-        "sample_id": sample_id,
-        "local_row_id": row_id,
-        "captured_at": captured_at,
-        "source": source,
-        "metric": metric,
-        "value": value,
-        "text": text,
-        "unit": unit,
-        "tags": _parse_tags(tags_json),
-    }
 
 
 def _parse_tags(tags_json: str) -> dict[str, str]:

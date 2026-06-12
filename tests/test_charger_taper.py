@@ -18,7 +18,7 @@ from offgrid_power.canbus import (  # noqa: E402
     PylonStateOfCharge,
 )
 from offgrid_power.charger_taper import (  # noqa: E402
-    append_decision_log,
+    taper_decision_event,
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
     ChargerTelemetry,
@@ -156,41 +156,62 @@ class ChargerTaperTest(unittest.TestCase):
         )
 
 
-class DecisionLogTest(unittest.TestCase):
-    def test_appends_header_and_row(self) -> None:
+class DecisionEventTest(unittest.TestCase):
+    def test_builds_event_with_decision_context(self) -> None:
+        from datetime import datetime, timezone
+
         from offgrid_power.charger_taper import ChargerCurrentTaperDecision
 
-        log_path = Path(__file__).resolve().parents[1] / ".tmp-test-taper-log.csv"
-        log_path.unlink(missing_ok=True)
-        try:
-            decision = ChargerCurrentTaperDecision(20.0, "dynamic taper", should_write=True)
-            append_decision_log(
-                str(log_path),
-                dry_run=True,
-                charge_stage="Absorb",
-                battery_voltage_v=54.21,
-                current_limit_a=80.0,
-                decision=decision,
-                battery=None,
-            )
-            rows = log_path.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(rows[0].split(",")[0:3], ["captured_at", "mode", "charge_stage"])
-            self.assertIn("dry-run,Absorb,54.21,80.0,20.0,dynamic taper", rows[1])
-        finally:
-            log_path.unlink(missing_ok=True)
-
-    def test_empty_path_is_a_noop(self) -> None:
-        from offgrid_power.charger_taper import ChargerCurrentTaperDecision
-
-        append_decision_log(
-            "",
+        decision = ChargerCurrentTaperDecision(20.0, "dynamic taper", should_write=True)
+        event = taper_decision_event(
             dry_run=True,
-            charge_stage=None,
-            battery_voltage_v=None,
-            current_limit_a=None,
-            decision=ChargerCurrentTaperDecision(None, "x"),
+            target="classic",
+            charge_stage="Absorb",
+            battery_voltage_v=54.21,
+            current_limit_a=80.0,
+            decision=decision,
             battery=None,
+            captured_at=datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc),
         )
+
+        self.assertEqual(event.source, "charger_taper")
+        self.assertEqual(event.event, "taper_decision")
+        self.assertEqual(event.detail["mode"], "dry-run")
+        self.assertEqual(event.detail["target"], "classic")
+        self.assertEqual(event.detail["charge_stage"], "Absorb")
+        self.assertEqual(event.detail["battery_voltage_v"], 54.21)
+        self.assertEqual(event.detail["current_limit_a"], 80.0)
+        self.assertEqual(event.detail["target_current_a"], 20.0)
+        self.assertEqual(event.detail["reason"], "dynamic taper")
+        self.assertIsNone(event.detail["soc_percent"])
+
+    def test_includes_battery_cell_context_when_available(self) -> None:
+        from datetime import datetime, timezone
+
+        from offgrid_power.charger_taper import ChargerCurrentTaperDecision
+
+        battery = PylonCanSnapshot(
+            state_of_charge=PylonStateOfCharge(soc_percent=97, soh_percent=100),
+            extended_measurements=PylonExtendedMeasurements(
+                min_cell_voltage_v=3.40,
+                max_cell_voltage_v=3.52,
+            ),
+        )
+        event = taper_decision_event(
+            dry_run=False,
+            target="epever",
+            charge_stage="Absorb",
+            battery_voltage_v=54.21,
+            current_limit_a=30.0,
+            decision=ChargerCurrentTaperDecision(20.0, "dynamic taper", should_write=True),
+            battery=battery,
+            captured_at=datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(event.detail["mode"], "live")
+        self.assertEqual(event.detail["soc_percent"], 97)
+        self.assertEqual(event.detail["max_cell_v"], 3.52)
+        self.assertEqual(event.detail["cell_delta_mv"], 120)
 
 
 if __name__ == "__main__":

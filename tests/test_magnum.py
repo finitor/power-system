@@ -130,21 +130,22 @@ class InverterEventTrackerTest(unittest.TestCase):
         t = InverterEventTracker()
         t.observe(_magnum(True))
         event = t.observe(_magnum(False, fault="LOW_BAT", dc_volts=47.8))
-        self.assertEqual(event["event"], "lbco_cutout")
-        self.assertEqual(event["fault"], "LOW_BAT")
-        self.assertEqual(event["dc_volts"], 47.8)
+        self.assertEqual(event.source, "magnum")
+        self.assertEqual(event.event, "lbco_cutout")
+        self.assertEqual(event.detail["fault"], "LOW_BAT")
+        self.assertEqual(event.detail["dc_volts"], 47.8)
 
     def test_plain_off_transition_when_no_low_battery_fault(self) -> None:
         t = InverterEventTracker()
         t.observe(_magnum(True))
         event = t.observe(_magnum(False, fault="NONE"))
-        self.assertEqual(event["event"], "inverter_off")
+        self.assertEqual(event.event, "inverter_off")
 
     def test_on_transition_logged(self) -> None:
         t = InverterEventTracker()
         t.observe(_magnum(False, fault="LOW_BAT"))
         event = t.observe(_magnum(True))
-        self.assertEqual(event["event"], "inverter_on")
+        self.assertEqual(event.event, "inverter_on")
 
     def test_none_snapshot_is_ignored(self) -> None:
         t = InverterEventTracker()

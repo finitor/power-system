@@ -40,7 +40,6 @@ class AmbientConfig:
     kind: str = "ds18b20"
     gpio_pin: int = 4
     ds18b20_device_id: str = ""
-    log_path: str = ""
 
 
 @dataclass(frozen=True)
@@ -96,6 +95,5 @@ def load_config() -> SupervisorConfig:
             kind=os.getenv("AMBIENT_SENSOR_KIND", "ds18b20"),
             gpio_pin=env_int("AMBIENT_DHT22_GPIO", 4),
             ds18b20_device_id=os.getenv("AMBIENT_DS18B20_DEVICE_ID", ""),
-            log_path=os.getenv("AMBIENT_LOG_PATH", ""),
         ),
     )

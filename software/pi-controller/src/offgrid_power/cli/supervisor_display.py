@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import csv
 from datetime import datetime, timedelta
 import os
-from pathlib import Path
 import sys
 from threading import Thread
 import time
@@ -22,11 +20,11 @@ from offgrid_power.charger_taper import (
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
     ChargerTelemetry,
-    append_decision_log,
+    taper_decision_event,
 )
 from offgrid_power.classic import ClassicClient
 from offgrid_power.epever import EpeverClient
-from offgrid_power.magnum import MagnumClient
+from offgrid_power.magnum import InverterEventTracker, MagnumClient
 from offgrid_power.config import load_config
 from offgrid_power.load import LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
@@ -70,22 +68,6 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("WEATHER_CACHE_PATH", "/srv/telemetry/data/weather-cache.json"),
     )
     parser.add_argument(
-        "--web-access-log-path",
-        default="data/web-display-access.log",
-        help="Append HTTP display access logs here; use an empty string to log to stdout",
-    )
-    parser.add_argument(
-        "--load-sample-log-path",
-        default="data/load-samples.csv",
-        help="Append rolling load samples here; use an empty string to disable persistent samples",
-    )
-    parser.add_argument(
-        "--load-sample-retention-hours",
-        type=float,
-        default=24,
-        help="Keep this many hours of load samples in the rolling log",
-    )
-    parser.add_argument(
         "--metrics-db-path",
         default="data/metrics.sqlite",
         help="Append all supervisor metrics to this SQLite database; use an empty string to disable",
@@ -95,12 +77,6 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=60,
         help="Seconds between durable supervisor snapshot records",
-    )
-    parser.add_argument(
-        "--metrics-settings-interval",
-        type=float,
-        default=3600,
-        help="Seconds between unchanged device-settings heartbeat records",
     )
     parser.add_argument(
         "--no-clear",
@@ -130,11 +106,6 @@ def parse_args() -> argparse.Namespace:
         choices=["classic", "epever"],
         default=os.getenv("CHARGER_CURRENT_TAPER_TARGET", "classic"),
         help="Charge controller whose current limit is adjusted by the taper loop",
-    )
-    parser.add_argument(
-        "--charger-taper-log-path",
-        default=os.getenv("CHARGER_TAPER_LOG_PATH", ""),
-        help="Append actionable taper decisions (incl. dry-run) to this CSV",
     )
     parser.add_argument("--classic-current-taper", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--classic-current-taper-dry-run", action="store_true", help=argparse.SUPPRESS)
@@ -194,16 +165,6 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         default=not config.ambient.enabled,
         help="Disable ambient sensor reads",
-    )
-    parser.add_argument(
-        "--ambient-log-path",
-        default=config.ambient.log_path,
-        help="Append ambient readings to this CSV file",
-    )
-    parser.add_argument(
-        "--inverter-event-log-path",
-        default=os.getenv("INVERTER_EVENT_LOG_PATH", ""),
-        help="Append inverter on/off and LBCO cut-out events to this CSV",
     )
 
 
@@ -267,42 +228,23 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
     )
 
 
-def append_ambient_log(log_path: str, snapshot) -> None:
-    if not log_path or snapshot.ambient is None:
-        return
-
-    path = Path(log_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    needs_header = not path.exists() or path.stat().st_size == 0
-
-    with path.open("a", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        if needs_header:
-            writer.writerow(["captured_at_utc", "temperature_c", "humidity_percent"])
-        humidity = "" if snapshot.ambient.humidity_percent is None else f"{snapshot.ambient.humidity_percent:.2f}"
-        writer.writerow(
-            [
-                snapshot.ambient.captured_at.isoformat(),
-                f"{snapshot.ambient.temperature_c:.2f}",
-                humidity,
-            ]
-        )
-
-
 def main() -> int:
     args = parse_args()
     supervisor = build_supervisor(args)
     load_totals_tracker = LoadTotalsTracker(battery_capacity_ah=args.battery_capacity_ah)
-    load_sample_buffer = LoadSampleBuffer(
-        path=args.load_sample_log_path or None,
-        retention=timedelta(hours=args.load_sample_retention_hours),
-    )
-    load_summary_tracker = LoadTracker(sample_buffer=load_sample_buffer)
     metric_recorder = MetricRecorder(
         args.metrics_db_path or None,
         snapshot_interval_s=args.metrics_snapshot_interval,
-        settings_interval_s=args.metrics_settings_interval,
     )
+    # The buffer is in-memory; the metric store is the durable copy, so a
+    # restart re-seeds the rolling window from it (best-effort).
+    load_sample_buffer = LoadSampleBuffer()
+    load_sample_buffer.seed(metric_recorder.recent_load_samples(window=load_sample_buffer.retention))
+    load_summary_tracker = LoadTracker(
+        midnight_soc_provider=metric_recorder.midnight_soc_percent,
+        sample_buffer=load_sample_buffer,
+    )
+    inverter_event_tracker = InverterEventTracker()
     snapshot_cache = SnapshotCache()
     weather_service = build_weather_service(args)
     charger_current_taper_enabled = args.charger_current_taper or args.classic_current_taper
@@ -334,14 +276,14 @@ def main() -> int:
                 supervisor=supervisor,
                 snapshot=snapshot,
                 target=args.charger_current_taper_target,
-                log_path=args.charger_taper_log_path,
+                recorder=metric_recorder,
             )
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
             snapshot_cache.set(snapshot, load_summary)
             record_metrics(metric_recorder, snapshot, load_summary)
             record_weather_metrics(metric_recorder, weather_service)
-            append_ambient_log(args.ambient_log_path, snapshot)
+            record_inverter_event(metric_recorder, inverter_event_tracker, snapshot)
             next_read = time.monotonic() + args.interval
             if args.no_terminal_display:
                 if args.once:
@@ -391,7 +333,6 @@ def start_web_display(
             "snapshot_provider": snapshot_cache.get,
             "load_summary_provider": snapshot_cache.get_load_summary,
             "weather_provider": None if weather_service is None else weather_service.get,
-            "access_log_path": args.web_access_log_path or None,
         },
         daemon=True,
     )
@@ -431,6 +372,19 @@ def record_weather_metrics(metric_recorder: MetricRecorder, weather_service: Wea
         print(f"Weather record failed: {exc}", file=sys.stderr)
 
 
+def record_inverter_event(
+    metric_recorder: MetricRecorder,
+    tracker: InverterEventTracker,
+    snapshot,
+) -> None:
+    try:
+        event = tracker.observe(snapshot.magnum, snapshot.battery)
+        if event is not None:
+            metric_recorder.record_event(event)
+    except Exception as exc:  # noqa: BLE001 - event logging should not affect live supervision.
+        print(f"Inverter event record failed: {exc}", file=sys.stderr)
+
+
 def apply_charger_current_taper(
     charger_current_taper: ChargerCurrentTaperController | None,
     *,
@@ -439,7 +393,7 @@ def apply_charger_current_taper(
     supervisor: Supervisor,
     snapshot,
     target: str = "classic",
-    log_path: str = "",
+    recorder: MetricRecorder | None = None,
 ) -> None:
     if charger_current_taper is None:
         return
@@ -454,15 +408,18 @@ def apply_charger_current_taper(
         if decision.target_current_a is None:
             return
         current = settings.current_limit_a if settings is not None else None
-        if decision.should_write:
-            append_decision_log(
-                log_path,
-                dry_run=dry_run or not enabled,
-                charge_stage=charger.charge_stage if charger is not None else None,
-                battery_voltage_v=charger.voltage_v if charger is not None else None,
-                current_limit_a=current,
-                decision=decision,
-                battery=snapshot.battery,
+        if decision.should_write and recorder is not None:
+            recorder.record_event(
+                taper_decision_event(
+                    dry_run=dry_run or not enabled,
+                    target=target,
+                    charge_stage=charger.charge_stage if charger is not None else None,
+                    battery_voltage_v=charger.voltage_v if charger is not None else None,
+                    current_limit_a=current,
+                    decision=decision,
+                    battery=snapshot.battery,
+                    captured_at=snapshot.captured_at,
+                )
             )
         if dry_run:
             if decision.should_write:

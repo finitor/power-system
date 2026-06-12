@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-import csv
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
 
 from magnum_pi.bus import MagnumBus
 from magnum_pi.models.inverter import InverterPacket
 from magnum_pi.models.remote import RemotePacket
+
+from .metrics import TelemetryEvent
 
 log = logging.getLogger(__name__)
 
@@ -201,15 +201,6 @@ class MagnumClient:
 # rather than a manual toggle or AC transfer.
 _LOW_BATTERY_FAULTS = {"LOW_BAT", "DEAD_BAT"}
 
-INVERTER_EVENT_FIELDS = [
-    "captured_at",
-    "event",
-    "fault",
-    "dc_volts",
-    "battery_soc_percent",
-    "battery_voltage_v",
-]
-
 
 class InverterEventTracker:
     """Detects inverter on->off transitions and classifies cut-outs.
@@ -223,7 +214,7 @@ class InverterEventTracker:
     def __init__(self) -> None:
         self._was_inverting: bool | None = None
 
-    def observe(self, magnum: MagnumSnapshot | None, battery=None) -> dict | None:
+    def observe(self, magnum: MagnumSnapshot | None, battery=None) -> TelemetryEvent | None:
         if magnum is None:
             return None
         inverting = magnum.inverter_on
@@ -244,34 +235,14 @@ class InverterEventTracker:
                 soc = battery.state_of_charge.soc_percent
             if getattr(battery, "measurements", None) is not None:
                 voltage = battery.measurements.voltage_v
-        return {
-            "captured_at": magnum.captured_at.isoformat(),
-            "event": event,
-            "fault": magnum.fault_name,
-            "dc_volts": magnum.dc_volts,
-            "battery_soc_percent": soc,
-            "battery_voltage_v": voltage,
-        }
-
-
-def append_inverter_event_log(path: str, event: dict) -> None:
-    """Append one inverter on/off event to a durable CSV."""
-    if not path or not event:
-        return
-    log_path = Path(path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    needs_header = not log_path.exists() or log_path.stat().st_size == 0
-    with log_path.open("a", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=INVERTER_EVENT_FIELDS)
-        if needs_header:
-            writer.writeheader()
-        writer.writerow(
-            {
-                "captured_at": event.get("captured_at"),
-                "event": event.get("event"),
-                "fault": event.get("fault"),
-                "dc_volts": "" if event.get("dc_volts") is None else f"{event['dc_volts']:.1f}",
-                "battery_soc_percent": "" if event.get("battery_soc_percent") is None else event["battery_soc_percent"],
-                "battery_voltage_v": "" if event.get("battery_voltage_v") is None else f"{event['battery_voltage_v']:.2f}",
-            }
+        return TelemetryEvent(
+            captured_at=magnum.captured_at,
+            source="magnum",
+            event=event,
+            detail={
+                "fault": magnum.fault_name,
+                "dc_volts": magnum.dc_volts,
+                "battery_soc_percent": soc,
+                "battery_voltage_v": voltage,
+            },
         )

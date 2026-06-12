@@ -24,8 +24,9 @@ echo "watchdog: $(journalctl -u offgrid-can-watchdog -n 1 --no-pager --output ca
 curl -s --max-time 5 http://127.0.0.1:8081/api/v1/snapshot \
     | python3 "$(dirname "$0")/diag_api.py" || echo "api: unreachable"
 
-echo "taper: $(tail -1 /srv/telemetry/logs/charger-taper.csv 2>/dev/null || echo no decisions logged)"
+DB=/srv/telemetry/data/metrics.sqlite
+echo "store: $(sqlite3 "${DB}" "SELECT 'samples=' || COUNT(*) || ' newest=' || COALESCE(MAX(captured_at), 'none') FROM metric_samples" 2>/dev/null || echo unreadable)"
 
-echo "inverter-events: $(tail -1 /srv/telemetry/logs/inverter-events.csv 2>/dev/null || echo none logged)"
+echo "events: $(sqlite3 "${DB}" "SELECT COALESCE(MAX(captured_at || ' ' || source || '/' || event), 'none logged') FROM events" 2>/dev/null || echo unreadable)"
 
 echo "kindle-port: $(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -A 'Kindle/3.0' http://127.0.0.1:8080/)"

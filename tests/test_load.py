@@ -107,122 +107,111 @@ class LoadEstimateTest(unittest.TestCase):
 
 
 class LoadTrackerTest(unittest.TestCase):
-    def test_load_tracker_reads_midnight_soc_log(self) -> None:
-        path = REPO_ROOT / ".tmp-test-load-baselines.csv"
-        path.write_text(
-            "day,captured_at,soc_percent\n"
-            "2026-05-31,2026-05-31T00:00:02-04:00,90\n",
-            encoding="utf-8",
-        )
-        try:
-            snapshot = _load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc))
-
-            summary = LoadTracker(str(path)).update(snapshot)
-
-            self.assertIsNotNone(summary)
-            self.assertIsNone(summary.average_today_text)
-            self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
-            self.assertIsNone(summary.remaining_text)
-        finally:
-            path.unlink(missing_ok=True)
-
-    def test_load_tracker_uses_three_hour_rolling_average_for_autonomy(self) -> None:
-        baseline_path = REPO_ROOT / ".tmp-test-load-baselines.csv"
-        sample_path = REPO_ROOT / ".tmp-test-load-samples.csv"
-        baseline_path.write_text(
-            "day,captured_at,soc_percent\n"
-            "2026-05-31,2026-05-31T00:00:02-04:00,90\n",
-            encoding="utf-8",
-        )
-        buffer = LoadSampleBuffer(str(sample_path), prune_interval=timedelta(seconds=0))
-        try:
-            older_snapshot = _load_snapshot(datetime(2026, 5, 31, 13, 30, tzinfo=timezone.utc))
-            recent_snapshot = _load_snapshot(datetime(2026, 5, 31, 14, 30, tzinfo=timezone.utc))
-            now_snapshot = _load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc))
-
-            buffer.append(older_snapshot, LoadSummary(current_a=2.0, power_w=100))
-            buffer.append(recent_snapshot, LoadSummary(current_a=4.0, power_w=200))
-            summary = LoadTracker(str(baseline_path), sample_buffer=buffer).update(now_snapshot)
-
-            self.assertIsNotNone(summary)
-            self.assertEqual(summary.average_today_text, "3.3A  171W")
-            self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
-            self.assertEqual(summary.remaining_text, "55.2h")
-        finally:
-            baseline_path.unlink(missing_ok=True)
-            sample_path.unlink(missing_ok=True)
-
-    def test_load_tracker_appends_samples_to_rolling_buffer(self) -> None:
-        path = REPO_ROOT / ".tmp-test-load-samples.csv"
-        try:
-            snapshot = _load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc))
-            buffer = LoadSampleBuffer(str(path))
-
-            summary = LoadTracker(sample_buffer=buffer).update(snapshot)
-
-            self.assertIsNotNone(summary)
-            rows = path.read_text(encoding="utf-8").splitlines()
-            self.assertEqual(rows[0], "captured_at,current_a,power_w,soc_percent,voltage_v")
-            self.assertEqual(len(rows), 2)
-            self.assertIn(",4.000,212,92,53.040", rows[1])
-        finally:
-            path.unlink(missing_ok=True)
-
-    def test_load_tracker_reports_unavailable_when_no_midnight_soc_log_exists(self) -> None:
-        path = REPO_ROOT / ".tmp-test-missing-load-baselines.csv"
+    def test_load_tracker_uses_midnight_soc_provider(self) -> None:
         snapshot = _load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc))
 
-        summary = LoadTracker(str(path)).update(snapshot)
+        summary = LoadTracker(midnight_soc_provider=lambda day: 90).update(snapshot)
+
+        self.assertIsNotNone(summary)
+        self.assertIsNone(summary.average_today_text)
+        self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
+        self.assertIsNone(summary.remaining_text)
+
+    def test_load_tracker_asks_provider_once_per_day(self) -> None:
+        calls: list = []
+
+        def provider(day):
+            calls.append(day)
+            return None
+
+        tracker = LoadTracker(midnight_soc_provider=provider)
+        tracker.update(_load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc)))
+        tracker.update(_load_snapshot(datetime(2026, 5, 31, 16, 5, tzinfo=timezone.utc)))
+        tracker.update(_load_snapshot(datetime(2026, 6, 1, 16, 0, tzinfo=timezone.utc)))
+
+        self.assertEqual([day.isoformat() for day in calls], ["2026-05-31", "2026-06-01"])
+
+    def test_load_tracker_captures_midnight_soc_live_near_midnight(self) -> None:
+        # 04:00 UTC is 00:00 Eastern; the live capture wins, no provider needed.
+        tracker = LoadTracker()
+        tracker.update(_load_snapshot(datetime(2026, 5, 31, 4, 1, tzinfo=timezone.utc), current_soc=90))
+
+        summary = tracker.update(_load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc)))
+
+        self.assertIsNotNone(summary)
+        self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
+
+    def test_load_tracker_uses_three_hour_rolling_average_for_autonomy(self) -> None:
+        buffer = LoadSampleBuffer()
+        older_snapshot = _load_snapshot(datetime(2026, 5, 31, 13, 30, tzinfo=timezone.utc))
+        recent_snapshot = _load_snapshot(datetime(2026, 5, 31, 14, 30, tzinfo=timezone.utc))
+        now_snapshot = _load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc))
+
+        buffer.append(older_snapshot, LoadSummary(current_a=2.0, power_w=100))
+        buffer.append(recent_snapshot, LoadSummary(current_a=4.0, power_w=200))
+        summary = LoadTracker(midnight_soc_provider=lambda day: 90, sample_buffer=buffer).update(now_snapshot)
+
+        self.assertIsNotNone(summary)
+        self.assertEqual(summary.average_today_text, "3.3A  171W")
+        self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
+        self.assertEqual(summary.remaining_text, "55.2h")
+
+    def test_load_tracker_appends_samples_to_rolling_buffer(self) -> None:
+        snapshot = _load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc))
+        buffer = LoadSampleBuffer()
+
+        summary = LoadTracker(sample_buffer=buffer).update(snapshot)
+
+        self.assertIsNotNone(summary)
+        samples = buffer.samples(now=snapshot.captured_at)
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0].current_a, 4.0)
+        self.assertEqual(samples[0].power_w, 212)
+        self.assertEqual(samples[0].soc_percent, 92)
+        self.assertAlmostEqual(samples[0].voltage_v, 53.04)
+
+    def test_load_tracker_reports_unavailable_without_midnight_soc(self) -> None:
+        snapshot = _load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc))
+
+        summary = LoadTracker().update(snapshot)
 
         self.assertIsNotNone(summary)
         self.assertIsNone(summary.average_today_text)
         self.assertEqual(summary.today_text, MIDNIGHT_SOC_UNAVAILABLE)
         self.assertIsNone(summary.remaining_text)
-        self.assertFalse(path.exists())
 
 
 class LoadSampleBufferTest(unittest.TestCase):
     def test_load_sample_buffer_prunes_to_retention_and_reads_rolling_average(self) -> None:
-        path = REPO_ROOT / ".tmp-test-load-samples.csv"
-        buffer = LoadSampleBuffer(
-            str(path),
-            retention=timedelta(hours=24),
-            prune_interval=timedelta(seconds=0),
+        buffer = LoadSampleBuffer(retention=timedelta(hours=24))
+        old_snapshot = _load_snapshot(datetime(2026, 5, 30, 11, 59, tzinfo=timezone.utc))
+        recent_snapshot = _load_snapshot(datetime(2026, 5, 31, 11, 59, tzinfo=timezone.utc))
+        now_snapshot = _load_snapshot(datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc))
+
+        buffer.append(old_snapshot, LoadSummary(current_a=2.0, power_w=100))
+        buffer.append(recent_snapshot, LoadSummary(current_a=4.0, power_w=200))
+        buffer.append(now_snapshot, LoadSummary(current_a=6.0, power_w=300))
+
+        samples = buffer.samples(now=now_snapshot.captured_at)
+        self.assertEqual([sample.current_a for sample in samples], [4.0, 6.0])
+        self.assertEqual(buffer.rolling_average(now=now_snapshot.captured_at, window=timedelta(minutes=2)), (5.0, 250.0))
+
+    def test_load_sample_buffer_seed_restores_window_from_store_samples(self) -> None:
+        from offgrid_power.load import LoadSample
+
+        buffer = LoadSampleBuffer(retention=timedelta(hours=24))
+        now = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+        buffer.seed(
+            [
+                LoadSample(captured_at=now - timedelta(minutes=1), current_a=4.0, power_w=200),
+                LoadSample(captured_at=now - timedelta(hours=30), current_a=9.0, power_w=450),
+                LoadSample(captured_at=now - timedelta(minutes=2), current_a=2.0, power_w=100),
+            ]
         )
-        try:
-            old_snapshot = _load_snapshot(datetime(2026, 5, 30, 11, 59, tzinfo=timezone.utc))
-            recent_snapshot = _load_snapshot(datetime(2026, 5, 31, 11, 59, tzinfo=timezone.utc))
-            now_snapshot = _load_snapshot(datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc))
+        buffer.append(_load_snapshot(now), LoadSummary(current_a=6.0, power_w=300))
 
-            buffer.append(old_snapshot, LoadSummary(current_a=2.0, power_w=100))
-            buffer.append(recent_snapshot, LoadSummary(current_a=4.0, power_w=200))
-            buffer.append(now_snapshot, LoadSummary(current_a=6.0, power_w=300))
-
-            samples = buffer.samples(now=now_snapshot.captured_at)
-            self.assertEqual([sample.current_a for sample in samples], [4.0, 6.0])
-            self.assertEqual(buffer.rolling_average(now=now_snapshot.captured_at, window=timedelta(minutes=2)), (5.0, 250.0))
-            self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 3)
-        finally:
-            path.unlink(missing_ok=True)
-
-    def test_load_sample_buffer_ignores_rows_with_missing_numeric_fields(self) -> None:
-        path = REPO_ROOT / ".tmp-test-load-samples.csv"
-        path.write_text(
-            "captured_at,current_a,power_w,soc_percent,voltage_v\n"
-            "2026-05-31T11:59:00+00:00,4.000,212,92\n"
-            "2026-05-31T12:00:00+00:00,6.000,318,92,53.000\n"
-            "2026-05-31T12:01:00+00:00,,318,92,53.000\n",
-            encoding="utf-8",
-        )
-        buffer = LoadSampleBuffer(str(path))
-        try:
-            samples = buffer.samples(now=datetime(2026, 5, 31, 12, 1, tzinfo=timezone.utc))
-
-            self.assertEqual([sample.current_a for sample in samples], [4.0, 6.0])
-            self.assertEqual(samples[0].voltage_v, None)
-            self.assertEqual(samples[1].voltage_v, 53.0)
-        finally:
-            path.unlink(missing_ok=True)
+        samples = buffer.samples(now=now)
+        self.assertEqual([sample.current_a for sample in samples], [2.0, 4.0, 6.0])
 
 
 class LoadTotalsTrackerTest(unittest.TestCase):

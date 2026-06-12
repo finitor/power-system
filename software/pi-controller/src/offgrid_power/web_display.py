@@ -8,7 +8,6 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from pathlib import Path
 from threading import Lock
 from typing import Callable
 from urllib.parse import urlparse
@@ -832,17 +831,14 @@ def run_display_server(
     snapshot_provider: Callable[[], SupervisorSnapshot] | None = None,
     load_summary_provider: Callable[[], LoadSummary | None] | None = None,
     weather_provider: Callable[[], WeatherReport | None] | None = None,
-    access_log_path: str | None = None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
-    logger = AccessLogger(access_log_path)
     load_tracker = LoadTracker(sample_buffer=LoadSampleBuffer())
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "OffGridPowerDisplay/0.1"
 
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
-            status = HTTPStatus.INTERNAL_SERVER_ERROR
             try:
                 snapshot = provider()
             except Exception as exc:  # noqa: BLE001 - HTTP display should show readiness errors.
@@ -863,12 +859,6 @@ def run_display_server(
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
-                    logger.log(
-                        self.client_address[0],
-                        self.path,
-                        self.headers.get("User-Agent", ""),
-                        HTTPStatus.SERVICE_UNAVAILABLE,
-                    )
                     return
                 body = render_snapshot_unavailable(exc).encode("utf-8")
                 self.send_response(HTTPStatus.SERVICE_UNAVAILABLE.value)
@@ -877,12 +867,6 @@ def run_display_server(
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-                logger.log(
-                    self.client_address[0],
-                    self.path,
-                    self.headers.get("User-Agent", ""),
-                    HTTPStatus.SERVICE_UNAVAILABLE,
-                )
                 return
             if urlparse(self.path).path == "/healthz":
                 load_summary = None
@@ -900,37 +884,18 @@ def run_display_server(
                 load_summary=load_summary,
                 weather_report=weather_report,
             )
-            status = response.status
             self.send_response(response.status.value)
             self.send_header("Content-Type", response.content_type)
             self.send_header("Cache-Control", "no-store")
             self.send_header("Content-Length", str(len(response.body)))
             self.end_headers()
             self.wfile.write(response.body)
-            logger.log(self.client_address[0], self.path, self.headers.get("User-Agent", ""), status)
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib name
             return
 
     with ThreadingHTTPServer((host, port), Handler) as server:
         server.serve_forever()
-
-
-class AccessLogger:
-    def __init__(self, path: str | None) -> None:
-        self.path = Path(path) if path else None
-
-    def log(self, client: str, path: str, user_agent: str, status: HTTPStatus) -> None:
-        line = (
-            f"{datetime.now().astimezone().isoformat(timespec='seconds')} "
-            f"{client} {status.value} {path!r} {user_agent!r}\n"
-        )
-        if self.path is None:
-            print(line, end="", flush=True)
-            return
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(line)
 
 
 def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:

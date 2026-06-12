@@ -169,17 +169,30 @@ changes. Phase 1 performs the cutover.
    (`/srv/telemetry/{data,logs}`) onto the SSD; mount it. ext4 `noatime`,
    SQLite WAL + `synchronous=NORMAL`. (The `srv-telemetry.mount` generated
    unit follows the fstab change.)
-2. **Best-effort recorder:** wrap all store writes so any failure (corrupt,
-   unwritable, unmounted) is caught, the DB is recreated on open failure,
-   and the supervisor loop is never affected.
-3. Wire `snapshot_metric_samples()` into the live recorder; add the
-   `events` table (hash-keyed like `metric_samples`); migrate
-   taper/inverter/load writers off CSV.
+2. ~~Best-effort recorder~~ **Done 2026-06-12:** all store writes catch every
+   failure; a store that fails to open/write is moved aside
+   (`*.corrupt-<ts>`) and recreated; reads degrade to "no data".
+3. ~~Wire the flat path~~ **Done 2026-06-12:** `snapshot_metric_samples()` is
+   the live write path (now also covering EPEver and Magnum sources, which
+   the JSON-blob era missed); hash-keyed `events` added; taper decisions and
+   inverter on/off events write to `events` (the inverter tracker was
+   previously built but never wired); the load rolling buffer is in-memory,
+   seeded back from the store at startup; the midnight-SOC baseline is read
+   from the store.
 4. Dual-store with merge-on-reattach: SSD primary, SD fallback when
-   unmounted, idempotent SD→SSD union on return.
-5. Drop `web-display-access.log`; drop the `supervisor_snapshots` writer
-   once the flat store is confirmed.
+   unmounted, idempotent SD→SSD union on return. **Partial 2026-06-12:**
+   `merge_metric_stores()` (idempotent union) exists; the mountpoint-based
+   write-target switch is not yet wired.
+5. ~~Drop legacy writers~~ **Done 2026-06-12, ahead of order:** the
+   `supervisor_snapshots`/`device_settings_snapshots`/`weather_snapshots`
+   writers, all telemetry CSVs (load-samples, load-soc-baselines, ambient,
+   charger-taper, inverter-events), and `web-display-access.log` are deleted
+   outright — operator accepted a no-logging transition window rather than
+   dual-running.
 6. R2 export → date-partitioned Parquet; verify DuckDB queries local + R2
-   uniformly. Re-enable `offgrid-metrics-export.timer`.
+   uniformly. Re-enable `offgrid-metrics-export.timer`. **Partial
+   2026-06-12:** the exporter reads `metric_samples`/`events` (rows stamped
+   via their export columns; the `export_batch_records` ledger is retired),
+   still as gzipped NDJSON; Parquet is the remaining serialization change.
 7. Backfill optional — flatten existing snapshot JSON into `metric_samples`
    once if the history is worth keeping, else discard.
