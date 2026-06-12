@@ -41,9 +41,14 @@ the whole chain is designed around it:
    `open-offgrid-console` script loses its attachment, loops, and re-attaches
    within ~2 seconds.
 
-Gotcha: `BindsTo` propagates **stops** but not manual **starts**. After
-`systemctl stop offgrid-supervisor` followed by `start`, the console stays
-dead — use `restart`, or start both units.
+`BindsTo` propagates **stops** but not **starts**, which used to leave the
+console dead after a `stop`/`start` cycle (e.g. stopping the supervisor to
+free the EPEver adapter for a direct write). The supervisor unit now carries
+`Upholds=offgrid-console.service` (systemd 249+), so systemd revives the
+console automatically once the supervisor is active again — a plain
+`systemctl start offgrid-supervisor` is enough; no need for `restart` or to
+start both units. (Fixed 2026-06-11 after the console dropped during the
+EPEver charge-voltage sync.)
 
 ## Failure Modes Found 2026-06-09
 
