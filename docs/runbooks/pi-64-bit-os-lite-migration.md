@@ -174,9 +174,13 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin <user> --noclear %I $TERM
 ```
 
-and have the login shell exec `~/.local/bin/open-offgrid-console` when running
-on tty1. Same console, ~zero additional RAM. This answers the former open
-question about whether the rebuilt image needs a desktop: no.
+and have the login shell exec `~/.local/bin/offgrid-tty-console` when running
+on tty1. That script composes the screen: a left pane that re-attaches to the
+service-owned display session (via `open-offgrid-console`), and a right pane
+with a ready shell that survives service restarts and deploys, since it
+belongs to the login's own tmux session. Same console, ~zero additional RAM.
+This answers the former open question about whether the rebuilt image needs a
+desktop: no.
 
 **Validated 2026-06-12 on the current 32-bit image as a migration dry run:**
 `systemctl set-default multi-user.target` plus this guard appended to
@@ -187,8 +191,8 @@ from reading `.profile`):
 # Off-grid wall display: the tty1 autologin session becomes the console
 # (attach loop re-attaches to the offgrid-console tmux session forever).
 # Other ttys (Alt+F2...) stay normal shells.
-if [ "$(tty)" = "/dev/tty1" ] && [ -z "${DISPLAY:-}" ] && [ -x "$HOME/.local/bin/open-offgrid-console" ]; then
-    exec "$HOME/.local/bin/open-offgrid-console"
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "${DISPLAY:-}" ] && [ -x "$HOME/.local/bin/offgrid-tty-console" ]; then
+    exec "$HOME/.local/bin/offgrid-tty-console"
 fi
 ```
 

@@ -81,6 +81,7 @@ sudo install -m 644 config/systemd/offgrid-metrics-export.timer /etc/systemd/sys
 sudo install -m 644 config/nginx/offgrid-supervisor.conf /etc/nginx/sites-available/
 sudo install -m 644 config/udev/90-offgrid-usb.rules /etc/udev/rules.d/
 install -m 755 config/desktop/open-offgrid-console "${HOME}/.local/bin/open-offgrid-console"
+install -m 755 config/desktop/offgrid-tty-console "${HOME}/.local/bin/offgrid-tty-console"
 render config/desktop/offgrid-console.desktop > "${HOME}/.config/autostart/offgrid-console.desktop"
 sudo systemctl daemon-reload
 sudo systemctl enable --now --quiet offgrid-can-watchdog.timer

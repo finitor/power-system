@@ -45,6 +45,8 @@ copy_if_exists /etc/ssh/sshd_config.d/10-local.conf etc/ssh/sshd_config.d/10-loc
 copy_if_exists /etc/apt/apt.conf.d/20auto-upgrades etc/apt/apt.conf.d/20auto-upgrades
 copy_if_exists /etc/apt/apt.conf.d/52unattended-upgrades-local etc/apt/apt.conf.d/52unattended-upgrades-local
 copy_if_exists "${HOME}/.local/bin/open-offgrid-console" home/offgrid-user/.local/bin/open-offgrid-console
+copy_if_exists "${HOME}/.local/bin/offgrid-tty-console" home/offgrid-user/.local/bin/offgrid-tty-console
+copy_if_exists "${HOME}/.profile" home/offgrid-user/.profile
 copy_if_exists "${HOME}/.config/autostart/offgrid-console.desktop" home/offgrid-user/.config/autostart/offgrid-console.desktop
 copy_if_exists "${HOME}/.ssh" home/offgrid-user/.ssh
 copy_if_exists /srv/telemetry srv/telemetry

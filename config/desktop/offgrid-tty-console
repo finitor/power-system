@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+# Composed wall console for the bare tty: left pane nest-attaches to the
+# service-owned offgrid-console tmux session (the same re-attach loop the
+# desktop window used), right pane is a plain shell ready at the keyboard.
+#
+# The outer session belongs to the login, not the service, so the shell
+# pane and anything running in it survive supervisor/console restarts and
+# deploys — the left pane just re-attaches when the service session comes
+# back. Detaching the outer session (C-b d) re-attaches in 2 seconds.
+
+SESSION="${OFFGRID_TTY_SESSION:-offgrid-tty}"
+# The display renderer caps itself at 120 columns (terminal_display.py);
+# one extra column for the pane border, the rest goes to the shell.
+DISPLAY_COLS="${OFFGRID_TTY_DISPLAY_COLS:-121}"
+
+if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
+  # Size the detached session to this tty up front: pane geometry is laid
+  # out before the first client attaches. TMUX= so the nested attach
+  # inside the pane is allowed.
+  tmux new-session -d -s "${SESSION}" -n console \
+    -x "$(tput cols)" -y "$(tput lines)" \
+    "TMUX= exec ${HOME}/.local/bin/open-offgrid-console"
+  # The inner session keeps its status line; a second one is clutter.
+  tmux set-option -t "${SESSION}" status off
+  tmux split-window -h -t "${SESSION}:console.0"
+  tmux resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}"
+  # Land on the shell so the keyboard is immediately useful.
+  tmux select-pane -t "${SESSION}:console.1"
+fi
+
+while true; do
+  if tmux has-session -t "${SESSION}" 2>/dev/null; then
+    tmux attach -t "${SESSION}"
+  fi
+  sleep 2
+done
