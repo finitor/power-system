@@ -25,8 +25,10 @@ curl -s --max-time 5 http://127.0.0.1:8081/api/v1/snapshot \
     | python3 "$(dirname "$0")/diag_api.py" || echo "api: unreachable"
 
 DB=/srv/telemetry/data/metrics.sqlite
-echo "store: $(sqlite3 "${DB}" "SELECT 'samples=' || COUNT(*) || ' newest=' || COALESCE(MAX(captured_at), 'none') FROM samples" 2>/dev/null || echo unreadable)"
+# The store is owned by the service account; a plain WAL read as the
+# operator would fail on the -shm/-wal sidecars, so go through sudo.
+echo "store: $(sudo -n sqlite3 -readonly "${DB}" "SELECT 'samples=' || COUNT(*) || ' newest=' || COALESCE(MAX(captured_at), 'none') FROM samples" 2>/dev/null || echo unreadable)"
 
-echo "events: $(sqlite3 "${DB}" "SELECT COALESCE(MAX(captured_at || ' ' || source || '/' || event), 'none logged') FROM events" 2>/dev/null || echo unreadable)"
+echo "events: $(sudo -n sqlite3 -readonly "${DB}" "SELECT COALESCE(MAX(captured_at || ' ' || source || '/' || event), 'none logged') FROM events" 2>/dev/null || echo unreadable)"
 
 echo "kindle-port: $(curl -s --max-time 5 -o /dev/null -w '%{http_code}' -A 'Kindle/3.0' http://127.0.0.1:8080/)"
