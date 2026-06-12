@@ -175,9 +175,30 @@ ExecStart=-/sbin/agetty --autologin tvetter --noclear %I $TERM
 ```
 
 and have the login shell exec `~/.local/bin/open-offgrid-console` when running
-on tty1 (e.g. a guard in `~/.bash_profile`). Same console, ~zero additional
-RAM. This answers the former open question about whether the rebuilt image
-needs a desktop: no.
+on tty1. Same console, ~zero additional RAM. This answers the former open
+question about whether the rebuilt image needs a desktop: no.
+
+**Validated 2026-06-12 on the current 32-bit image as a migration dry run:**
+`systemctl set-default multi-user.target` plus this guard appended to
+`~/.profile` (no `.bash_profile` exists, and creating one would stop bash
+from reading `.profile`):
+
+```sh
+# Off-grid wall display: the tty1 autologin session becomes the console
+# (attach loop re-attaches to the offgrid-console tmux session forever).
+# Other ttys (Alt+F2...) stay normal shells.
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "${DISPLAY:-}" ] && [ -x "$HOME/.local/bin/open-offgrid-console" ]; then
+    exec "$HOME/.local/bin/open-offgrid-console"
+fi
+```
+
+After reboot: tty1 carries the attach loop with the tmux client on the
+physical screen, all services healthy, and memory used dropped from ~300 MB
+(desktop) to ~208 MB — confirming the headroom argument above with a measured
+number. If the framebuffer console font is too small on the panel, tune it
+with `sudo dpkg-reconfigure console-setup` (e.g. Terminus 16x32). Rollback is
+`sudo systemctl set-default graphical.target` plus removing the `.profile`
+guard.
 
 ## Post-Migration Follow-Ups
 
