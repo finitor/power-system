@@ -5,34 +5,37 @@ set -uo pipefail
 # service-owned offgrid-console tmux session (the same re-attach loop the
 # desktop window used), right pane is a plain shell ready at the keyboard.
 #
-# The outer session belongs to the login, not the service, so the shell
-# pane and anything running in it survive supervisor/console restarts and
-# deploys — the left pane just re-attaches when the service session comes
-# back. Detaching the outer session (C-b d) re-attaches in 2 seconds.
+# The outer session runs on its OWN tmux server (-L): the default-socket
+# server is spawned by offgrid-console.service, so it sits in that
+# service's cgroup and systemd kills it — including every session on it —
+# on each service restart and deploy. On a dedicated socket the shell
+# pane belongs to the tty login instead and survives all of that; the
+# left pane just re-attaches when the service session comes back.
 
-SESSION="${OFFGRID_TTY_SESSION:-offgrid-tty}"
+SOCKET="${OFFGRID_TTY_SOCKET:-offgrid-tty}"
+SESSION="${OFFGRID_TTY_SESSION:-wall}"
 # The display renderer caps itself at 120 columns (terminal_display.py);
 # one extra column for the pane border, the rest goes to the shell.
 DISPLAY_COLS="${OFFGRID_TTY_DISPLAY_COLS:-121}"
 
-if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
+ensure_session() {
+  tmux -L "${SOCKET}" has-session -t "${SESSION}" 2>/dev/null && return 0
   # Size the detached session to this tty up front: pane geometry is laid
   # out before the first client attaches. TMUX= so the nested attach
   # inside the pane is allowed.
-  tmux new-session -d -s "${SESSION}" -n console \
+  tmux -L "${SOCKET}" new-session -d -s "${SESSION}" -n console \
     -x "$(tput cols)" -y "$(tput lines)" \
     "TMUX= exec ${HOME}/.local/bin/open-offgrid-console"
   # The inner session keeps its status line; a second one is clutter.
-  tmux set-option -t "${SESSION}" status off
-  tmux split-window -h -t "${SESSION}:console.0"
-  tmux resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}"
+  tmux -L "${SOCKET}" set-option -t "${SESSION}" status off
+  tmux -L "${SOCKET}" split-window -h -t "${SESSION}:console.0"
+  tmux -L "${SOCKET}" resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}"
   # Land on the shell so the keyboard is immediately useful.
-  tmux select-pane -t "${SESSION}:console.1"
-fi
+  tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1"
+}
 
 while true; do
-  if tmux has-session -t "${SESSION}" 2>/dev/null; then
-    tmux attach -t "${SESSION}"
-  fi
+  ensure_session
+  tmux -L "${SOCKET}" attach -t "${SESSION}"
   sleep 2
 done
