@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import hashlib
 import json
+import os
 from pathlib import Path
 import sqlite3
 import sys
@@ -74,9 +75,23 @@ class MetricRecorder:
         self,
         path: str | None = "data/metrics.sqlite",
         snapshot_interval_s: float = 60,
+        mountpoint: str | None = None,
+        fallback_path: str | None = None,
     ) -> None:
+        """Best-effort recorder with an optional fallback store.
+
+        `mountpoint` guards against the shadowed-directory trap: if the
+        primary store lives on a removable mount, writes while it is
+        unmounted would silently land in the directory shadowed beneath it
+        and become invisible on remount. When set, the primary is used only
+        while `mountpoint` is actually mounted; otherwise (or when a primary
+        write fails) writes go to `fallback_path`, and the fallback is
+        merged back and removed after the next successful primary write.
+        """
         self.path = Path(path) if path else None
-        self._initialized = False
+        self.mountpoint = mountpoint
+        self.fallback_path = Path(fallback_path) if fallback_path else None
+        self._initialized_paths: set[Path] = set()
         self.snapshot_interval = timedelta(seconds=snapshot_interval_s)
         self._last_snapshot_recorded_at: datetime | None = None
         self._last_weather_recorded_at: datetime | None = None
@@ -114,7 +129,8 @@ class MetricRecorder:
         window: timedelta = timedelta(hours=24),
     ) -> list[LoadSample]:
         """Reconstruct recent load samples to seed the in-memory buffer."""
-        if self.path is None or not self.path.exists():
+        store = self._active_path()
+        if store is None or not store.exists():
             return []
         reference = (now or datetime.now().astimezone()).astimezone()
         cutoff = (reference - window).isoformat()
@@ -153,7 +169,8 @@ class MetricRecorder:
 
     def midnight_soc_percent(self, day: date) -> int | None:
         """First battery SOC recorded within 5 minutes of local midnight."""
-        if self.path is None or not self.path.exists():
+        store = self._active_path()
+        if store is None or not store.exists():
             return None
 
         def query(connection: sqlite3.Connection) -> int | None:
@@ -183,42 +200,88 @@ class MetricRecorder:
             return True
         return captured_at - self._last_snapshot_recorded_at >= self.snapshot_interval
 
-    def _write(self, operation: Callable[[sqlite3.Connection], None]) -> bool:
-        try:
-            self._write_once(operation)
+    def _primary_mounted(self) -> bool:
+        if self.mountpoint is None:
             return True
+        return os.path.ismount(self.mountpoint)
+
+    def _active_path(self) -> Path | None:
+        """The store reads should come from right now."""
+        if self._primary_mounted():
+            return self.path
+        return self.fallback_path or self.path
+
+    def _write(self, operation: Callable[[sqlite3.Connection], None]) -> bool:
+        if self._primary_mounted():
+            if self._try_store(self.path, operation):
+                self._merge_fallback_if_present()
+                return True
+        if self.fallback_path is None:
+            return False
+        return self._try_store(self.fallback_path, operation)
+
+    def _try_store(self, path: Path, operation: Callable[[sqlite3.Connection], None]) -> bool:
+        try:
+            self._write_once(path, operation)
+            return True
+        except sqlite3.OperationalError as exc:
+            # I/O errors and open failures (e.g. a yanked USB device) are
+            # not corruption; recreating would not help, falling back might.
+            print(f"Telemetry store write failed ({path}): {exc}", file=sys.stderr)
+            return False
         except sqlite3.DatabaseError as exc:
-            self._discard_store(exc)
+            self._discard_store(path, exc)
         except Exception as exc:  # noqa: BLE001 - logging must never disrupt supervision.
-            print(f"Telemetry store write failed: {exc}", file=sys.stderr)
+            print(f"Telemetry store write failed ({path}): {exc}", file=sys.stderr)
             return False
         try:
-            self._write_once(operation)
+            self._write_once(path, operation)
             return True
         except Exception as exc:  # noqa: BLE001 - logging must never disrupt supervision.
-            print(f"Telemetry store write failed after recreate: {exc}", file=sys.stderr)
+            print(f"Telemetry store write failed after recreate ({path}): {exc}", file=sys.stderr)
             return False
 
-    def _write_once(self, operation: Callable[[sqlite3.Connection], None]) -> None:
+    def _merge_fallback_if_present(self) -> None:
+        """After a successful primary write, fold a fallback gap back in.
+
+        The union is idempotent (content-hash ids), so a failure here just
+        leaves the fallback in place to retry on the next tick.
+        """
+        if self.fallback_path is None or not self.fallback_path.exists():
+            return
         assert self.path is not None
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=60)
+        try:
+            merged_samples, merged_events = merge_metric_stores(self.fallback_path, self.path)
+            self._initialized_paths.discard(self.fallback_path)
+            for suffix in ("", "-wal", "-shm"):
+                Path(f"{self.fallback_path}{suffix}").unlink(missing_ok=True)
+            print(
+                f"Telemetry fallback store merged back: +{merged_samples} samples, +{merged_events} events",
+                file=sys.stderr,
+            )
+        except Exception as exc:  # noqa: BLE001 - merge failures degrade logging only.
+            print(f"Telemetry fallback merge failed (will retry): {exc}", file=sys.stderr)
+
+    def _write_once(self, path: Path, operation: Callable[[sqlite3.Connection], None]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        connection = sqlite3.connect(path, timeout=60)
         try:
             connection.execute("PRAGMA busy_timeout = 60000")
             connection.execute("PRAGMA journal_mode = WAL")
             connection.execute("PRAGMA synchronous = NORMAL")
-            if not self._initialized:
+            if path not in self._initialized_paths:
                 initialize_metrics_db(connection)
-                self._initialized = True
+                self._initialized_paths.add(path)
             with connection:
                 operation(connection)
         finally:
             connection.close()
 
     def _read(self, query: Callable[[sqlite3.Connection], object], default):
-        assert self.path is not None
+        store = self._active_path()
+        assert store is not None
         try:
-            connection = sqlite3.connect(self.path, timeout=60)
+            connection = sqlite3.connect(store, timeout=60)
             try:
                 connection.execute("PRAGMA busy_timeout = 60000")
                 return query(connection)
@@ -227,17 +290,16 @@ class MetricRecorder:
         except Exception:  # noqa: BLE001 - reads degrade to "no data".
             return default
 
-    def _discard_store(self, cause: Exception) -> None:
-        """Move a store that fails to open/write aside so a fresh one can be created."""
-        assert self.path is not None
-        self._initialized = False
+    def _discard_store(self, path: Path, cause: Exception) -> None:
+        """Move a corrupt store aside so a fresh one can be created."""
+        self._initialized_paths.discard(path)
         stamp = datetime.now().astimezone().strftime("%Y%m%dT%H%M%S")
         print(
-            f"Telemetry store unusable ({cause}); recreating {self.path}",
+            f"Telemetry store unusable ({cause}); recreating {path}",
             file=sys.stderr,
         )
         for suffix in ("", "-wal", "-shm"):
-            sidecar = Path(f"{self.path}{suffix}")
+            sidecar = Path(f"{path}{suffix}")
             if not sidecar.exists():
                 continue
             try:

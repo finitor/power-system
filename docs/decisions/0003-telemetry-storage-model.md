@@ -182,10 +182,17 @@ changes. Phase 1 performs the cutover.
    previously built but never wired); the load rolling buffer is in-memory,
    seeded back from the store at startup; the midnight-SOC baseline is read
    from the store.
-4. Dual-store with merge-on-reattach: SSD primary, SD fallback when
-   unmounted, idempotent SD→SSD union on return. **Partial 2026-06-12:**
-   `merge_metric_stores()` (idempotent union) exists; the mountpoint-based
-   write-target switch is not yet wired.
+4. ~~Dual-store with merge-on-reattach~~ **Done 2026-06-12:** the recorder
+   takes `mountpoint=/srv/telemetry` and
+   `fallback_path=/var/lib/offgrid/metrics-fallback.sqlite` (SD). Writes use
+   the primary only while the mountpoint is actually mounted (guarding the
+   shadowed-directory trap) and also fall back when a primary write fails —
+   a yanked USB device raises `OperationalError`, which falls back rather
+   than triggering the corrupt-store discard (that is reserved for
+   corruption-shaped `DatabaseError`s). After the next successful primary
+   write, the fallback is unioned back (content-hash `INSERT OR IGNORE`)
+   and deleted; merge failures just retry next tick. Reads follow the
+   active store.
 5. ~~Drop legacy writers~~ **Done 2026-06-12, ahead of order:** the
    `supervisor_snapshots`/`device_settings_snapshots`/`weather_snapshots`
    writers, all telemetry CSVs (load-samples, load-soc-baselines, ambient,

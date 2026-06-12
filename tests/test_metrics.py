@@ -291,6 +291,69 @@ class MetricRecorderTest(unittest.TestCase):
 
         self.assertIsNone(recorder.midnight_soc_percent(date(2026, 5, 31)))
 
+    def test_writes_to_fallback_while_primary_unmounted(self) -> None:
+        fallback = REPO_ROOT / ".tmp-test-metrics-fallback.sqlite"
+        self.addCleanup(lambda: [Path(f"{fallback}{s}").unlink(missing_ok=True) for s in ("", "-wal", "-shm")])
+        # REPO_ROOT is a real directory but not a mountpoint, so the
+        # primary is treated as absent and writes must land in the fallback.
+        recorder = MetricRecorder(
+            str(self.path),
+            snapshot_interval_s=60,
+            mountpoint=str(REPO_ROOT),
+            fallback_path=str(fallback),
+        )
+        first = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+
+        recorder.record_snapshot(full_snapshot(first), LoadSummary(current_a=4.0, power_w=212))
+
+        self.assertFalse(self.path.exists())
+        with sqlite3.connect(fallback) as connection:
+            count = connection.execute("SELECT COUNT(*) FROM samples").fetchone()[0]
+        self.assertGreater(count, 0)
+        # Reads come from the fallback while the primary is unmounted.
+        seeded = recorder.recent_load_samples(now=first + timedelta(minutes=1), window=timedelta(hours=1))
+        self.assertEqual([sample.current_a for sample in seeded], [4.0])
+
+    def test_merges_and_removes_fallback_when_primary_returns(self) -> None:
+        fallback = REPO_ROOT / ".tmp-test-metrics-fallback.sqlite"
+        self.addCleanup(lambda: [Path(f"{fallback}{s}").unlink(missing_ok=True) for s in ("", "-wal", "-shm")])
+        recorder = MetricRecorder(
+            str(self.path),
+            snapshot_interval_s=60,
+            mountpoint=str(REPO_ROOT),
+            fallback_path=str(fallback),
+        )
+        first = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+        recorder.record_snapshot(full_snapshot(first))
+        recorder.record_event(TelemetryEvent(first, "magnum", "inverter_off", {"fault": "NONE"}))
+
+        recorder.mountpoint = None  # simulate the SSD remounting
+        recorder.record_snapshot(full_snapshot(first + timedelta(minutes=2)))
+
+        self.assertFalse(fallback.exists())
+        with sqlite3.connect(self.path) as connection:
+            ticks = connection.execute(
+                "SELECT COUNT(DISTINCT captured_at) FROM samples WHERE source = 'supervisor'"
+            ).fetchone()[0]
+            events = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        self.assertEqual(ticks, 2)  # the gap tick was merged in
+        self.assertEqual(events, 1)
+
+    def test_falls_back_when_primary_write_fails(self) -> None:
+        fallback = REPO_ROOT / ".tmp-test-metrics-fallback.sqlite"
+        self.addCleanup(lambda: [Path(f"{fallback}{s}").unlink(missing_ok=True) for s in ("", "-wal", "-shm")])
+        recorder = MetricRecorder(
+            "/dev/null/nope/metrics.sqlite",
+            snapshot_interval_s=60,
+            fallback_path=str(fallback),
+        )
+
+        recorder.record_snapshot(full_snapshot())
+
+        with sqlite3.connect(fallback) as connection:
+            count = connection.execute("SELECT COUNT(*) FROM samples").fetchone()[0]
+        self.assertGreater(count, 0)
+
     def test_merge_metric_stores_is_idempotent_union(self) -> None:
         other_path = REPO_ROOT / ".tmp-test-metrics-other.sqlite"
         try:

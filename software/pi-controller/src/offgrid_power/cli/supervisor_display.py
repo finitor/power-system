@@ -73,6 +73,16 @@ def parse_args() -> argparse.Namespace:
         help="Append all supervisor metrics to this SQLite database; use an empty string to disable",
     )
     parser.add_argument(
+        "--metrics-db-mountpoint",
+        default="",
+        help="Use the metrics DB only while this mountpoint is mounted (guards a removable store); empty disables the check",
+    )
+    parser.add_argument(
+        "--metrics-fallback-db-path",
+        default="",
+        help="Record here while the primary store is unmounted/unwritable; merged back and removed on recovery",
+    )
+    parser.add_argument(
         "--metrics-snapshot-interval",
         type=float,
         default=60,
@@ -235,6 +245,8 @@ def main() -> int:
     metric_recorder = MetricRecorder(
         args.metrics_db_path or None,
         snapshot_interval_s=args.metrics_snapshot_interval,
+        mountpoint=args.metrics_db_mountpoint or None,
+        fallback_path=args.metrics_fallback_db_path or None,
     )
     # The buffer is in-memory; the metric store is the durable copy, so a
     # restart re-seeds the rolling window from it (best-effort).
