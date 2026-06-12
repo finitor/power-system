@@ -32,7 +32,7 @@ pv1-string-fuses,protection,PV string protection,TBD,15 A DC PV fuse/breaker 300
 pv1-combiner,protection,Outdoor PV combiner,TBD,3-string combiner,1,needed,sized to final string fusing,combiner box,Array 1 string combining,,Must accept selected string fuses and conductor sizes
 heater,temperature-control,Ceramic heater,TBD,48 V 200 W,1,needed,48 V / 200 W,switched 48 V DC,Winter battery preheat,,Use with breaker/manual disconnect plus NC thermal switch and one-shot thermal fuse
 thermostat,temperature-control,Thermostat controller,TBD,dual relay heat/cool,1,needed,12 V control preferred,relay outputs,Owns heat/ventilation setpoints; Pi stays supervisory,,
-heater-ssr,temperature-control,DC solid-state relay,Sensata/Crydom,EL100D10-12 candidate,1,needed,3-100 VDC 10 A out / 10-14 VDC in,12 V control,Heater switching with fail-safe off,,
+heater-ssr,temperature-control,DC solid-state relay,TBD,MRD-060D10,1,on-hand,60 VDC 10 A class output / control input TBD,12 V control,Heater switching with fail-safe off,,On hand; validate datasheet, input current, heat sinking, and 48 V LiFePO4 voltage margin before final install
 heater-breaker,temperature-control,Heater branch breaker,MidNite Solar,MNEPV10 or similar,1,needed,10 A 100-150 VDC,DC breaker,Heater branch protection and service disconnect,,
 thermal-cutoff,temperature-control,Resettable thermal cutoff,TBD,NC bimetal switch 60 C,1,needed,60 C,thermal switch in SSR control path,Heater over-temperature backstop,,Mount on heater spreader plate
 thermal-fuse,temperature-control,One-shot thermal fuse,TBD,72-84 C cutoff,1,needed,72-84 C,thermal fuse,Final heater safety backstop,,

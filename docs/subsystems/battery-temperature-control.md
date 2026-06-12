@@ -225,6 +225,7 @@ Candidate DC SSR/MOSFET switches:
 | Sensata/Crydom EL100D20-12 | 20 A, 3-100 VDC | 10-14 VDC | More current headroom for future modest DC loads; still use heatsinking/derating |
 | Sensata/Crydom GN 84134860 | 15 A, 100 VDC | 3.5-32 VDC | Good headroom for 48 V heater loads |
 | Sensata/Crydom GN 84134850 | 10 A, 200 VDC | 3.5-32 VDC | More voltage headroom |
+| MRD-060D10 | 10 A, 60 VDC class | TBD | On hand; useful for bench tests, but validate datasheet, input current, heatsinking, and voltage margin before final installation |
 | Generic SSR-10DD / SSR-25DD | 10-25 A, often 5-60 VDC | 3-32 VDC | Bench-only unless source is trusted; many listings exaggerate ratings |
 
 Avoid:
