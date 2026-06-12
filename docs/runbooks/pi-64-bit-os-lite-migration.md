@@ -53,7 +53,21 @@ Reasons:
   safest preparation is to make the restore path explicit before wiping the
   card.
 - The Pi is a Raspberry Pi 3 Model B v1.2 with 1 GB RAM, so 64-bit compatibility
-  is useful but memory headroom remains tight.
+  is useful but memory headroom needs care.
+
+### Memory headroom: resolved by choosing Lite
+
+Measured on the live 32-bit system (2026-06-12): of ~330 MB in use, the
+desktop stack (`labwc`, `wf-panel-pi`, `pcmanfm`, the xdg portals,
+`lxterminal`) accounts for roughly 150+ MB, while the console itself is just
+tmux plus the Python `api_terminal_display` renderer — there is no browser in
+the chain. Dropping the desktop on Lite more than offsets the ~25-30%
+per-process overhead of 64-bit userland, so the rebuilt system should sit
+*below* current memory usage. Headless 64-bit on 1 GB is the widely-reported
+fine configuration; the "64-bit is painful on 1 GB" reports are almost
+entirely desktop-plus-browser workloads, which this migration eliminates.
+Remaining watch items: `pyarrow` import is ~100 MB in the export oneshot, and
+any on-Pi DuckDB use should set `memory_limit`.
 
 ## Preserve Before Reimage
 
@@ -66,7 +80,7 @@ Capture these from the running Pi before changing the SD card:
 | systemd rendered units | `/etc/systemd/system/offgrid-*.service`, `/etc/systemd/system/offgrid-*.timer` | Mostly reproducible from repo, but useful for diffing |
 | udev rules | `/etc/udev/rules.d/90-offgrid-usb.rules` | Stable USB names and autosuspend policy |
 | nginx site | `/etc/nginx/sites-available/offgrid-supervisor.conf` | Kindle-safe proxy path |
-| Desktop console config | `~/.local/bin/open-offgrid-console`, `~/.config/autostart/offgrid-console.desktop` | Only relevant if the rebuilt image includes desktop packages later |
+| Desktop console config | `~/.local/bin/open-offgrid-console`, `~/.config/autostart/offgrid-console.desktop` | The console is terminal-only (tmux attach), so on Lite it runs on a bare tty — see "Local console without a desktop" below; the autostart `.desktop` file becomes obsolete |
 | Telemetry data | `/srv/telemetry`, `/var/lib/offgrid` | Preserve SQLite metrics, weather cache, and fallback store |
 | SSH identity and access | `~/.ssh`, `/etc/ssh/sshd_config*` | Preserve access and GitHub deploy auth if used |
 | Network config | NetworkManager/systemd-networkd/wpa config, hostname | Keep `blueberry.local` stable if consumers depend on it |
@@ -142,6 +156,44 @@ Functional checks:
 - Daily metrics export timer is enabled.
 - CAN watchdog timer is enabled.
 
+## Local Console Without a Desktop
+
+The HDMI console does not need desktop packages: the display chain is purely
+terminal-based (`offgrid-console.service` owns a tmux session;
+`open-offgrid-console` just re-attaches to it in a loop). On Lite, run the
+attach loop on the physical screen with getty autologin instead of a desktop
+autostart entry:
+
+```sh
+sudo systemctl edit getty@tty1
+```
+
+```ini
+[Service]
+ExecStart=
+ExecStart=-/sbin/agetty --autologin tvetter --noclear %I $TERM
+```
+
+and have the login shell exec `~/.local/bin/open-offgrid-console` when running
+on tty1 (e.g. a guard in `~/.bash_profile`). Same console, ~zero additional
+RAM. This answers the former open question about whether the rebuilt image
+needs a desktop: no.
+
+## Post-Migration Follow-Ups
+
+Once `uname -m` reports `aarch64` and telemetry is healthy:
+
+- **Parquet serializer swap** (the one ADR 0003 amendment forced by armv7l):
+  add `pyarrow` to the Pi venv and change the serialization in
+  `build_export_batch` (`offgrid_power/r2_export.py`). The object layout is
+  already Parquet-shaped (`metrics/{samples,events}/date=YYYY-MM-DD/`), so
+  only the body format and object suffix change. Optionally convert the
+  existing NDJSON archive objects with a one-shot workstation job.
+- **DuckDB on-Pi becomes possible** (aarch64 wheel exists) for local rollups
+  or serving history charts without the workstation; set `memory_limit` on a
+  1 GB host.
+- Codex CLI experiment, per the secondary goal.
+
 ## Rollback
 
 The simplest rollback is physical:
@@ -173,7 +225,9 @@ survived at least one deploy, one reboot, and a representative telemetry run.
 - Should `/srv/telemetry` stay on the SD card for the migration, or move to
   external storage during the rebuild? Current state is external SSD mounted at
   `/srv/telemetry`.
-- Does the rebuilt Lite image need a local desktop console immediately, or can
-  that wait until after telemetry is healthy?
+- Resolved 2026-06-12: the rebuilt Lite image does not need a desktop for the
+  local console — the chain is terminal-only and runs on a tty (see "Local
+  Console Without a Desktop"). This also resolves the memory-headroom concern
+  in the rebuild's favor (see "Memory headroom: resolved by choosing Lite").
 - Does local Codex CLI need authenticated interactive use on the Pi, or only
   occasional CLI runs over SSH?
