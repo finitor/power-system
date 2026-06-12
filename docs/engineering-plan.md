@@ -96,6 +96,39 @@ sequence and the deploy.sh self-update lesson.
   export is intentionally manual-only right now (re-enable as part of
   decision 0003 once the export format is settled).
 
+## 10. Combined charge-current coordination for parallel controllers — DEFERRED
+
+When the Classic (array 0) and EPEver (array 1) both charge the bank at once,
+the per-controller **current limit** stops being physically meaningful. Each
+limit only caps its own source, so two 80 A caps allow up to 160 A into the
+bank; the number that matters for protection (vs the Cubix's ~200 A CCL) and
+for the LiFePO4 top-knee taper is the **combined** current. `charger_taper`
+today computes one target and writes it to a single controller
+(`--charger-current-taper-target`); if both arrays ever follow that schedule
+independently, the combined current is ~2x the intended ramp.
+
+Note the asymmetry: aligning the **voltage** setpoints (what
+`scripts/epever-copy-from-classic.py` does) *is* correct and self-cooperative
+— two CV sources regulating toward the same absorb voltage naturally share
+and taper the holding current. Only the current-limit copy is the "solo-safe
+default" rather than real coordination.
+
+This is trickier than splitting the CCL 50/50. The two arrays have different
+orientations and shading patterns, so their available output — and their
+optimal contribution — diverge independently through the day; MPPT tracking
+makes each instantaneous best-power point its own. A static per-controller
+cap would throttle the array that could give more while the other can't fill
+its share, wasting harvest. The likely shape is demand-aware: let each MPPT
+harvest freely during bulk, and only constrain near the top knee, allocating
+the shrinking combined budget toward whichever controller actually has the
+power, driven by the **measured combined charge current** (sum the two
+controllers' battery current, or use the BMS pack current) rather than any
+fixed split.
+
+Not urgent: only the Classic is a live charging source / taper authority
+today, and the EPEver is in burn-in. This becomes real the moment both arrays
+charge in parallel. Raised 2026-06-11.
+
 ## Done
 
 - Item 1 (deploy.sh, watcher retired): e4444fc, a6f506f — verified with a
