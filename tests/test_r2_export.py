@@ -35,13 +35,13 @@ class R2ExportTest(unittest.TestCase):
             self.assertIsNotNone(batch)
             assert batch is not None
             self.assertEqual(batch.row_count, 2)
-            self.assertEqual(batch.records, (("metric_sample", 1), ("event", 1)))
+            self.assertEqual(batch.records, (("sample", 1), ("event", 1)))
             self.assertRegex(
                 batch.object_key,
                 r"^metrics/20\d{6}T\d{6}Z-[0-9a-f]{32}\.ndjson\.gz$",
             )
             records = [json.loads(line) for line in gzip.decompress(batch.body).decode("utf-8").splitlines()]
-            self.assertEqual(records[0]["record_type"], "metric_sample")
+            self.assertEqual(records[0]["record_type"], "sample")
             self.assertEqual(records[0]["record_id"], sample.sample_id())
             self.assertEqual(records[0]["site_id"], "cabin")
             self.assertEqual(records[0]["source"], "battery")
@@ -70,7 +70,7 @@ class R2ExportTest(unittest.TestCase):
                 (batch.batch_id,),
             ).fetchone()
             sample_status = connection.execute(
-                "SELECT exported_at, export_batch_id FROM metric_samples WHERE id = 1"
+                "SELECT exported_at, export_batch_id FROM samples WHERE id = 1"
             ).fetchone()
             event_status = connection.execute(
                 "SELECT exported_at, export_batch_id FROM events WHERE id = 1"
@@ -94,7 +94,7 @@ class R2ExportTest(unittest.TestCase):
 
             self.assertIsNotNone(next_batch)
             assert next_batch is not None
-            self.assertEqual(next_batch.records, (("metric_sample", 3),))
+            self.assertEqual(next_batch.records, (("sample", 3),))
             del second, third
 
     def test_build_export_batch_returns_none_when_drained(self) -> None:

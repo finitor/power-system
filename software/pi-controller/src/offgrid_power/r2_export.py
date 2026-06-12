@@ -194,7 +194,7 @@ def build_export_batch(
 
 
 def mark_batch_exported(connection: sqlite3.Connection, batch: ExportBatch, uploaded_at: str) -> None:
-    by_table = {"metric_sample": [], "event": []}
+    by_table = {"sample": [], "event": []}
     for record_type, record_id in batch.records:
         by_table[record_type].append(record_id)
     with connection:
@@ -214,8 +214,8 @@ def mark_batch_exported(connection: sqlite3.Connection, batch: ExportBatch, uplo
             ),
         )
         connection.executemany(
-            "UPDATE metric_samples SET exported_at = ?, export_batch_id = ? WHERE id = ?",
-            [(uploaded_at, batch.batch_id, record_id) for record_id in by_table["metric_sample"]],
+            "UPDATE samples SET exported_at = ?, export_batch_id = ? WHERE id = ?",
+            [(uploaded_at, batch.batch_id, record_id) for record_id in by_table["sample"]],
         )
         connection.executemany(
             "UPDATE events SET exported_at = ?, export_batch_id = ? WHERE id = ?",
@@ -227,7 +227,7 @@ def _unexported_records(connection: sqlite3.Connection, limit: int) -> list[dict
     sample_rows = connection.execute(
         """
         SELECT id, sample_id, captured_at, source, metric, value, text, unit, tags_json
-        FROM metric_samples
+        FROM samples
         WHERE exported_at IS NULL
         ORDER BY id
         LIMIT ?
@@ -236,7 +236,7 @@ def _unexported_records(connection: sqlite3.Connection, limit: int) -> list[dict
     ).fetchall()
     records = [
         {
-            "record_type": "metric_sample",
+            "record_type": "sample",
             "id": row[0],
             "sample_id": row[1],
             "captured_at": row[2],
@@ -278,9 +278,9 @@ def _unexported_records(connection: sqlite3.Connection, limit: int) -> list[dict
 
 
 def _record_to_payload(record: dict, site_id: str) -> dict:
-    if record["record_type"] == "metric_sample":
+    if record["record_type"] == "sample":
         return {
-            "record_type": "metric_sample",
+            "record_type": "sample",
             "site_id": site_id,
             "record_id": record["sample_id"],
             "local_row_id": record["id"],

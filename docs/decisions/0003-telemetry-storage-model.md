@@ -28,7 +28,10 @@ multi-model design.
 ## Decision
 
 One canonical local model: the **flat `metric_samples` EAV time-series**,
-plus a small **`events`** table for irregular events.
+plus a small **`events`** table for irregular events. (The table was
+renamed to **`samples`** on 2026-06-12, before any consumers existed —
+shorter to type in ad hoc SQL forever, and symmetric with `events`.
+References to `metric_samples` below describe the same table.)
 
 - **Scalars** (voltages, currents, SOC, temps, charge settings, …) →
   `metric_samples` rows. Adding a metric (new sensor, EPEver register,

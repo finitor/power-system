@@ -140,12 +140,12 @@ class MetricRecorderTest(unittest.TestCase):
                 row[0]
                 for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
             }
-            sample_count = connection.execute("SELECT COUNT(*) FROM metric_samples").fetchone()[0]
+            sample_count = connection.execute("SELECT COUNT(*) FROM samples").fetchone()[0]
             soc = connection.execute(
-                "SELECT value FROM metric_samples WHERE source = 'battery' AND metric = 'soc'"
+                "SELECT value FROM samples WHERE source = 'battery' AND metric = 'soc'"
             ).fetchone()[0]
             null_ids = connection.execute(
-                "SELECT COUNT(*) FROM metric_samples WHERE sample_id IS NULL"
+                "SELECT COUNT(*) FROM samples WHERE sample_id IS NULL"
             ).fetchone()[0]
 
         self.assertNotIn("supervisor_snapshots", tables)
@@ -167,7 +167,7 @@ class MetricRecorderTest(unittest.TestCase):
 
         with sqlite3.connect(self.path) as connection:
             ticks = connection.execute(
-                "SELECT COUNT(DISTINCT captured_at) FROM metric_samples WHERE source = 'supervisor'"
+                "SELECT COUNT(DISTINCT captured_at) FROM samples WHERE source = 'supervisor'"
             ).fetchone()[0]
 
         self.assertEqual(ticks, 2)
@@ -202,7 +202,7 @@ class MetricRecorderTest(unittest.TestCase):
         recorder.record_snapshot(full_snapshot())
 
         with sqlite3.connect(self.path) as connection:
-            count = connection.execute("SELECT COUNT(*) FROM metric_samples").fetchone()[0]
+            count = connection.execute("SELECT COUNT(*) FROM samples").fetchone()[0]
         self.assertGreater(count, 0)
         corpses = list(self.path.parent.glob(f"{self.path.name}.corrupt-*"))
         self.assertEqual(len(corpses), 1)
@@ -245,7 +245,7 @@ class MetricRecorderTest(unittest.TestCase):
 
         with sqlite3.connect(self.path) as connection:
             rows = connection.execute(
-                "SELECT metric, value, text FROM metric_samples WHERE source = 'weather' ORDER BY metric"
+                "SELECT metric, value, text FROM samples WHERE source = 'weather' ORDER BY metric"
             ).fetchall()
 
         by_metric = {row[0]: row for row in rows}
@@ -307,7 +307,7 @@ class MetricRecorderTest(unittest.TestCase):
 
             with sqlite3.connect(self.path) as connection:
                 ticks = connection.execute(
-                    "SELECT COUNT(DISTINCT captured_at) FROM metric_samples WHERE source = 'supervisor'"
+                    "SELECT COUNT(DISTINCT captured_at) FROM samples WHERE source = 'supervisor'"
                 ).fetchone()[0]
                 events = connection.execute("SELECT COUNT(*) FROM events").fetchone()[0]
 

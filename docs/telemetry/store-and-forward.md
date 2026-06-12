@@ -16,9 +16,9 @@ Delivery should remain at-least-once. If the Pi uploads a batch and then loses p
 
 ## Local SQLite Shape (decision 0003)
 
-One canonical flat model: scalar telemetry goes to `metric_samples`, irregular events to `events`. Both carry a content-hashed identity column (UNIQUE), so merging two stores is an idempotent `INSERT OR IGNORE` union — the basis for the SSD-removal SD-fallback design and for consumer-side dedup.
+One canonical flat model: scalar telemetry goes to `samples`, irregular events to `events`. Both carry a content-hashed identity column (UNIQUE), so merging two stores is an idempotent `INSERT OR IGNORE` union — the basis for the SSD-removal SD-fallback design and for consumer-side dedup.
 
-`metric_samples` records one row per scalar at the durable metrics cadence, currently 60 seconds:
+`samples` records one row per scalar at the durable metrics cadence, currently 60 seconds:
 
 | Column | Purpose |
 |---|---|
@@ -34,7 +34,7 @@ One canonical flat model: scalar telemetry goes to `metric_samples`, irregular e
 
 `events` records irregular occurrences (taper decisions, inverter on/off and LBCO cut-outs) with the same shape: `event_id` content hash, `captured_at`, `source`, `event`, and a small `detail_json` blob.
 
-Charge-controller settings are sampled continuously into `metric_samples` (`classic.0.settings`, `epever.1.settings`) rather than kept in a separate change-tracked table; weather conditions land as `weather` source samples (`temperature`, `cloud_cover`, `shortwave_radiation`, `direct_radiation`, `diffuse_radiation`, `direct_normal_irradiance`, `aurora_probability`, …).
+Charge-controller settings are sampled continuously into `samples` (`classic.0.settings`, `epever.1.settings`) rather than kept in a separate change-tracked table; weather conditions land as `weather` source samples (`temperature`, `cloud_cover`, `shortwave_radiation`, `direct_radiation`, `diffuse_radiation`, `direct_normal_irradiance`, `aurora_probability`, …).
 
 `export_batches` keeps one row per object-storage batch attempt/result. The exporter builds/uploads a batch without holding a SQLite write transaction, then stamps the exported rows (`exported_at`, `export_batch_id`) and appends the batch row in a short transaction after object storage accepts the upload.
 
@@ -42,7 +42,7 @@ Useful inspection queries:
 
 ```sql
 SELECT captured_at, source, metric, value, text
-FROM metric_samples
+FROM samples
 ORDER BY id DESC
 LIMIT 20;
 
@@ -51,7 +51,7 @@ FROM events
 ORDER BY id DESC
 LIMIT 20;
 
-SELECT COUNT(*) FROM metric_samples WHERE exported_at IS NULL;
+SELECT COUNT(*) FROM samples WHERE exported_at IS NULL;
 ```
 
 ## Object Format
@@ -65,7 +65,7 @@ metrics/YYYYMMDDTHHMMSSZ-<batch_id>.ndjson.gz
 Each gzip-compressed NDJSON object carries flat sample and event records (Parquet is the planned next serialization per decision 0003):
 
 ```json
-{"record_type":"metric_sample","site_id":"cabin","record_id":"<sample sha256>","local_row_id":123,"captured_at":"2026-06-05T12:00:00+00:00","source":"battery","metric":"soc","value":91.0,"text":null,"unit":"%","tags":{}}
+{"record_type":"sample","site_id":"cabin","record_id":"<sample sha256>","local_row_id":123,"captured_at":"2026-06-05T12:00:00+00:00","source":"battery","metric":"soc","value":91.0,"text":null,"unit":"%","tags":{}}
 {"record_type":"event","site_id":"cabin","record_id":"<event sha256>","local_row_id":4,"captured_at":"2026-06-05T12:00:00+00:00","source":"magnum","event":"lbco_cutout","detail":{"fault":"LOW_BAT"}}
 ```
 

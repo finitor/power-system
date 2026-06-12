@@ -1,7 +1,7 @@
 """Best-effort flat time-series telemetry store (decision 0003).
 
 One canonical local model: scalar telemetry goes to the flat
-``metric_samples`` EAV table, irregular events to the hash-keyed
+``samples`` EAV table, irregular events to the hash-keyed
 ``events`` table. Both carry a content-hashed identity column so merging
 two stores is an idempotent ``INSERT OR IGNORE`` union.
 
@@ -123,7 +123,7 @@ class MetricRecorder:
             rows = connection.execute(
                 """
                 SELECT captured_at, metric, value
-                FROM metric_samples
+                FROM samples
                 WHERE source = 'load'
                   AND metric IN ('current', 'power')
                   AND value IS NOT NULL
@@ -160,7 +160,7 @@ class MetricRecorder:
             rows = connection.execute(
                 """
                 SELECT captured_at, value
-                FROM metric_samples
+                FROM samples
                 WHERE source = 'battery'
                   AND metric = 'soc'
                   AND value IS NOT NULL
@@ -252,7 +252,7 @@ class MetricRecorder:
 def initialize_metrics_db(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
-        CREATE TABLE IF NOT EXISTS metric_samples (
+        CREATE TABLE IF NOT EXISTS samples (
             id INTEGER PRIMARY KEY,
             sample_id TEXT,
             captured_at TEXT NOT NULL,
@@ -271,26 +271,26 @@ def initialize_metrics_db(connection: sqlite3.Connection) -> None:
     _backfill_sample_ids(connection)
     connection.execute(
         """
-        CREATE UNIQUE INDEX IF NOT EXISTS metric_samples_sample_id_idx
-        ON metric_samples (sample_id)
+        CREATE UNIQUE INDEX IF NOT EXISTS samples_sample_id_idx
+        ON samples (sample_id)
         """
     )
     connection.execute(
         """
-        CREATE INDEX IF NOT EXISTS metric_samples_metric_time_idx
-        ON metric_samples (source, metric, captured_at)
+        CREATE INDEX IF NOT EXISTS samples_metric_time_idx
+        ON samples (source, metric, captured_at)
         """
     )
     connection.execute(
         """
-        CREATE INDEX IF NOT EXISTS metric_samples_time_idx
-        ON metric_samples (captured_at)
+        CREATE INDEX IF NOT EXISTS samples_time_idx
+        ON samples (captured_at)
         """
     )
     connection.execute(
         """
-        CREATE INDEX IF NOT EXISTS metric_samples_export_idx
-        ON metric_samples (exported_at, id)
+        CREATE INDEX IF NOT EXISTS samples_export_idx
+        ON samples (exported_at, id)
         """
     )
     connection.execute(
@@ -348,7 +348,7 @@ def initialize_metrics_db(connection: sqlite3.Connection) -> None:
 def _insert_samples(connection: sqlite3.Connection, samples: list[MetricSample]) -> None:
     connection.executemany(
         """
-        INSERT OR IGNORE INTO metric_samples (
+        INSERT OR IGNORE INTO samples (
             sample_id, captured_at, source, metric, value, text, unit, tags_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
@@ -389,20 +389,20 @@ def _insert_events(connection: sqlite3.Connection, events: list[TelemetryEvent])
 
 
 def _ensure_metric_export_columns(connection: sqlite3.Connection) -> None:
-    columns = {row[1] for row in connection.execute("PRAGMA table_info(metric_samples)")}
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(samples)")}
     for name, definition in [
         ("sample_id", "TEXT"),
         ("exported_at", "TEXT"),
         ("export_batch_id", "TEXT"),
     ]:
         if name not in columns:
-            connection.execute(f"ALTER TABLE metric_samples ADD COLUMN {name} {definition}")
+            connection.execute(f"ALTER TABLE samples ADD COLUMN {name} {definition}")
 
 
 def _backfill_sample_ids(connection: sqlite3.Connection) -> None:
     connection.execute(
         """
-        UPDATE metric_samples
+        UPDATE samples
         SET sample_id = 'legacy-local-row-' || id
         WHERE sample_id IS NULL
         """
@@ -425,11 +425,11 @@ def merge_metric_stores(source_path: str | Path, dest_path: str | Path) -> tuple
         with connection:
             samples = connection.execute(
                 """
-                INSERT OR IGNORE INTO main.metric_samples (
+                INSERT OR IGNORE INTO main.samples (
                     sample_id, captured_at, source, metric, value, text, unit, tags_json
                 )
                 SELECT sample_id, captured_at, source, metric, value, text, unit, tags_json
-                FROM other.metric_samples
+                FROM other.samples
                 """
             ).rowcount
             events = connection.execute(
