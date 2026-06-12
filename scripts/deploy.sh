@@ -14,7 +14,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${OFFGRID_PROJECT_DIR:-$(dirname "${SCRIPT_DIR}")}"
 VENV="${PROJECT_DIR}/.venv"
+# Interactive/desktop user: owns the checkout, the venv, and the console
+# tmux session (which the desktop session must be able to attach to).
 OFFGRID_USER="$(id -un)"
+# Unprivileged account the supervisor and exporter run as. No shell, no
+# sudo; dialout+gpio for the RS485 adapters and the ambient sensor.
+SERVICE_USER="${OFFGRID_SERVICE_USER:-offgrid}"
 
 # The pull below may update this very script while bash is reading it
 # incrementally. Run from a temp copy so the executing code can't change
@@ -48,10 +53,24 @@ else
     echo "manifest unchanged"
 fi
 
+echo "== service account =="
+if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
+    sudo adduser --system --group --home /var/lib/offgrid --no-create-home "${SERVICE_USER}"
+fi
+sudo usermod -aG dialout,gpio "${SERVICE_USER}"
+# Traverse-only ACL so the service account can reach the checkout and venv
+# under the deploy user's (otherwise 700) home. Files inside are world-readable.
+setfacl -m "u:${SERVICE_USER}:--x" "${HOME}"
+# Secrets env file is loaded by systemd as root; nothing else should read it.
+if [ -f /etc/offgrid-power.env ]; then
+    sudo chown root:root /etc/offgrid-power.env
+    sudo chmod 600 /etc/offgrid-power.env
+fi
+
 echo "== configs =="
-# Render @OFFGRID_USER@/@PROJECT_DIR@ templates for this host.
+# Render @OFFGRID_USER@/@SERVICE_USER@/@PROJECT_DIR@ templates for this host.
 render() {
-    sed "s|@OFFGRID_USER@|${OFFGRID_USER}|g; s|@PROJECT_DIR@|${PROJECT_DIR}|g" "$1"
+    sed "s|@OFFGRID_USER@|${OFFGRID_USER}|g; s|@SERVICE_USER@|${SERVICE_USER}|g; s|@PROJECT_DIR@|${PROJECT_DIR}|g" "$1"
 }
 render config/systemd/offgrid-supervisor.service | sudo tee /etc/systemd/system/offgrid-supervisor.service > /dev/null
 render config/systemd/offgrid-console.service | sudo tee /etc/systemd/system/offgrid-console.service > /dev/null

@@ -5,10 +5,22 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=@OFFGRID_USER@
-Group=@OFFGRID_USER@
+# Same unprivileged service account as the supervisor: owns the metrics
+# store and only needs outbound network access.
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
 WorkingDirectory=@PROJECT_DIR@
 Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
 ExecStart=@PROJECT_DIR@/.venv/bin/python -m offgrid_power.cli.r2_export --max-batches 0
 TimeoutStartSec=20min

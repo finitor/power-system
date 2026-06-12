@@ -6,12 +6,17 @@ BindsTo=offgrid-supervisor.service
 
 [Service]
 Type=simple
+# Stays on the desktop user (not @SERVICE_USER@): the desktop session
+# re-attaches to this tmux session, and tmux sockets are per-user. The
+# renderer only consumes the localhost API. No PrivateTmp for the same
+# reason — the tmux socket in /tmp must be visible to the desktop session.
 User=@OFFGRID_USER@
 Group=@OFFGRID_USER@
 WorkingDirectory=@PROJECT_DIR@
 Environment=CLASSIC_HOST=192.168.0.10
 Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
+NoNewPrivileges=yes
 ExecStartPre=/bin/sh -c '/usr/bin/tmux kill-session -t offgrid-console 2>/dev/null || true'
 ExecStart=@PROJECT_DIR@/scripts/run-console-tmux.sh
 ExecStop=/bin/kill -TERM $MAINPID

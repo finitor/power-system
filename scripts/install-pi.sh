@@ -13,6 +13,7 @@ fi
 echo "== os packages =="
 sudo apt-get update
 sudo apt-get install -y \
+    acl \
     build-essential \
     can-utils \
     curl \
@@ -29,8 +30,9 @@ sudo apt-get install -y \
 
 echo "== directories =="
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/autostart"
+# Ownership is handled by deploy.sh (service account) and the supervisor
+# unit's ExecStartPre chown; bootstrap only needs the directories to exist.
 sudo mkdir -p /srv/telemetry/data /srv/telemetry/logs /var/lib/offgrid
-sudo chown -R "$(id -u):$(id -g)" /srv/telemetry /var/lib/offgrid
 
 echo "== python environment =="
 if [ ! -d "${VENV}" ]; then

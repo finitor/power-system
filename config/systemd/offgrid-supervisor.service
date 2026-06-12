@@ -10,19 +10,33 @@ Upholds=offgrid-console.service
 
 [Service]
 Type=simple
-User=@OFFGRID_USER@
-Group=@OFFGRID_USER@
+# Dedicated unprivileged service account (ensured by deploy.sh): the
+# supervisor parses LAN HTTP, CAN frames, RS485, and internet weather
+# responses, so it must not run as the interactive admin user.
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+SupplementaryGroups=dialout gpio
 WorkingDirectory=@PROJECT_DIR@
 Environment=CLASSIC_HOST=192.168.0.10
 Environment=EPEVER_DEVICE=/dev/epever-rs485
 Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
 # Ensure data and log directories exist; creates them on the SD card if /srv/telemetry is not mounted.
 ExecStartPre=+/bin/mkdir -p /srv/telemetry/data /srv/telemetry/logs
-ExecStartPre=+/bin/chown -R @OFFGRID_USER@:@OFFGRID_USER@ /srv/telemetry
+ExecStartPre=+/bin/chown -R @SERVICE_USER@:@SERVICE_USER@ /srv/telemetry
 # SD-side fallback store dir: written while the SSD is unmounted, merged back on recovery.
 ExecStartPre=+/bin/mkdir -p /var/lib/offgrid
-ExecStartPre=+/bin/chown @OFFGRID_USER@:@OFFGRID_USER@ /var/lib/offgrid
+ExecStartPre=+/bin/chown @SERVICE_USER@:@SERVICE_USER@ /var/lib/offgrid
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up
