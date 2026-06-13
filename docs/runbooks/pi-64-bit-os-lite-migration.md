@@ -45,8 +45,8 @@ Validated after the 64-bit rebuild:
 - Supervisor `/healthz` returns `ok`; nginx Kindle path returns OK.
 - CAN is up listen-only at 500 kbit/s.
 - Classic, battery CAN, and EPEver telemetry are healthy.
-- Temporary migration sudoers file was removed; normal sudo requires a
-  password again.
+- Operational sudoers drop-in is installed by deploy so console font hotkeys,
+  backups, and deploys can use non-interactive sudo.
 
 ## Goal
 
@@ -101,7 +101,7 @@ Capture these from the running Pi before changing the SD card:
 | Desktop console config | `~/.local/bin/open-offgrid-console`, `~/.config/autostart/offgrid-console.desktop` | The console is terminal-only (tmux attach), so on Lite it runs on a bare tty — see "Local console without a desktop" below; the autostart `.desktop` file becomes obsolete |
 | Telemetry data | `/srv/telemetry`, `/var/lib/offgrid` | Preserve SQLite metrics, weather cache, and fallback store |
 | SSH identity and access | `~/.ssh`, `/etc/ssh/sshd_config*` | Preserve access and GitHub deploy auth if used |
-| sudoers snippets | `/etc/sudoers.d` | Preserve as reference only; do not restore temporary privilege files automatically |
+| sudoers snippets | `/etc/sudoers.d` | Preserve as reference only; deploy recreates the known `020_offgrid_operator` NOPASSWD policy |
 | Network config | NetworkManager/systemd-networkd/wpa config, hostname | Keep `blueberry.local` stable if consumers depend on it |
 | Boot config | `/boot/firmware/config.txt`, `/boot/firmware/cmdline.txt` | Preserve as reference only; do not blindly restore root/cmdline from the old card |
 | Package inventory | `dpkg --get-selections`, manually installed packages | Reference only; do not blindly replay everything |
@@ -309,8 +309,9 @@ survived at least one deploy, one reboot, and a representative telemetry run.
   cloud-init host template/config, sudoers snippets, SSH daemon local config,
   and NetworkManager/systemd-networkd/wpa_supplicant config as migration
   references. Restore appends only the `/srv/telemetry` fstab entry to a fresh
-  image, avoiding stale root/boot PARTUUIDs; sudoers snippets are kept as
-  reference only.
+  image, avoiding stale root/boot PARTUUIDs; arbitrary sudoers snippets are
+  kept as reference only, and deploy recreates the known operator NOPASSWD
+  drop-in from tracked config.
 - Done: `scripts/install-pi.sh` installs the minimal package and venv bootstrap
   for Raspberry Pi OS Lite 64-bit, then runs deploy.
 - Done: `scripts/health-check.sh` runs the validation checks above.

@@ -21,6 +21,20 @@ OFFGRID_USER="$(id -un)"
 # sudo; dialout+gpio for the RS485 adapters and the ambient sensor.
 SERVICE_USER="${OFFGRID_SERVICE_USER:-offgrid}"
 
+render() {
+    sed "s|@OFFGRID_USER@|${OFFGRID_USER}|g; s|@SERVICE_USER@|${SERVICE_USER}|g; s|@PROJECT_DIR@|${PROJECT_DIR}|g" "$1"
+}
+
+install_operator_sudoers() {
+    local tmp
+    tmp="$(mktemp /tmp/offgrid-sudoers.XXXXXX)"
+    render config/sudoers/offgrid-operator-nopasswd > "${tmp}"
+    chmod 440 "${tmp}"
+    sudo visudo -cf "${tmp}" >/dev/null
+    sudo install -o root -g root -m 440 "${tmp}" /etc/sudoers.d/020_offgrid_operator
+    rm -f "${tmp}"
+}
+
 # The pull below may update this very script while bash is reading it
 # incrementally. Run from a temp copy so the executing code can't change
 # mid-deploy; the updated script applies on the next run.
@@ -53,6 +67,9 @@ else
     echo "manifest unchanged"
 fi
 
+echo "== sudoers =="
+install_operator_sudoers
+
 echo "== service account =="
 if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
     sudo adduser --system --group --home /var/lib/offgrid --no-create-home "${SERVICE_USER}"
@@ -69,9 +86,6 @@ fi
 
 echo "== configs =="
 # Render @OFFGRID_USER@/@SERVICE_USER@/@PROJECT_DIR@ templates for this host.
-render() {
-    sed "s|@OFFGRID_USER@|${OFFGRID_USER}|g; s|@SERVICE_USER@|${SERVICE_USER}|g; s|@PROJECT_DIR@|${PROJECT_DIR}|g" "$1"
-}
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/autostart"
 render config/systemd/offgrid-supervisor.service | sudo tee /etc/systemd/system/offgrid-supervisor.service > /dev/null
 render config/systemd/offgrid-console.service | sudo tee /etc/systemd/system/offgrid-console.service > /dev/null
