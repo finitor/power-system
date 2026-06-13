@@ -143,7 +143,7 @@ hostname
 systemctl is-active offgrid-supervisor offgrid-console nginx
 systemctl is-active offgrid-can-watchdog.timer offgrid-metrics-export.timer
 ip -details link show can0
-ls -l /dev/epever-rs485 /dev/cubix-rs485 2>/dev/null || true
+ls -l /dev/epever-rs485 /dev/cubix-rs485 /dev/serial/by-path/*1.3.3* 2>/dev/null || true
 curl -fsS http://127.0.0.1:8081/healthz
 curl -fsS -A 'Kindle/3.0' http://127.0.0.1:8080/ >/dev/null
 ```
@@ -155,8 +155,10 @@ Functional checks:
   temporarily stopped.
 - `/api/v1/snapshot` includes fresh battery CAN data.
 - Classic telemetry and charge settings read correctly.
-- EPEver telemetry reads through `/dev/epever-rs485` if the controller is
-  connected.
+- EPEver telemetry reads through the pinned by-path adapter
+  `/dev/serial/by-path/platform-3f980000.usb-usb-0:1.3.3:1.0-port0` if the
+  controller is connected. The `/dev/epever-rs485` symlink is ambiguous when
+  the second serial-less CH340 tap is present.
 - Metrics SQLite database is writing to `/srv/telemetry/data`.
 - Fallback database path exists and is writable.
 - Daily metrics export timer is enabled.
