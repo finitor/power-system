@@ -72,10 +72,13 @@ echo "== configs =="
 render() {
     sed "s|@OFFGRID_USER@|${OFFGRID_USER}|g; s|@SERVICE_USER@|${SERVICE_USER}|g; s|@PROJECT_DIR@|${PROJECT_DIR}|g" "$1"
 }
+mkdir -p "${HOME}/.local/bin" "${HOME}/.config/autostart"
 render config/systemd/offgrid-supervisor.service | sudo tee /etc/systemd/system/offgrid-supervisor.service > /dev/null
 render config/systemd/offgrid-console.service | sudo tee /etc/systemd/system/offgrid-console.service > /dev/null
 render config/systemd/offgrid-metrics-export.service | sudo tee /etc/systemd/system/offgrid-metrics-export.service > /dev/null
 render config/systemd/offgrid-can-watchdog.service | sudo tee /etc/systemd/system/offgrid-can-watchdog.service > /dev/null
+sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
+render config/systemd/getty-tty1-autologin.conf | sudo tee /etc/systemd/system/getty@tty1.service.d/offgrid-autologin.conf > /dev/null
 sudo install -m 644 config/systemd/offgrid-can-watchdog.timer /etc/systemd/system/
 sudo install -m 644 config/systemd/offgrid-metrics-export.timer /etc/systemd/system/
 sudo install -m 644 config/nginx/offgrid-supervisor.conf /etc/nginx/sites-available/
@@ -86,6 +89,18 @@ install -m 755 config/desktop/open-offgrid-console "${HOME}/.local/bin/open-offg
 install -m 755 config/desktop/offgrid-tty-console "${HOME}/.local/bin/offgrid-tty-console"
 install -m 755 config/desktop/offgrid-console-font "${HOME}/.local/bin/offgrid-console-font"
 render config/desktop/offgrid-console.desktop > "${HOME}/.config/autostart/offgrid-console.desktop"
+if ! grep -q 'offgrid-tty-console' "${HOME}/.profile" 2>/dev/null; then
+    cat >> "${HOME}/.profile" <<'EOF'
+
+# Off-grid wall display: the tty1 autologin session becomes the console
+# (composed console: display pane + ready shell).
+# See docs/runbooks/pi-64-bit-os-lite-migration.md, "Local Console Without
+# a Desktop". Other ttys (Alt+F2...) stay normal shells.
+if [ "$(tty)" = "/dev/tty1" ] && [ -z "${DISPLAY:-}" ] && [ -x "$HOME/.local/bin/offgrid-tty-console" ]; then
+    exec "$HOME/.local/bin/offgrid-tty-console"
+fi
+EOF
+fi
 sudo systemctl daemon-reload
 sudo systemctl enable --now --quiet offgrid-supervisor
 sudo systemctl enable --now --quiet offgrid-console

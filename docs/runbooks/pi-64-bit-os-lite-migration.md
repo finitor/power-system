@@ -212,7 +212,9 @@ The HDMI console does not need desktop packages: the display chain is purely
 terminal-based (`offgrid-console.service` owns a tmux session;
 `open-offgrid-console` just re-attaches to it in a loop). On Lite, run the
 attach loop on the physical screen with getty autologin instead of a desktop
-autostart entry:
+autostart entry. `scripts/deploy.sh` installs the tracked `getty@tty1`
+override and appends the `.profile` guard idempotently. If repairing by hand,
+the equivalent override is:
 
 ```sh
 sudo systemctl edit getty@tty1
