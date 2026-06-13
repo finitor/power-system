@@ -162,6 +162,34 @@ Functional checks:
 - Daily metrics export timer is enabled.
 - CAN watchdog timer is enabled.
 
+## Watching The Bootstrap From The Mac
+
+For long package installs, create a local tmux session that watches the new Pi
+over SSH:
+
+```sh
+tmux new-session -d -s pi64-watch \
+  "ssh -t -o UserKnownHostsFile=/tmp/offgrid-pi-known-hosts tvetter@192.168.0.200 'sudo tail -F /var/log/apt/term.log /var/log/dpkg.log'"
+
+tmux split-window -t pi64-watch -v \
+  "ssh -t -o UserKnownHostsFile=/tmp/offgrid-pi-known-hosts tvetter@192.168.0.200 'while true; do clear; date; echo; ps -eo pid,ppid,stat,pcpu,pmem,comm,args | egrep \"apt|dpkg|pip|python|unittest|deploy|install-pi|offgrid|nginx|systemctl\" | grep -v egrep; echo; systemctl --failed --no-pager; sleep 3; done'"
+
+tmux attach -t pi64-watch
+```
+
+Useful keys:
+
+```text
+Ctrl-b then Up/Down   switch panes
+Ctrl-b then d         detach and leave it running
+```
+
+Clean up later:
+
+```sh
+tmux kill-session -t pi64-watch
+```
+
 ## Local Console Without a Desktop
 
 The HDMI console does not need desktop packages: the display chain is purely
