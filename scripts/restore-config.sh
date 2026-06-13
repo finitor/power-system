@@ -73,6 +73,7 @@ restore_path etc/nginx/sites-available/offgrid-supervisor.conf /etc/nginx/sites-
 restore_path etc/ssh/sshd_config.d/10-local.conf /etc/ssh/sshd_config.d/10-local.conf 644
 restore_path etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades 644
 restore_path etc/apt/apt.conf.d/52unattended-upgrades-local /etc/apt/apt.conf.d/52unattended-upgrades-local 644
+restore_path etc/default/console-setup /etc/default/console-setup 644
 restore_path home/offgrid-user/.local/bin/open-offgrid-console "${HOME}/.local/bin/open-offgrid-console" 755
 restore_path home/offgrid-user/.config/autostart/offgrid-console.desktop "${HOME}/.config/autostart/offgrid-console.desktop" 644
 restore_tree srv/telemetry /srv/telemetry

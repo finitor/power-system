@@ -44,6 +44,7 @@ copy_if_exists /etc/nginx/sites-available/offgrid-supervisor.conf etc/nginx/site
 copy_if_exists /etc/ssh/sshd_config.d/10-local.conf etc/ssh/sshd_config.d/10-local.conf
 copy_if_exists /etc/apt/apt.conf.d/20auto-upgrades etc/apt/apt.conf.d/20auto-upgrades
 copy_if_exists /etc/apt/apt.conf.d/52unattended-upgrades-local etc/apt/apt.conf.d/52unattended-upgrades-local
+copy_if_exists /etc/default/console-setup etc/default/console-setup
 copy_if_exists "${HOME}/.local/bin/open-offgrid-console" home/offgrid-user/.local/bin/open-offgrid-console
 copy_if_exists "${HOME}/.local/bin/offgrid-tty-console" home/offgrid-user/.local/bin/offgrid-tty-console
 copy_if_exists "${HOME}/.profile" home/offgrid-user/.profile

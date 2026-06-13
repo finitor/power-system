@@ -199,10 +199,18 @@ fi
 After reboot: tty1 carries the attach loop with the tmux client on the
 physical screen, all services healthy, and memory used dropped from ~300 MB
 (desktop) to ~208 MB — confirming the headroom argument above with a measured
-number. If the framebuffer console font is too small on the panel, tune it
-with `sudo dpkg-reconfigure console-setup` (e.g. Terminus 16x32). Rollback is
-`sudo systemctl set-default graphical.target` plus removing the `.profile`
-guard.
+number. Rollback is `sudo systemctl set-default graphical.target` plus
+removing the `.profile` guard.
+
+**Console font (Greek coverage):** the kernel default console font is 8x16
+with only 256 glyphs, so U+0394 (the cell-delta Δ in the display) renders as
+a missing-glyph fallback. `/etc/default/console-setup` is set to
+`CODESET="Uni2"` `FONTFACE="Terminus"` `FONTSIZE="8x16"` → `Uni2-Terminus16`,
+which is the same 8x16 cell size (so the 1920x1080 / 8x16 = 240x67 geometry
+and the pane layout are unchanged) but carries 512 glyphs including Greek.
+Apply with `sudo setupcon --save`. Do NOT bump the size (e.g. 16x32) to fill
+the panel: that halves the column count and reflows the display. The config
+is in the migration backup manifest.
 
 ## Post-Migration Follow-Ups
 
