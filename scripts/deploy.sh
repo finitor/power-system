@@ -87,6 +87,8 @@ install -m 755 config/desktop/offgrid-tty-console "${HOME}/.local/bin/offgrid-tt
 install -m 755 config/desktop/offgrid-console-font "${HOME}/.local/bin/offgrid-console-font"
 render config/desktop/offgrid-console.desktop > "${HOME}/.config/autostart/offgrid-console.desktop"
 sudo systemctl daemon-reload
+sudo systemctl enable --now --quiet offgrid-supervisor
+sudo systemctl enable --now --quiet offgrid-console
 sudo systemctl enable --now --quiet offgrid-can-watchdog.timer
 sudo systemctl enable --now --quiet offgrid-metrics-export.timer
 sudo udevadm control --reload-rules
