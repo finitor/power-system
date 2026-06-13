@@ -7,9 +7,10 @@ usage() {
 Usage: scripts/restore-config.sh [--apply] BACKUP.tar.gz
 
 Without --apply, this only unpacks the bundle into a temporary staging
-directory and prints the restore actions. With --apply, it restores the
-environment file, telemetry data, service-adjacent config, and SSH directory
-found in the bundle. Review the backup before applying.
+directory and prints the restore actions. With --apply, it restores local
+config, telemetry data, service-adjacent config, and SSH material found in the
+bundle. Full boot/root fstab entries and boot cmdline are preserved only as
+reference files; review the backup before applying.
 EOF
 }
 
@@ -67,14 +68,67 @@ restore_tree() {
     fi
 }
 
+restore_reference() {
+    local rel="$1"
+    local dest="$2"
+    if [ ! -e "${ROOT}/${rel}" ]; then
+        echo "skip missing ${rel}"
+        return
+    fi
+    echo "reference ${rel} -> ${dest}"
+    if [ "${APPLY}" -eq 1 ]; then
+        sudo mkdir -p "$(dirname "${dest}")"
+        sudo cp -a "${ROOT}/${rel}" "${dest}"
+    fi
+}
+
+restore_telemetry_fstab_line() {
+    local rel="etc/fstab"
+    local line
+    if [ ! -f "${ROOT}/${rel}" ]; then
+        echo "skip missing ${rel}"
+        return
+    fi
+    line="$(awk '$2 == "/srv/telemetry" { print; exit }' "${ROOT}/${rel}")"
+    if [ -z "${line}" ]; then
+        echo "skip missing /srv/telemetry fstab line"
+        return
+    fi
+    echo "ensure /srv/telemetry fstab line"
+    if [ "${APPLY}" -eq 1 ]; then
+        if ! grep -Eq '[[:space:]]/srv/telemetry[[:space:]]' /etc/fstab; then
+            printf '\n# Restored by off-grid migration restore.\n%s\n' "${line}" | sudo tee -a /etc/fstab > /dev/null
+        else
+            echo "/etc/fstab already has /srv/telemetry; leaving existing entry unchanged"
+        fi
+    fi
+}
+
 restore_path etc/offgrid-power.env /etc/offgrid-power.env 600
+restore_reference etc/fstab /etc/fstab.offgrid-migration-reference
+restore_telemetry_fstab_line
+restore_path etc/hostname /etc/hostname 644
+restore_path etc/hosts /etc/hosts 644
+restore_path etc/cloud/cloud.cfg /etc/cloud/cloud.cfg 644
+restore_path etc/cloud/templates/hosts.debian.tmpl /etc/cloud/templates/hosts.debian.tmpl 644
 restore_path etc/udev/rules.d/90-offgrid-usb.rules /etc/udev/rules.d/90-offgrid-usb.rules 644
 restore_path etc/nginx/sites-available/offgrid-supervisor.conf /etc/nginx/sites-available/offgrid-supervisor.conf 644
 restore_path etc/ssh/sshd_config.d/10-local.conf /etc/ssh/sshd_config.d/10-local.conf 644
+restore_tree etc/sudoers.d /etc/sudoers.d
+restore_path etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/NetworkManager.conf 644
+restore_tree etc/NetworkManager/system-connections /etc/NetworkManager/system-connections
+restore_tree etc/systemd/network /etc/systemd/network
+restore_tree etc/wpa_supplicant /etc/wpa_supplicant
 restore_path etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades 644
 restore_path etc/apt/apt.conf.d/52unattended-upgrades-local /etc/apt/apt.conf.d/52unattended-upgrades-local 644
 restore_path etc/default/console-setup /etc/default/console-setup 644
+restore_reference boot/firmware/config.txt /boot/firmware/config.txt.offgrid-migration-reference
+restore_reference boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.offgrid-migration-reference
 restore_path home/offgrid-user/.local/bin/open-offgrid-console "${HOME}/.local/bin/open-offgrid-console" 755
+restore_path home/offgrid-user/.local/bin/offgrid-tty-console "${HOME}/.local/bin/offgrid-tty-console" 755
+restore_path home/offgrid-user/.local/bin/offgrid-console-font "${HOME}/.local/bin/offgrid-console-font" 755
+restore_path home/offgrid-user/.local/state/offgrid/console-font-index "${HOME}/.local/state/offgrid/console-font-index" 644
+restore_path home/offgrid-user/.profile "${HOME}/.profile" 644
 restore_path home/offgrid-user/.config/autostart/offgrid-console.desktop "${HOME}/.config/autostart/offgrid-console.desktop" 644
 restore_tree srv/telemetry /srv/telemetry
 restore_tree var/lib/offgrid /var/lib/offgrid
@@ -91,6 +145,13 @@ fi
 
 if [ "${APPLY}" -eq 1 ]; then
     sudo chown -R "$(id -u):$(id -g)" /srv/telemetry /var/lib/offgrid
+    if [ -d /etc/NetworkManager/system-connections ]; then
+        sudo chmod 700 /etc/NetworkManager/system-connections
+        sudo find /etc/NetworkManager/system-connections -type f -exec chmod 600 {} \;
+    fi
+    if [ -d /etc/sudoers.d ]; then
+        sudo find /etc/sudoers.d -type f -exec chmod 440 {} \;
+    fi
     sudo systemctl daemon-reload
     sudo udevadm control --reload-rules
     sudo nginx -t

@@ -27,10 +27,12 @@ Completed preparation:
 - `/srv/telemetry` is on the external Samsung SSD 840 EVO 500 GB, not on the
   boot microSD.
 
-Resume only after acquiring a new high-endurance microSD card. Preferred
-target: 128 GB high-endurance microSDXC, UHS-I U1/U3, A1 or A2, from a reputable
-vendor. The SanDisk 128 GB High Endurance card
-`SDSQQNR-128G-GN6IA` is an acceptable target.
+Resume for a dry run with the salvaged 32 GB microSD, but keep the current
+working card untouched. A 32 GB card is enough for a rehearsal because root
+uses about 7.3 GB and telemetry writes live on the external SSD. Preferred
+final target remains a 128 GB high-endurance microSDXC, UHS-I U1/U3, A1 or A2,
+from a reputable vendor. The SanDisk 128 GB High Endurance card
+`SDSQQNR-128G-GN6IA` is an acceptable final target.
 
 ## Goal
 
@@ -77,6 +79,8 @@ Capture these from the running Pi before changing the SD card:
 |---|---|---|
 | Repo checkout | `~/power-system` or deployed project directory | Commit local changes first; avoid rsync-only drift |
 | Environment file | `/etc/offgrid-power.env` | Contains local runtime settings and credentials |
+| Mount table | `/etc/fstab` | Preserve full file as reference; restore only `/srv/telemetry` line onto a new image |
+| Host identity | `/etc/hostname`, `/etc/hosts`, cloud-init host template/config | Keep `blueberry` identity stable |
 | systemd rendered units | `/etc/systemd/system/offgrid-*.service`, `/etc/systemd/system/offgrid-*.timer` | Mostly reproducible from repo, but useful for diffing |
 | udev rules | `/etc/udev/rules.d/90-offgrid-usb.rules` | Stable USB names and autosuspend policy |
 | nginx site | `/etc/nginx/sites-available/offgrid-supervisor.conf` | Kindle-safe proxy path |
@@ -84,6 +88,7 @@ Capture these from the running Pi before changing the SD card:
 | Telemetry data | `/srv/telemetry`, `/var/lib/offgrid` | Preserve SQLite metrics, weather cache, and fallback store |
 | SSH identity and access | `~/.ssh`, `/etc/ssh/sshd_config*` | Preserve access and GitHub deploy auth if used |
 | Network config | NetworkManager/systemd-networkd/wpa config, hostname | Keep `blueberry.local` stable if consumers depend on it |
+| Boot config | `/boot/firmware/config.txt`, `/boot/firmware/cmdline.txt` | Preserve as reference only; do not blindly restore root/cmdline from the old card |
 | Package inventory | `dpkg --get-selections`, manually installed packages | Reference only; do not blindly replay everything |
 | Service state | `systemctl list-unit-files 'offgrid-*'`, enabled timers | Recreate intent, not necessarily exact files |
 
@@ -108,7 +113,7 @@ and a supervisor deploy.
 ## High-Level Procedure
 
 1. Leave the current working microSD card untouched as the physical rollback.
-2. Flash the new microSD with Raspberry Pi OS Lite 64-bit and configure SSH,
+2. Flash the dry-run microSD with Raspberry Pi OS Lite 64-bit and configure SSH,
    hostname, locale, timezone, and network.
 3. Boot the Pi from the new card and confirm SSH access by hostname and IP.
 4. Clone the repo:
@@ -253,6 +258,11 @@ survived at least one deploy, one reboot, and a representative telemetry run.
 - Done: `scripts/backup-config.sh` creates a timestamped migration backup.
 - Done: `scripts/restore-config.sh` restores local config and telemetry with an
   explicit `--apply` guard.
+- Done: backup/restore preserves `/etc/fstab`, boot config, hostname, hosts,
+  cloud-init host template/config, sudoers snippets, SSH daemon local config,
+  and NetworkManager/systemd-networkd/wpa_supplicant config as migration
+  references. Restore appends only the `/srv/telemetry` fstab entry to a fresh
+  image, avoiding stale root/boot PARTUUIDs.
 - Done: `scripts/install-pi.sh` installs the minimal package and venv bootstrap
   for Raspberry Pi OS Lite 64-bit, then runs deploy.
 - Done: `scripts/health-check.sh` runs the validation checks above.
