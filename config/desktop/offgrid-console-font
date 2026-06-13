@@ -46,3 +46,7 @@ last=$(( ${#LADDER[@]} - 1 ))
 
 sudo setfont -C "${TTY}" "${LADDER[${index}]}"
 echo "${index}" > "${STATE}"
+# Breadcrumb so a keypress that reaches the binding is provable even though
+# the size change is only visible on the physical panel.
+printf '%s %s -> [%s] %s\n' "$(date -Is)" "${1:-apply}" "${index}" "${LADDER[${index}]}" \
+  >> "$(dirname "${STATE}")/console-font.log" 2>/dev/null || true

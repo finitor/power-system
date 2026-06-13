@@ -39,13 +39,20 @@ ensure_session() {
   tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1"
 }
 
-# Font size hotkeys (prefix + / prefix -, repeatable; prefix 0 resets). These
-# are server-global and set on every startup — the tmux server outlives a
+# Font size hotkeys. Set on every startup — the tmux server outlives a
 # console/getty restart, so binding only at session creation would miss it.
-# The shell pane holds focus, so the prefix reaches this outer server rather
-# than the nested display.
+#
+# F-keys are bound at the ROOT table (-n, no prefix): the display pane is a
+# nested tmux, which makes the prefix dance unreliable from the physical
+# keyboard, and the outer server intercepts root-table keys regardless of
+# which pane has focus. Plain F-keys are safe here — they don't switch VTs and
+# are never typed into the shell. F7 smaller, F8 bigger, F6 default. Prefix
+# +/-/0 are also bound for anyone driving tmux directly.
 setup_bindings() {
   [ -x "${FONT_TOOL}" ] || return 0
+  tmux -L "${SOCKET}" bind-key -n F8 run-shell "${FONT_TOOL} up"
+  tmux -L "${SOCKET}" bind-key -n F7 run-shell "${FONT_TOOL} down"
+  tmux -L "${SOCKET}" bind-key -n F6 run-shell "${FONT_TOOL} reset"
   tmux -L "${SOCKET}" bind-key -r -T prefix + run-shell "${FONT_TOOL} up"
   tmux -L "${SOCKET}" bind-key -r -T prefix - run-shell "${FONT_TOOL} down"
   tmux -L "${SOCKET}" bind-key -T prefix 0 run-shell "${FONT_TOOL} reset"
