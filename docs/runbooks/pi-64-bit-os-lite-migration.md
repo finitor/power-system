@@ -264,22 +264,26 @@ removing the `.profile` guard.
 glyphs, so the display's non-ASCII glyphs — the cell-delta U+0394 (Δ) and the
 trend arrows U+2191/U+2193 (↑↓) — render as missing-glyph fallbacks.
 `/etc/default/console-setup` is set to `CODESET="Uni2"`
-`FONTFACE="TerminusBold"` `FONTSIZE="8x16"` → `Uni2-TerminusBold16`: same 8x16
-cell size (so the 1920x1080 / 8x16 = 240x67 geometry and the pane layout are
-unchanged), 512 glyphs covering Greek + arrows, and Bold for heavier, less
-spindly strokes than plain Terminus (VGA/Fixed are heavier still but exist
-only at 8x16, so they would forfeit the size ladder below). Apply with
-`sudo setupcon --save`. This sets the *boot default*; the size is then
-adjustable at runtime (below).
+`FONTFACE="TerminusBold"` `FONTSIZE="10x20"` → `Uni2-TerminusBold20x10`: a
+Uni2 face (512 glyphs covering Greek + arrows), Bold for heavier/less-spindly
+strokes than plain Terminus, at the operator's chosen default of one step up
+from the 8x16 stock size (10x20 cell → 1920x1080 / 10x20 = 192x54). VGA/Fixed
+are heavier still but exist only at 8x16, so they would forfeit the size
+ladder below. Apply with `sudo setupcon --save`. This sets the *boot default*;
+the size is then adjustable at runtime (below).
 
 **Font size hotkeys:** `~/.local/bin/offgrid-console-font {up|down|reset}`
-steps a preloaded Uni2-Terminus ladder (14 → 16 → 20x10 → 24x12 → 28x14 →
-32x16) via `setfont`, persisting the index to
+steps a preloaded Uni2-TerminusBold ladder (14 → 16 → 20x10 → 24x12 → 28x14 →
+32x16; default/reset = index 2, 20x10) via `setfont`, persisting the index to
 `~/.local/state/offgrid/console-font-index`. The composed console binds it to
-`prefix +` / `prefix -` (repeatable) and `prefix 0` (reset), and re-applies
-the saved size on startup. setfont reflows the tty (the framebuffer is fixed
-at 1920x1080, so a bigger cell = fewer cols/rows); tmux resizes its panes and
-the renderer adapts via its dynamic terminal-size read. Both the boot-default
+the root-table keys **F7 (smaller) / F8 (bigger) / F6 (reset)** — no prefix,
+because the nested display tmux makes the prefix unreliable from the physical
+keyboard; `prefix +`/`-`/`0` are also bound. On an Apple keyboard the F-keys
+need `Fn` (the top row defaults to media keys via `hid_apple fnmode`). The
+renderer's footer shows a `Font  ↓F7  ↑F8` reminder. setfont reflows the tty
+(the framebuffer is fixed at 1920x1080, so a bigger cell = fewer cols/rows);
+tmux resizes its panes and the renderer adapts via its dynamic terminal-size
+read. The console re-applies the saved size on startup. Both the boot-default
 config and the saved index are in the migration backup manifest.
 
 **Tailscale:** `scripts/install-pi.sh` installs Tailscale from the official

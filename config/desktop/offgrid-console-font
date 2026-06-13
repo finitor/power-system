@@ -16,17 +16,18 @@ set -euo pipefail
 # 1920x1080); tmux resizes its panes and the renderer adapts via its dynamic
 # terminal-size read. Usage: offgrid-console-font {up|down|reset|apply}
 
-# Small -> large. Index 1 (TerminusBold16, 8x16) is the default set in
-# /etc/default/console-setup and matches the previous 240x67 geometry.
+# Small -> large. Index 2 (TerminusBold20x10, 10x20 cell -> 192x54) is the
+# operator's chosen default: one step up from the 8x16 stock size for
+# legibility on the wall panel. /etc/default/console-setup matches it.
 LADDER=(
   Uni2-TerminusBold14      # 8x14
-  Uni2-TerminusBold16      # 8x16  (default)
-  Uni2-TerminusBold20x10   # 10x20
+  Uni2-TerminusBold16      # 8x16  (stock)
+  Uni2-TerminusBold20x10   # 10x20 (default)
   Uni2-TerminusBold24x12   # 12x24
   Uni2-TerminusBold28x14   # 14x28
   Uni2-TerminusBold32x16   # 16x32
 )
-DEFAULT_INDEX=1
+DEFAULT_INDEX=2
 TTY="${OFFGRID_CONSOLE_TTY:-/dev/tty1}"
 STATE="${OFFGRID_CONSOLE_FONT_STATE:-${HOME}/.local/state/offgrid/console-font-index}"
 

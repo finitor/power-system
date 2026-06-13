@@ -62,6 +62,9 @@ class FooterTest(unittest.TestCase):
         self.assertIn("[w] WEATHER", weather)
         self.assertIn("[p] Power", weather)
 
+    def test_includes_font_size_reminder(self) -> None:
+        self.assertIn("Font  ↓F7  ↑F8", footer(VIEW_POWER))
+
 
 class WithRefreshTest(unittest.TestCase):
     def test_appends_refresh_param(self) -> None:

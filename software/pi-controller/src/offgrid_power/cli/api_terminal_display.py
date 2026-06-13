@@ -81,6 +81,9 @@ def footer(view: str) -> str:
             tag("w", "Weather", view == VIEW_WEATHER),
             "[space] Toggle",
             "[q] Quit",
+            # Font size is an outer-tmux concern (F7/F8 at the root table), not
+            # a renderer key — this is just a reminder the controls exist.
+            "Font  ↓F7  ↑F8",
         ]
     )
 
