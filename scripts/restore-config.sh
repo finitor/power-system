@@ -114,7 +114,7 @@ restore_path etc/cloud/templates/hosts.debian.tmpl /etc/cloud/templates/hosts.de
 restore_path etc/udev/rules.d/90-offgrid-usb.rules /etc/udev/rules.d/90-offgrid-usb.rules 644
 restore_path etc/nginx/sites-available/offgrid-supervisor.conf /etc/nginx/sites-available/offgrid-supervisor.conf 644
 restore_path etc/ssh/sshd_config.d/10-local.conf /etc/ssh/sshd_config.d/10-local.conf 644
-restore_tree etc/sudoers.d /etc/sudoers.d
+restore_reference etc/sudoers.d /etc/sudoers.d.offgrid-migration-reference
 restore_path etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/NetworkManager.conf 644
 restore_tree etc/NetworkManager/system-connections /etc/NetworkManager/system-connections
 restore_tree etc/systemd/network /etc/systemd/network
@@ -148,9 +148,6 @@ if [ "${APPLY}" -eq 1 ]; then
     if [ -d /etc/NetworkManager/system-connections ]; then
         sudo chmod 700 /etc/NetworkManager/system-connections
         sudo find /etc/NetworkManager/system-connections -type f -exec chmod 600 {} \;
-    fi
-    if [ -d /etc/sudoers.d ]; then
-        sudo find /etc/sudoers.d -type f -exec chmod 440 {} \;
     fi
     sudo systemctl daemon-reload
     sudo udevadm control --reload-rules
