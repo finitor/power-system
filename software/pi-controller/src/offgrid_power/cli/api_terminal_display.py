@@ -181,9 +181,9 @@ def main() -> int:
 
 def render_view(view: str, url: str, weather_url: str, timeout: float = 5.0, refresh: bool = False) -> str:
     if view == VIEW_WEATHER:
-        # Weather is a rate-limited network source served from cache; a panel
-        # switch does not force a refetch (see the local-sources-only choice).
-        return render_weather_once(weather_url, timeout=timeout)
+        # A panel switch queues a background forecast re-fetch (non-blocking);
+        # the fresh data lands on the next refresh.
+        return render_weather_once(weather_url, timeout=timeout, refresh=refresh)
     return render_once(url, timeout=timeout, refresh=refresh)
 
 
@@ -206,7 +206,9 @@ def render_once(url: str, timeout: float = 5.0, refresh: bool = False) -> str:
         return render_api_unavailable(str(exc))
 
 
-def render_weather_once(url: str, timeout: float = 5.0) -> str:
+def render_weather_once(url: str, timeout: float = 5.0, refresh: bool = False) -> str:
+    if refresh:
+        url = _with_refresh(url)
     try:
         with urlopen(url, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))

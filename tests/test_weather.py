@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -12,7 +13,9 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.weather import (
+    WeatherConfig,
     WeatherReport,
+    WeatherService,
     add_moon_phase,
     aurora_likelihood_text,
     kp_forecast_entries,
@@ -168,6 +171,47 @@ class WeatherApiPayloadTest(unittest.TestCase):
         self.assertIsNone(payload["current"])
         self.assertTrue(payload["stale"])
         self.assertEqual(payload["label"], "Cabin")
+
+
+class WeatherServiceRefreshTest(unittest.TestCase):
+    def test_request_refresh_fetches_in_background_without_blocking(self) -> None:
+        service = WeatherService(WeatherConfig(latitude=1.0, longitude=2.0, label="X"))
+        done = threading.Event()
+        calls = []
+
+        def fake_fetch(reference, cached):
+            calls.append(reference)
+            done.set()
+            return WeatherReport(label="X", fetched_at=reference, data={})
+
+        service._fetch_and_store = fake_fetch
+        service.request_refresh()  # fire-and-forget
+
+        self.assertTrue(done.wait(timeout=2.0))
+        self.assertEqual(len(calls), 1)
+        # The in-flight guard clears so a later refresh can run again.
+        deadline = threading.Event()
+        deadline.wait(0.05)
+        self.assertFalse(service._refreshing)
+
+    def test_request_refresh_does_not_duplicate_in_flight_fetch(self) -> None:
+        service = WeatherService(WeatherConfig(latitude=1.0, longitude=2.0, label="X"))
+        release = threading.Event()
+        calls = []
+
+        def slow_fetch(reference, cached):
+            calls.append(reference)
+            release.wait(timeout=2.0)
+            return WeatherReport(label="X", fetched_at=reference, data={})
+
+        service._fetch_and_store = slow_fetch
+        service.request_refresh()
+        service.request_refresh()  # second call while first is in flight: ignored
+        release.set()
+
+        deadline = threading.Event()
+        deadline.wait(0.1)
+        self.assertEqual(len(calls), 1)
 
 
 if __name__ == "__main__":

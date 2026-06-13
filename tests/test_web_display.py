@@ -25,6 +25,7 @@ from offgrid_power.web_display import (
     route_display_request,
     snapshot_api_payload,
     wants_source_refresh,
+    wants_weather_refresh,
 )
 from offgrid_power.weather import WeatherReport, weather_api_payload
 from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_magnum_snapshot, make_snapshot
@@ -307,24 +308,32 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 200)
         self.assertEqual(json.loads(response.body)["battery"]["soc_percent"], 92)
 
-    def test_refresh_param_ignored_without_flag_or_on_weather(self) -> None:
+    def test_source_and_weather_refresh_hooks_are_routed_separately(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
-        calls = []
-        hook = lambda: calls.append(1)
+        source, weather = [], []
+        hooks = dict(refresh_hook=lambda: source.append(1), weather_refresh_hook=lambda: weather.append(1))
 
-        # No refresh flag: hook must not fire.
-        route_display_request(snapshot, "/api/v1/snapshot", "curl/8.0", refresh_hook=hook)
-        # Weather is a cached network source: refresh must not re-poll devices.
-        route_display_request(snapshot, "/api/v1/weather?refresh=1", "curl/8.0", refresh_hook=hook)
+        # No flag: neither hook fires.
+        route_display_request(snapshot, "/api/v1/snapshot", "curl/8.0", **hooks)
+        self.assertEqual((source, weather), ([], []))
 
-        self.assertEqual(calls, [])
+        # Snapshot refresh re-polls sources only.
+        route_display_request(snapshot, "/api/v1/snapshot?refresh=1", "curl/8.0", **hooks)
+        self.assertEqual((source, weather), ([1], []))
 
-    def test_wants_source_refresh_paths(self) -> None:
+        # Weather refresh re-fetches the forecast only, not the power sources.
+        route_display_request(snapshot, "/api/v1/weather?refresh=1", "curl/8.0", **hooks)
+        self.assertEqual((source, weather), ([1], [1]))
+
+    def test_wants_source_and_weather_refresh_paths(self) -> None:
         self.assertTrue(wants_source_refresh("/api/v1/snapshot?refresh=1"))
         self.assertTrue(wants_source_refresh("/kindle?refresh=1"))
         self.assertFalse(wants_source_refresh("/api/v1/snapshot"))
         self.assertFalse(wants_source_refresh("/api/v1/weather?refresh=1"))
-        self.assertFalse(wants_source_refresh("/healthz?refresh=1"))
+        self.assertTrue(wants_weather_refresh("/api/v1/weather?refresh=1"))
+        self.assertTrue(wants_weather_refresh("/weather?refresh=1"))
+        self.assertFalse(wants_weather_refresh("/api/v1/snapshot?refresh=1"))
+        self.assertFalse(wants_weather_refresh("/healthz?refresh=1"))
 
     def test_routes_api_weather_handles_missing_report(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))

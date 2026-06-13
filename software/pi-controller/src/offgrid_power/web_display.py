@@ -297,15 +297,25 @@ def render_kindle_weather(
     return "\n".join(lines)
 
 
-# Power-data views whose ?refresh=1 should queue an out-of-cycle source poll.
-# Weather/health are excluded: weather is a rate-limited network source served
-# from cache, and health must stay a cheap liveness check.
+# Views whose ?refresh=1 queues an out-of-cycle poll of the local power
+# sources. Health is excluded so it stays a cheap liveness check.
 _SOURCE_REFRESH_PATHS = {"/api/v1/snapshot", "/", "/kindle", "/display"}
+# Weather views whose ?refresh=1 queues a background re-fetch of the forecast.
+_WEATHER_REFRESH_PATHS = {"/api/v1/weather", "/weather"}
+
+
+def _has_refresh_flag(query: str) -> bool:
+    return "1" in parse_qs(query).get("refresh", [])
 
 
 def wants_source_refresh(path: str) -> bool:
     parsed = urlparse(path)
-    return parsed.path in _SOURCE_REFRESH_PATHS and "1" in parse_qs(parsed.query).get("refresh", [])
+    return parsed.path in _SOURCE_REFRESH_PATHS and _has_refresh_flag(parsed.query)
+
+
+def wants_weather_refresh(path: str) -> bool:
+    parsed = urlparse(path)
+    return parsed.path in _WEATHER_REFRESH_PATHS and _has_refresh_flag(parsed.query)
 
 
 def route_display_request(
@@ -315,11 +325,14 @@ def route_display_request(
     load_summary: LoadSummary | None = None,
     weather_report: WeatherReport | None = None,
     refresh_hook: Callable[[], None] | None = None,
+    weather_refresh_hook: Callable[[], None] | None = None,
 ) -> DisplayResponse:
-    # The hook only queues a re-poll for next time; this response still carries
-    # the current snapshot, so a slow source never delays the reply.
+    # Both hooks only queue work for next time; this response still carries the
+    # current snapshot/cached forecast, so a slow source never delays the reply.
     if refresh_hook is not None and wants_source_refresh(path):
         refresh_hook()
+    if weather_refresh_hook is not None and wants_weather_refresh(path):
+        weather_refresh_hook()
     parsed_path = urlparse(path).path
     if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
         return route_api_request(snapshot, parsed_path, load_summary=load_summary)
@@ -815,9 +828,11 @@ def run_display_server(
     load_summary_provider: Callable[[], LoadSummary | None] | None = None,
     weather_provider: Callable[[], WeatherReport | None] | None = None,
     refresh_hook: Callable[[], None] | None = None,
+    weather_refresh_hook: Callable[[], None] | None = None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
     refresh = refresh_hook or supervisor.request_refresh
+    weather_refresh = weather_refresh_hook
     load_tracker = LoadTracker(sample_buffer=LoadSampleBuffer())
 
     class Handler(BaseHTTPRequestHandler):
@@ -869,6 +884,7 @@ def run_display_server(
                 load_summary=load_summary,
                 weather_report=weather_report,
                 refresh_hook=refresh,
+                weather_refresh_hook=weather_refresh,
             )
             self.send_response(response.status.value)
             self.send_header("Content-Type", response.content_type)

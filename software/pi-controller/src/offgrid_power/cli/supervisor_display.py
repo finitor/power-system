@@ -345,6 +345,7 @@ def start_web_display(
             "snapshot_provider": snapshot_cache.get,
             "load_summary_provider": snapshot_cache.get_load_summary,
             "weather_provider": None if weather_service is None else weather_service.get,
+            "weather_refresh_hook": None if weather_service is None else weather_service.request_refresh,
         },
         daemon=True,
     )

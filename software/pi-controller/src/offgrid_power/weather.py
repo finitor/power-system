@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -50,6 +50,7 @@ class WeatherService:
         self.config = config
         self._report: WeatherReport | None = None
         self._lock = Lock()
+        self._refreshing = False
 
     def get(self, now: datetime | None = None) -> WeatherReport:
         reference = (now or datetime.now().astimezone()).astimezone()
@@ -63,7 +64,27 @@ class WeatherService:
             ):
                 self._report = cached
                 return cached
+        return self._fetch_and_store(reference, cached)
 
+    def request_refresh(self) -> None:
+        """Fetch fresh weather in the background; the new report lands on a
+        later get(). Fire-and-forget so a manual panel switch never blocks on
+        the network. A refresh already in flight is not duplicated.
+        """
+        with self._lock:
+            if self._refreshing:
+                return
+            self._refreshing = True
+        Thread(target=self._refresh_worker, name="weather-refresh", daemon=True).start()
+
+    def _refresh_worker(self) -> None:
+        try:
+            self._fetch_and_store(datetime.now().astimezone(), self._report)
+        finally:
+            with self._lock:
+                self._refreshing = False
+
+    def _fetch_and_store(self, reference: datetime, cached: WeatherReport | None) -> WeatherReport:
         try:
             data = fetch_open_meteo(self.config, timeout_s=self.config.timeout_s)
             if self.config.aurora_enabled:
