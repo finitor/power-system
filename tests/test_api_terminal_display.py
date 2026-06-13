@@ -10,7 +10,11 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
-from offgrid_power.api_terminal_display import render_api_snapshot, render_api_unavailable
+from offgrid_power.api_terminal_display import (
+    render_api_snapshot,
+    render_api_unavailable,
+    render_api_weather,
+)
 
 
 class ApiTerminalDisplayTest(unittest.TestCase):
@@ -139,6 +143,92 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Status:  UNAVAILABLE", rendered)
         self.assertIn("connection refused", rendered)
         self.assertNotIn("Press Ctrl-C", rendered)
+
+
+class ApiWeatherDisplayTest(unittest.TestCase):
+    def _payload(self) -> dict:
+        return {
+            "schema_version": 1,
+            "label": "Cabin",
+            "fetched_at": "2026-06-13T08:30:00-04:00",
+            "stale": False,
+            "error": None,
+            "data": {
+                "current": {
+                    "weather_code": 3,
+                    "temperature_2m": 11.0,
+                    "apparent_temperature": 10.3,
+                    "relative_humidity_2m": 94,
+                    "cloud_cover": 94,
+                    "wind_speed_10m": 5,
+                    "wind_gusts_10m": 20,
+                    "wind_direction_10m": 225,
+                    "precipitation": 0.0,
+                    "rain": 0.0,
+                    "snowfall": 0.0,
+                    "shortwave_radiation": 156,
+                    "direct_radiation": 0,
+                    "diffuse_radiation": 156,
+                    "direct_normal_irradiance": 0,
+                },
+                "hourly": {
+                    "time": ["2026-06-13T08:00", "2026-06-13T09:00"],
+                    "weather_code": [3, 3],
+                    "temperature_2m": [10.2, 11.7],
+                    "precipitation_probability": [24, 15],
+                    "wind_speed_10m": [3, 10],
+                },
+                "daily": {
+                    "time": ["2026-06-13", "2026-06-14"],
+                    "weather_code": [45, 3],
+                    "temperature_2m_min": [7.8, 7.3],
+                    "temperature_2m_max": [13.1, 10.0],
+                    "precipitation_probability_max": [24, 8],
+                    "precipitation_sum": [0.0, 0.0],
+                    "sunrise": ["2026-06-13T05:39"],
+                    "sunset": ["2026-06-13T21:39"],
+                    "moon_phase": [0.92],
+                },
+                "aurora": {
+                    "probability_percent": 0,
+                    "forecast_time": "2026-06-13T09:25",
+                    "tonight": {"peak_kp": 3.7, "likelihood": "unlikely", "peak_time": "2026-06-13T23:00"},
+                },
+            },
+        }
+
+    def test_render_api_weather_sections(self) -> None:
+        rendered = render_api_weather(self._payload())
+
+        self.assertIn("Off-Grid Weather - Cabin", rendered)
+        self.assertIn("As of: 08:30", rendered)
+        self.assertIn("\nCurrent\n", rendered)
+        self.assertIn("Condition             overcast", rendered)
+        self.assertIn("Temperature           11.0C", rendered)
+        self.assertIn("Wind                  5km/h  20km/h gust  SW", rendered)
+        self.assertIn("\nNext Hours\n", rendered)
+        self.assertIn("\nForecast\n", rendered)
+        self.assertIn("\nSolar Irradiance\n", rendered)
+        self.assertIn("Global Horizontal     156W/m2", rendered)
+        self.assertIn("\nAstronomy\n", rendered)
+        self.assertIn("Sun                   rise 05:39  set 21:39", rendered)
+        self.assertIn("Aurora", rendered)
+
+    def test_render_api_weather_no_data(self) -> None:
+        rendered = render_api_weather(
+            {"schema_version": 1, "label": None, "fetched_at": None, "stale": True, "error": "weather unavailable", "data": None}
+        )
+
+        self.assertIn("Off-Grid Weather", rendered)
+        self.assertIn("Weather unavailable", rendered)
+        self.assertIn("Note: weather unavailable", rendered)
+
+    def test_render_api_weather_marks_stale(self) -> None:
+        payload = self._payload()
+        payload["stale"] = True
+        rendered = render_api_weather(payload)
+
+        self.assertIn("Using last cached weather", rendered)
 
 
 if __name__ == "__main__":

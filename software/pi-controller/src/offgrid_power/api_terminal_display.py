@@ -7,6 +7,18 @@ import shutil
 
 from .charge_stage import NormalizedStage
 from .terminal_display import format_cell_location_for_display, format_updated_time
+from .weather import weather_code_text
+from .web_display import (
+    _daily_temperature_text,
+    _format_number,
+    _indexed,
+    _moon_phase_text,
+    _precip_text,
+    _short_day,
+    _short_time,
+    _sun_text,
+    _wind_text,
+)
 
 
 ROW_LABEL_WIDTH = 21
@@ -80,6 +92,140 @@ def render_api_unavailable(error: str) -> str:
             f"  - {error}",
         ]
     )
+
+
+def render_api_weather(payload: dict, now: datetime | None = None) -> str:
+    width = min(shutil.get_terminal_size((100, 30)).columns, 120)
+    label = payload.get("label") or "Weather"
+    data = payload.get("data") or {}
+    fetched_at = _parse_datetime(payload.get("fetched_at"))
+
+    lines: list[str] = [f"Off-Grid Weather - {label}".ljust(width)]
+    if fetched_at is None:
+        lines.append("As of: unavailable")
+    else:
+        lines.append(f"As of: {format_updated_time(fetched_at)}")
+    if payload.get("stale"):
+        lines.append("Using last cached weather; WAN fetch failed.")
+    if payload.get("error"):
+        lines.append(f"Note: {payload['error']}")
+
+    if not data:
+        lines.append("")
+        lines.append("Weather unavailable")
+        return "\n".join(lines)
+
+    current = data.get("current") or {}
+    lines.append("")
+    lines.append("Current")
+    lines.append(_row("Condition", weather_code_text(current.get("weather_code"))))
+    lines.append(_row("Temperature", _format_number(current.get("temperature_2m"), "C", decimals=1) or "--"))
+    for row_label, value in [
+        ("Feels Like", _format_number(current.get("apparent_temperature"), "C", decimals=1)),
+        ("Humidity", _format_number(current.get("relative_humidity_2m"), "%", decimals=0)),
+        ("Cloud", _format_number(current.get("cloud_cover"), "%", decimals=0)),
+        (
+            "Wind",
+            _wind_text(
+                current.get("wind_speed_10m"),
+                current.get("wind_gusts_10m"),
+                current.get("wind_direction_10m"),
+            ),
+        ),
+        ("Precip Now", _precip_text(current.get("precipitation"), current.get("rain"), current.get("snowfall"))),
+    ]:
+        if value is not None:
+            lines.append(_row(row_label, value))
+
+    hourly = data.get("hourly") or {}
+    hours = hourly.get("time") or []
+    if hours:
+        lines.append("")
+        lines.append("Next Hours")
+        for index, hour in enumerate(hours[:8]):
+            lines.append(
+                _row(
+                    _short_time(hour),
+                    "  ".join(
+                        item
+                        for item in [
+                            weather_code_text(_indexed(hourly.get("weather_code"), index)),
+                            _format_number(_indexed(hourly.get("temperature_2m"), index), "C", decimals=1),
+                            _format_number(_indexed(hourly.get("precipitation_probability"), index), "% precip", decimals=0),
+                            _format_number(_indexed(hourly.get("wind_speed_10m"), index), "km/h", decimals=0),
+                        ]
+                        if item
+                    ),
+                )
+            )
+
+    daily = data.get("daily") or {}
+    days = daily.get("time") or []
+    if days:
+        lines.append("")
+        lines.append("Forecast")
+        for index, day in enumerate(days[:3]):
+            lines.append(
+                _row(
+                    _short_day(day),
+                    "  ".join(
+                        item
+                        for item in [
+                            weather_code_text(_indexed(daily.get("weather_code"), index)),
+                            _daily_temperature_text(
+                                _indexed(daily.get("temperature_2m_min"), index),
+                                _indexed(daily.get("temperature_2m_max"), index),
+                            ),
+                            _format_number(_indexed(daily.get("precipitation_probability_max"), index), "% precip", decimals=0),
+                            _format_number(_indexed(daily.get("precipitation_sum"), index), "mm", decimals=1),
+                        ]
+                        if item
+                    ),
+                )
+            )
+
+    lines.append("")
+    lines.append("Solar Irradiance")
+    lines.append(_row("Global Horizontal", _format_number(current.get("shortwave_radiation"), "W/m2", decimals=0) or "--"))
+    lines.append(_row("Direct Radiation", _format_number(current.get("direct_radiation"), "W/m2", decimals=0) or "--"))
+    lines.append(_row("Diffuse Radiation", _format_number(current.get("diffuse_radiation"), "W/m2", decimals=0) or "--"))
+    lines.append(_row("Direct Normal", _format_number(current.get("direct_normal_irradiance"), "W/m2", decimals=0) or "--"))
+
+    lines.append("")
+    lines.append("Astronomy")
+    sun = _sun_text(_indexed(daily.get("sunrise"), 0), _indexed(daily.get("sunset"), 0))
+    if sun:
+        lines.append(_row("Sun", sun))
+    moon = _moon_phase_text(_indexed(daily.get("moon_phase"), 0))
+    if moon:
+        lines.append(_row("Moon", moon))
+    lines.extend(_aurora_lines(data.get("aurora")))
+
+    return "\n".join(lines)
+
+
+def _aurora_lines(aurora: object) -> list[str]:
+    if not isinstance(aurora, dict) or aurora.get("error"):
+        return []
+    lines: list[str] = []
+    probability = _format_number(aurora.get("probability_percent"), "%", decimals=0)
+    if probability:
+        text = f"now {probability}"
+        forecast_time = aurora.get("forecast_time")
+        if isinstance(forecast_time, str):
+            text = f"{text} valid {_short_time(forecast_time)}"
+        lines.append(_row("Aurora", text))
+    tonight = aurora.get("tonight")
+    if isinstance(tonight, dict) and not tonight.get("error"):
+        kp = _format_number(tonight.get("peak_kp"), "", decimals=1)
+        likelihood = tonight.get("likelihood")
+        if kp is not None and isinstance(likelihood, str):
+            peak_time = tonight.get("peak_time")
+            time_text = _short_time(peak_time) if isinstance(peak_time, str) else "--"
+            scale = tonight.get("noaa_scale")
+            scale_text = f" {scale}" if scale else ""
+            lines.append(_row("Aurora Tonight", f"{likelihood}  peak Kp {kp}{scale_text} around {time_text}"))
+    return lines
 
 
 def _status_line(status: dict, battery: dict) -> str:

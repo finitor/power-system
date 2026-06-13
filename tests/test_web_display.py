@@ -262,6 +262,35 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["solar"][1]["settings"]["battery_type"], "User")
         self.assertEqual(payload["load"]["estimated_autonomy_hours"], 46.0)
 
+    def test_routes_api_weather_as_json(self) -> None:
+        snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
+        report = WeatherReport(
+            label="Cabin",
+            fetched_at=datetime(2026, 6, 13, 12, 30, tzinfo=timezone.utc),
+            data={"current": {"temperature_2m": 11.0, "weather_code": 3}},
+        )
+
+        response = route_display_request(snapshot, "/api/v1/weather", "curl/8.0", weather_report=report)
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(response.content_type, "application/json; charset=utf-8")
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["label"], "Cabin")
+        self.assertFalse(payload["stale"])
+        self.assertEqual(payload["data"]["current"]["temperature_2m"], 11.0)
+
+    def test_routes_api_weather_handles_missing_report(self) -> None:
+        snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
+
+        response = route_display_request(snapshot, "/api/v1/weather", "curl/8.0", weather_report=None)
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["stale"])
+        self.assertIsNone(payload["data"])
+        self.assertEqual(payload["error"], "weather unavailable")
+
     def test_snapshot_api_payload_includes_charge_controller_settings(self) -> None:
         captured_at = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
         snapshot = make_snapshot(

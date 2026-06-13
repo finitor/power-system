@@ -302,6 +302,8 @@ def route_display_request(
     parsed_path = urlparse(path).path
     if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
         return route_api_request(snapshot, parsed_path, load_summary=load_summary)
+    if parsed_path == "/api/v1/weather":
+        return _json_response(HTTPStatus.OK, weather_api_payload(weather_report))
     if parsed_path not in {"/", "/kindle", "/display", "/weather", "/healthz"}:
         return DisplayResponse(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"not found\n")
     if parsed_path == "/healthz":
@@ -332,6 +334,26 @@ def route_api_request(
     if path == "/api/v1/snapshot":
         return _json_response(HTTPStatus.OK, snapshot_api_payload(snapshot, load_summary=load_summary, now=now))
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
+
+
+def weather_api_payload(report: WeatherReport | None) -> dict:
+    if report is None:
+        return {
+            "schema_version": 1,
+            "label": None,
+            "fetched_at": None,
+            "stale": True,
+            "error": "weather unavailable",
+            "data": None,
+        }
+    return {
+        "schema_version": 1,
+        "label": report.label,
+        "fetched_at": report.fetched_at.isoformat(),
+        "stale": report.stale,
+        "error": report.error,
+        "data": report.data,
+    }
 
 
 def _hourly_weather_section(data: dict) -> list[str]:
@@ -873,10 +895,10 @@ def run_display_server(
                 weather_report = None
             elif load_summary_provider is not None:
                 load_summary = load_summary_provider()
-                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path == "/weather" else None
+                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in {"/weather", "/api/v1/weather"} else None
             else:
                 load_summary = load_tracker.update(snapshot)
-                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path == "/weather" else None
+                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in {"/weather", "/api/v1/weather"} else None
             response = route_display_request(
                 snapshot,
                 self.path,
