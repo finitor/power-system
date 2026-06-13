@@ -6,23 +6,25 @@ set -euo pipefail
 # Console fonts are not scalable: "bigger" means loading a different PSF
 # glyph file via setfont. All the sizes below ship with console-setup
 # (/usr/share/consolefonts) so the step is just a setfont away. Every entry
-# is a Uni2-Terminus variant so Greek (the cell-delta U+0394) renders at any
-# size; see docs/runbooks/pi-64-bit-os-lite-migration.md. The chosen index is
-# persisted so it survives console/service restarts and reboots.
+# is a Uni2-TerminusBold variant: Bold gives heavier, less spindly strokes
+# than plain Terminus, and Uni2 covers the glyphs the display needs beyond
+# ASCII — the cell-delta U+0394 and the trend arrows U+2191/U+2193. See
+# docs/runbooks/pi-64-bit-os-lite-migration.md. The chosen index is persisted
+# so it survives console/service restarts and reboots.
 #
 # Changing the cell size reflows the tty geometry (the framebuffer is fixed at
 # 1920x1080); tmux resizes its panes and the renderer adapts via its dynamic
 # terminal-size read. Usage: offgrid-console-font {up|down|reset|apply}
 
-# Small -> large. Index 1 (Terminus16, 8x16) is the default set in
+# Small -> large. Index 1 (TerminusBold16, 8x16) is the default set in
 # /etc/default/console-setup and matches the previous 240x67 geometry.
 LADDER=(
-  Uni2-Terminus14      # 8x14
-  Uni2-Terminus16      # 8x16  (default)
-  Uni2-Terminus20x10   # 10x20
-  Uni2-Terminus24x12   # 12x24
-  Uni2-Terminus28x14   # 14x28
-  Uni2-Terminus32x16   # 16x32
+  Uni2-TerminusBold14      # 8x14
+  Uni2-TerminusBold16      # 8x16  (default)
+  Uni2-TerminusBold20x10   # 10x20
+  Uni2-TerminusBold24x12   # 12x24
+  Uni2-TerminusBold28x14   # 14x28
+  Uni2-TerminusBold32x16   # 16x32
 )
 DEFAULT_INDEX=1
 TTY="${OFFGRID_CONSOLE_TTY:-/dev/tty1}"

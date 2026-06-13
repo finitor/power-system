@@ -260,14 +260,17 @@ physical screen, all services healthy, and memory used dropped from ~300 MB
 number. Rollback is `sudo systemctl set-default graphical.target` plus
 removing the `.profile` guard.
 
-**Console font (Greek coverage):** the kernel default console font is 8x16
-with only 256 glyphs, so U+0394 (the cell-delta Δ in the display) renders as
-a missing-glyph fallback. `/etc/default/console-setup` is set to
-`CODESET="Uni2"` `FONTFACE="Terminus"` `FONTSIZE="8x16"` → `Uni2-Terminus16`,
-which is the same 8x16 cell size (so the 1920x1080 / 8x16 = 240x67 geometry
-and the pane layout are unchanged) but carries 512 glyphs including Greek.
-Apply with `sudo setupcon --save`. This sets the *boot default*; the size is
-then adjustable at runtime (below).
+**Console font:** the kernel default console font is 8x16 with only 256
+glyphs, so the display's non-ASCII glyphs — the cell-delta U+0394 (Δ) and the
+trend arrows U+2191/U+2193 (↑↓) — render as missing-glyph fallbacks.
+`/etc/default/console-setup` is set to `CODESET="Uni2"`
+`FONTFACE="TerminusBold"` `FONTSIZE="8x16"` → `Uni2-TerminusBold16`: same 8x16
+cell size (so the 1920x1080 / 8x16 = 240x67 geometry and the pane layout are
+unchanged), 512 glyphs covering Greek + arrows, and Bold for heavier, less
+spindly strokes than plain Terminus (VGA/Fixed are heavier still but exist
+only at 8x16, so they would forfeit the size ladder below). Apply with
+`sudo setupcon --save`. This sets the *boot default*; the size is then
+adjustable at runtime (below).
 
 **Font size hotkeys:** `~/.local/bin/offgrid-console-font {up|down|reset}`
 steps a preloaded Uni2-Terminus ladder (14 → 16 → 20x10 → 24x12 → 28x14 →
