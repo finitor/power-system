@@ -37,18 +37,23 @@ ensure_session() {
   tmux -L "${SOCKET}" resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}"
   # Land on the shell so the keyboard is immediately useful.
   tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1"
-  # Font size hotkeys (prefix + / prefix -), repeatable. Server-global, so
-  # re-bound whenever the session is rebuilt. The shell pane holds focus, so
-  # the prefix reaches this outer server rather than the nested display.
-  if [ -x "${FONT_TOOL}" ]; then
-    tmux -L "${SOCKET}" bind-key -r -T prefix + run-shell "${FONT_TOOL} up"
-    tmux -L "${SOCKET}" bind-key -r -T prefix - run-shell "${FONT_TOOL} down"
-    tmux -L "${SOCKET}" bind-key -T prefix 0 run-shell "${FONT_TOOL} reset"
-  fi
+}
+
+# Font size hotkeys (prefix + / prefix -, repeatable; prefix 0 resets). These
+# are server-global and set on every startup — the tmux server outlives a
+# console/getty restart, so binding only at session creation would miss it.
+# The shell pane holds focus, so the prefix reaches this outer server rather
+# than the nested display.
+setup_bindings() {
+  [ -x "${FONT_TOOL}" ] || return 0
+  tmux -L "${SOCKET}" bind-key -r -T prefix + run-shell "${FONT_TOOL} up"
+  tmux -L "${SOCKET}" bind-key -r -T prefix - run-shell "${FONT_TOOL} down"
+  tmux -L "${SOCKET}" bind-key -T prefix 0 run-shell "${FONT_TOOL} reset"
 }
 
 while true; do
   ensure_session
+  setup_bindings
   tmux -L "${SOCKET}" attach -t "${SESSION}"
   sleep 2
 done
