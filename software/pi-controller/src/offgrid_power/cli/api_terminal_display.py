@@ -13,6 +13,7 @@ import argparse
 import contextlib
 import json
 import select
+import shutil
 import sys
 import time
 from urllib.error import HTTPError, URLError
@@ -84,6 +85,22 @@ def footer(view: str) -> str:
     )
 
 
+def compose_frame(body: str, footer_line: str, height: int) -> str:
+    """Pad the body so the footer sits on the bottom row of a `height`-row pane.
+
+    The body is rendered top-aligned and the footer pinned to the last row;
+    the gap between them is blank. Returns a frame with no trailing newline so
+    writing it leaves the cursor on the footer row without scrolling.
+    """
+    lines = body.split("\n")
+    visible = max(height - 1, 1)
+    if len(lines) > visible:
+        lines = lines[:visible]
+    else:
+        lines += [""] * (visible - len(lines))
+    return "\n".join(lines) + "\n" + footer_line
+
+
 @contextlib.contextmanager
 def cbreak_mode(stream):
     """Put a tty stream in cbreak mode so single keypresses read without Enter."""
@@ -114,11 +131,15 @@ def main() -> int:
             while True:
                 started = time.monotonic()
                 rendered = render_view(view, args.url, weather_url, timeout=args.timeout)
+                body = highlight_changed_digits(previous_render, rendered)
                 if not args.no_clear:
                     clear_screen()
-                print(highlight_changed_digits(previous_render, rendered), flush=True)
                 if interactive:
-                    print(footer(view), flush=True)
+                    height = shutil.get_terminal_size((80, 24)).lines
+                    sys.stdout.write(compose_frame(body, footer(view), height))
+                    sys.stdout.flush()
+                else:
+                    print(body, flush=True)
                 previous_render = rendered
                 if args.once:
                     return 0

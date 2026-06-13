@@ -12,6 +12,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 from offgrid_power.cli.api_terminal_display import (
     VIEW_POWER,
     VIEW_WEATHER,
+    compose_frame,
     derive_weather_url,
     footer,
     resolve_key,
@@ -59,6 +60,28 @@ class FooterTest(unittest.TestCase):
         weather = footer(VIEW_WEATHER)
         self.assertIn("[w] WEATHER", weather)
         self.assertIn("[p] Power", weather)
+
+
+class ComposeFrameTest(unittest.TestCase):
+    def test_pins_footer_to_bottom_row(self) -> None:
+        frame = compose_frame("line1\nline2", "FOOTER", height=6)
+        rows = frame.split("\n")
+
+        self.assertEqual(len(rows), 6)  # exactly fills the pane height
+        self.assertEqual(rows[0], "line1")
+        self.assertEqual(rows[1], "line2")
+        self.assertEqual(rows[2:5], ["", "", ""])  # blank gap
+        self.assertEqual(rows[-1], "FOOTER")
+        self.assertFalse(frame.endswith("\n"))  # no trailing newline -> no scroll
+
+    def test_truncates_body_taller_than_pane(self) -> None:
+        body = "\n".join(f"line{n}" for n in range(10))
+        frame = compose_frame(body, "FOOTER", height=4)
+        rows = frame.split("\n")
+
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(rows[-1], "FOOTER")
+        self.assertEqual(rows[:3], ["line0", "line1", "line2"])
 
 
 if __name__ == "__main__":
