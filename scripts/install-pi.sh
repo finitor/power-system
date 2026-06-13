@@ -28,6 +28,14 @@ sudo apt-get install -y \
     tmux \
     usbutils
 
+if [ "${OFFGRID_INSTALL_TAILSCALE:-1}" = "1" ] && ! command -v tailscale >/dev/null 2>&1; then
+    echo "== tailscale =="
+    curl -fsSL https://tailscale.com/install.sh | sh
+fi
+if command -v tailscale >/dev/null 2>&1; then
+    sudo systemctl enable --now tailscaled
+fi
+
 echo "== directories =="
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/autostart"
 # Ownership is handled by deploy.sh (service account) and the supervisor

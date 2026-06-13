@@ -52,6 +52,7 @@ copy_if_exists /etc/NetworkManager/NetworkManager.conf etc/NetworkManager/Networ
 copy_if_exists /etc/NetworkManager/system-connections etc/NetworkManager/system-connections
 copy_if_exists /etc/systemd/network etc/systemd/network
 copy_if_exists /etc/wpa_supplicant etc/wpa_supplicant
+copy_if_exists /etc/default/tailscaled etc/default/tailscaled
 copy_if_exists /etc/apt/apt.conf.d/20auto-upgrades etc/apt/apt.conf.d/20auto-upgrades
 copy_if_exists /etc/apt/apt.conf.d/52unattended-upgrades-local etc/apt/apt.conf.d/52unattended-upgrades-local
 copy_if_exists /etc/default/console-setup etc/default/console-setup
@@ -66,6 +67,7 @@ copy_if_exists "${HOME}/.config/autostart/offgrid-console.desktop" home/offgrid-
 copy_if_exists "${HOME}/.ssh" home/offgrid-user/.ssh
 copy_if_exists /srv/telemetry srv/telemetry
 copy_if_exists /var/lib/offgrid var/lib/offgrid
+copy_if_exists /var/lib/tailscale var/lib/tailscale
 
 capture_cmd manifest/hostname.txt hostnamectl
 capture_cmd manifest/uname.txt uname -a
@@ -80,6 +82,7 @@ capture_cmd manifest/lsusb.txt lsusb
 capture_cmd manifest/serial-devices.txt sh -c 'ls -l /dev/*rs485 /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true'
 capture_cmd manifest/mounts.txt findmnt
 capture_cmd manifest/df.txt df -h
+capture_cmd manifest/tailscale-status.txt tailscale status
 capture_cmd manifest/fstab-telemetry-lines.txt awk '$2 == "/srv/telemetry" { print }' /etc/fstab
 capture_cmd manifest/boot-config-diff-hint.txt sh -c 'printf "Review boot/firmware/config.txt manually before copying to a fresh image; do not blindly restore cmdline.txt because it contains root identity.\n"'
 capture_cmd manifest/git-head.txt git -C "${PROJECT_DIR}" rev-parse HEAD

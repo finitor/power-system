@@ -103,6 +103,7 @@ Capture these from the running Pi before changing the SD card:
 | SSH identity and access | `~/.ssh`, `/etc/ssh/sshd_config*` | Preserve access and GitHub deploy auth if used |
 | sudoers snippets | `/etc/sudoers.d` | Preserve as reference only; deploy recreates the known `020_offgrid_operator` NOPASSWD policy |
 | Network config | NetworkManager/systemd-networkd/wpa config, hostname | Keep `blueberry.local` stable if consumers depend on it |
+| Tailscale identity | `/var/lib/tailscale`, `/etc/default/tailscaled` | Preserve if available; otherwise reinstall and re-auth after rebuild |
 | Boot config | `/boot/firmware/config.txt`, `/boot/firmware/cmdline.txt` | Preserve as reference only; do not blindly restore root/cmdline from the old card |
 | Package inventory | `dpkg --get-selections`, manually installed packages | Reference only; do not blindly replay everything |
 | Service state | `systemctl list-unit-files 'offgrid-*'`, enabled timers | Recreate intent, not necessarily exact files |
@@ -307,13 +308,14 @@ survived at least one deploy, one reboot, and a representative telemetry run.
   explicit `--apply` guard.
 - Done: backup/restore preserves `/etc/fstab`, boot config, hostname, hosts,
   cloud-init host template/config, sudoers snippets, SSH daemon local config,
-  and NetworkManager/systemd-networkd/wpa_supplicant config as migration
-  references. Restore appends only the `/srv/telemetry` fstab entry to a fresh
-  image, avoiding stale root/boot PARTUUIDs; arbitrary sudoers snippets are
-  kept as reference only, and deploy recreates the known operator NOPASSWD
-  drop-in from tracked config.
+  NetworkManager/systemd-networkd/wpa_supplicant config, and Tailscale
+  identity as migration references. Restore appends only the `/srv/telemetry`
+  fstab entry to a fresh image, avoiding stale root/boot PARTUUIDs; arbitrary
+  sudoers snippets are kept as reference only, and deploy recreates the known
+  operator NOPASSWD drop-in from tracked config.
 - Done: `scripts/install-pi.sh` installs the minimal package and venv bootstrap
-  for Raspberry Pi OS Lite 64-bit, then runs deploy.
+  for Raspberry Pi OS Lite 64-bit, installs Tailscale if missing, then runs
+  deploy.
 - Done: `scripts/health-check.sh` runs the validation checks above.
 - Add the chosen OS image and package baseline to `docs/maintenance.md` after
   the migration.

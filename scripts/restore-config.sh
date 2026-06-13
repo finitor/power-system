@@ -125,6 +125,7 @@ restore_path etc/NetworkManager/NetworkManager.conf /etc/NetworkManager/NetworkM
 restore_tree etc/NetworkManager/system-connections /etc/NetworkManager/system-connections
 restore_tree etc/systemd/network /etc/systemd/network
 restore_tree etc/wpa_supplicant /etc/wpa_supplicant
+restore_path etc/default/tailscaled /etc/default/tailscaled 644
 restore_path etc/apt/apt.conf.d/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades 644
 restore_path etc/apt/apt.conf.d/52unattended-upgrades-local /etc/apt/apt.conf.d/52unattended-upgrades-local 644
 restore_path etc/default/console-setup /etc/default/console-setup 644
@@ -138,6 +139,7 @@ restore_path home/offgrid-user/.profile "${HOME}/.profile" 644
 restore_path home/offgrid-user/.config/autostart/offgrid-console.desktop "${HOME}/.config/autostart/offgrid-console.desktop" 644
 restore_tree srv/telemetry /srv/telemetry
 restore_tree var/lib/offgrid /var/lib/offgrid
+restore_tree var/lib/tailscale /var/lib/tailscale
 
 if [ -e "${ROOT}/home/offgrid-user/.ssh" ]; then
     echo "restore tree home/offgrid-user/.ssh -> ${HOME}/.ssh"
@@ -151,6 +153,10 @@ fi
 
 if [ "${APPLY}" -eq 1 ]; then
     sudo chown -R "$(id -u):$(id -g)" /srv/telemetry /var/lib/offgrid
+    if [ -d /var/lib/tailscale ]; then
+        sudo chown -R root:root /var/lib/tailscale
+        sudo chmod 700 /var/lib/tailscale
+    fi
     if [ -d /etc/NetworkManager/system-connections ]; then
         sudo chmod 700 /etc/NetworkManager/system-connections
         sudo find /etc/NetworkManager/system-connections -type f -exec chmod 600 {} \;
