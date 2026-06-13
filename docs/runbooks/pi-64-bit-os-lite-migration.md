@@ -208,9 +208,18 @@ a missing-glyph fallback. `/etc/default/console-setup` is set to
 `CODESET="Uni2"` `FONTFACE="Terminus"` `FONTSIZE="8x16"` → `Uni2-Terminus16`,
 which is the same 8x16 cell size (so the 1920x1080 / 8x16 = 240x67 geometry
 and the pane layout are unchanged) but carries 512 glyphs including Greek.
-Apply with `sudo setupcon --save`. Do NOT bump the size (e.g. 16x32) to fill
-the panel: that halves the column count and reflows the display. The config
-is in the migration backup manifest.
+Apply with `sudo setupcon --save`. This sets the *boot default*; the size is
+then adjustable at runtime (below).
+
+**Font size hotkeys:** `~/.local/bin/offgrid-console-font {up|down|reset}`
+steps a preloaded Uni2-Terminus ladder (14 → 16 → 20x10 → 24x12 → 28x14 →
+32x16) via `setfont`, persisting the index to
+`~/.local/state/offgrid/console-font-index`. The composed console binds it to
+`prefix +` / `prefix -` (repeatable) and `prefix 0` (reset), and re-applies
+the saved size on startup. setfont reflows the tty (the framebuffer is fixed
+at 1920x1080, so a bigger cell = fewer cols/rows); tmux resizes its panes and
+the renderer adapts via its dynamic terminal-size read. Both the boot-default
+config and the saved index are in the migration backup manifest.
 
 ## Post-Migration Follow-Ups
 
