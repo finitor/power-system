@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
 from .supervisor import Supervisor, SupervisorSnapshot
 from .terminal_display import format_cell_location_for_display, format_time
-from .weather import WeatherReport, weather_code_text
+from .weather import WeatherReport, weather_api_payload
 
 
 KINDLE_REFRESH_SECONDS = 60
@@ -187,21 +187,29 @@ def render_kindle_snapshot(
 
 
 def render_kindle_weather(
-    report: WeatherReport | None,
+    payload: dict | None,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     now: datetime | None = None,
 ) -> str:
+    # Consumes the normalized weather API payload (weather.weather_api_payload),
+    # so this renderer holds no knowledge of the upstream weather provider.
+    payload = payload or {}
     reference = now or datetime.now().astimezone()
+    current = payload.get("current")
+    observed_at = _parse_payload_time(payload.get("observed_at"))
+    stale = bool(payload.get("stale"))
+    error = payload.get("error")
+    label = payload.get("label") or "Weather"
     status_text = "Weather unavailable"
     updated = "never"
-    if report is not None and report.data:
-        updated = format_kindle_time(report.fetched_at)
-        status_text = "stale forecast" if report.stale else "forecast"
+    if current:
+        updated = format_kindle_time(observed_at) if observed_at is not None else "never"
+        status_text = "stale forecast" if stale else "forecast"
     too_stale = (
-        report is not None
-        and report.data
-        and report.stale
-        and reference.astimezone() - report.fetched_at.astimezone() >= WEATHER_STALE_AFTER
+        bool(current)
+        and stale
+        and observed_at is not None
+        and reference.astimezone() - observed_at.astimezone() >= WEATHER_STALE_AFTER
     )
     lines = [
         "<!doctype html>",
@@ -232,15 +240,15 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">Weather service has been unreachable since {escape(format_time(report.fetched_at))}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">Weather service has been unreachable since {escape(format_time(observed_at))}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Conditions</h2>",
                 "<p>Weather service unreachable.</p>",
             ]
         )
-        if report.error:
-            lines.append(f'<p class="small">{escape(report.error)}</p>')
-    elif report is None or not report.data:
+        if error:
+            lines.append(f'<p class="small">{escape(error)}</p>')
+    elif not current:
         lines.extend(
             [
                 '<table class="summary-table">',
@@ -250,38 +258,34 @@ def render_kindle_weather(
                 "<p>Weather unavailable.</p>",
             ]
         )
-        if report is not None and report.error:
-            lines.append(f'<p class="small">{escape(report.error)}</p>')
+        if error:
+            lines.append(f'<p class="small">{escape(error)}</p>')
     else:
-        current = report.data.get("current") or {}
-        temp = _format_number(current.get("temperature_2m"), "C", decimals=1)
-        condition = weather_code_text(current.get("weather_code"))
+        temp = _format_number(current.get("temperature_c"), "C", decimals=1)
+        condition = (current.get("condition") or {}).get("text") or "unknown"
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(report.label)}: {escape(condition)}<br>As of: {escape(updated)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>As of: {escape(updated)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Current</h2>",
                 "<table>",
-                _weather_row("Feels Like", _format_number(current.get("apparent_temperature"), "C", decimals=1)),
-                _weather_row("Humidity", _format_number(current.get("relative_humidity_2m"), "%", decimals=0)),
-                _weather_row("Cloud", _format_number(current.get("cloud_cover"), "%", decimals=0)),
-                _weather_row(
-                    "Wind",
-                    _wind_text(current.get("wind_speed_10m"), current.get("wind_gusts_10m"), current.get("wind_direction_10m")),
-                ),
-                _weather_row("Precip Now", _precip_text(current.get("precipitation"), current.get("rain"), current.get("snowfall"))),
+                _weather_row("Feels Like", _format_number(current.get("apparent_temperature_c"), "C", decimals=1)),
+                _weather_row("Humidity", _format_number(current.get("humidity_pct"), "%", decimals=0)),
+                _weather_row("Cloud", _format_number(current.get("cloud_cover_pct"), "%", decimals=0)),
+                _weather_row("Wind", _wind_text(current.get("wind") or {})),
+                _weather_row("Precip Now", _precip_text(current)),
                 "</table>",
             ]
         )
-        lines.extend(_hourly_weather_section(report.data))
-        lines.extend(_daily_weather_section(report.data))
-        lines.extend(_solar_irradiance_section(current))
-        lines.extend(_astronomy_weather_section(report.data))
-        if report.stale:
+        lines.extend(_hourly_weather_section(payload.get("hourly") or []))
+        lines.extend(_daily_weather_section(payload.get("daily") or []))
+        lines.extend(_solar_irradiance_section(current.get("irradiance") or {}))
+        lines.extend(_astronomy_weather_section(payload.get("astronomy") or {}))
+        if stale:
             lines.append("<p class=\"small\">Using last cached weather. WAN fetch failed.</p>")
-        if report.error:
-            lines.append(f'<p class="small">{escape(report.error)}</p>')
+        if error:
+            lines.append(f'<p class="small">{escape(error)}</p>')
 
     lines.extend(
         [
@@ -311,7 +315,7 @@ def route_display_request(
         body = b"ok\n" if snapshot.ok else b"error\n"
         return DisplayResponse(status, "text/plain; charset=utf-8", body)
     if parsed_path == "/weather":
-        html = render_kindle_weather(weather_report)
+        html = render_kindle_weather(weather_api_payload(weather_report))
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
 
     html = render_kindle_snapshot(snapshot, load_summary=load_summary)
@@ -336,43 +340,21 @@ def route_api_request(
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
 
-def weather_api_payload(report: WeatherReport | None) -> dict:
-    if report is None:
-        return {
-            "schema_version": 1,
-            "label": None,
-            "fetched_at": None,
-            "stale": True,
-            "error": "weather unavailable",
-            "data": None,
-        }
-    return {
-        "schema_version": 1,
-        "label": report.label,
-        "fetched_at": report.fetched_at.isoformat(),
-        "stale": report.stale,
-        "error": report.error,
-        "data": report.data,
-    }
-
-
-def _hourly_weather_section(data: dict) -> list[str]:
-    hourly = data.get("hourly") or {}
-    times = hourly.get("time") or []
-    if not times:
+def _hourly_weather_section(hourly: list) -> list[str]:
+    if not hourly:
         return []
     rows = ["<h2>Next Hours</h2>", "<table>"]
-    for index, hour in enumerate(times[:8]):
+    for hour in hourly[:8]:
         rows.append(
             _weather_row(
-                _short_time(hour),
+                _short_time(hour.get("at")),
                 "  ".join(
                     item
                     for item in [
-                        weather_code_text(_indexed(hourly.get("weather_code"), index)),
-                        _format_number(_indexed(hourly.get("temperature_2m"), index), "C", decimals=1),
-                        _format_number(_indexed(hourly.get("precipitation_probability"), index), "% precip", decimals=0),
-                        _format_number(_indexed(hourly.get("wind_speed_10m"), index), "km/h", decimals=0),
+                        (hour.get("condition") or {}).get("text"),
+                        _format_number(hour.get("temperature_c"), "C", decimals=1),
+                        _format_number(hour.get("precip_probability_pct"), "% precip", decimals=0),
+                        _format_number(hour.get("wind_speed_kmh"), "km/h", decimals=0),
                     ]
                     if item
                 ),
@@ -382,26 +364,21 @@ def _hourly_weather_section(data: dict) -> list[str]:
     return rows
 
 
-def _daily_weather_section(data: dict) -> list[str]:
-    daily = data.get("daily") or {}
-    days = daily.get("time") or []
-    if not days:
+def _daily_weather_section(daily: list) -> list[str]:
+    if not daily:
         return []
     rows = ["<h2>Forecast</h2>", "<table>"]
-    for index, day in enumerate(days[:3]):
+    for day in daily[:3]:
         rows.append(
             _weather_row(
-                _short_day(day),
+                _short_day(day.get("date")),
                 "  ".join(
                     item
                     for item in [
-                        weather_code_text(_indexed(daily.get("weather_code"), index)),
-                        _daily_temperature_text(
-                            _indexed(daily.get("temperature_2m_min"), index),
-                            _indexed(daily.get("temperature_2m_max"), index),
-                        ),
-                        _format_number(_indexed(daily.get("precipitation_probability_max"), index), "% precip", decimals=0),
-                        _format_number(_indexed(daily.get("precipitation_sum"), index), "mm", decimals=1),
+                        (day.get("condition") or {}).get("text"),
+                        _daily_temperature_text(day.get("low_c"), day.get("high_c")),
+                        _format_number(day.get("precip_probability_pct"), "% precip", decimals=0),
+                        _format_number(day.get("precip_sum_mm"), "mm", decimals=1),
                     ]
                     if item
                 ),
@@ -411,39 +388,24 @@ def _daily_weather_section(data: dict) -> list[str]:
     return rows
 
 
-def _solar_irradiance_section(current: dict) -> list[str]:
+def _solar_irradiance_section(irradiance: dict) -> list[str]:
     return [
         "<h2>Solar Irradiance</h2>",
         "<table>",
-        _weather_row(
-            "Global Horizontal (GHI)",
-            _format_number(current.get("shortwave_radiation"), "W/m2", decimals=0),
-        ),
-        _weather_row("Direct Radiation", _format_number(current.get("direct_radiation"), "W/m2", decimals=0)),
-        _weather_row("Diffuse Radiation", _format_number(current.get("diffuse_radiation"), "W/m2", decimals=0)),
-        _weather_row(
-            "Direct Normal (DNI)",
-            _format_number(current.get("direct_normal_irradiance"), "W/m2", decimals=0),
-        ),
+        _weather_row("Global Horizontal (GHI)", _format_number(irradiance.get("ghi_wm2"), "W/m2", decimals=0)),
+        _weather_row("Direct Radiation", _format_number(irradiance.get("direct_wm2"), "W/m2", decimals=0)),
+        _weather_row("Diffuse Radiation", _format_number(irradiance.get("diffuse_wm2"), "W/m2", decimals=0)),
+        _weather_row("Direct Normal (DNI)", _format_number(irradiance.get("dni_wm2"), "W/m2", decimals=0)),
         "</table>",
     ]
 
 
-def _astronomy_weather_section(data: dict) -> list[str]:
-    daily = data.get("daily") or {}
-    aurora = data.get("aurora") or {}
+def _astronomy_weather_section(astronomy: dict) -> list[str]:
+    moon = astronomy.get("moon") or {}
     rows = ["<h2>Astronomy</h2>", "<table>"]
-    rows.append(
-        _weather_row(
-            "Sun",
-            _sun_text(
-                _indexed(daily.get("sunrise"), 0),
-                _indexed(daily.get("sunset"), 0),
-            ),
-        )
-    )
-    rows.append(_weather_row("Moon", _moon_phase_text(_indexed(daily.get("moon_phase"), 0))))
-    rows.append(_weather_row_html("Aurora", _aurora_html(aurora)))
+    rows.append(_weather_row("Sun", _sun_text(astronomy.get("sunrise"), astronomy.get("sunset"))))
+    rows.append(_weather_row("Moon", _moon_text(moon)))
+    rows.append(_weather_row_html("Aurora", _aurora_html(astronomy.get("aurora"))))
     rows.append("</table>")
     return rows
 
@@ -464,65 +426,38 @@ def _format_number(value: object, suffix: str, decimals: int = 1) -> str | None:
     return f"{number:.{decimals}f}{suffix}"
 
 
-def _wind_text(speed: object, gust: object, direction: object) -> str | None:
-    speed_text = _format_number(speed, "km/h", decimals=0)
+def _wind_text(wind: dict) -> str | None:
+    speed_text = _format_number(wind.get("speed_kmh"), "km/h", decimals=0)
     if speed_text is None:
         return None
-    gust_text = _format_number(gust, "km/h gust", decimals=0)
-    direction_text = _wind_direction_text(direction)
+    gust_text = _format_number(wind.get("gust_kmh"), "km/h gust", decimals=0)
     parts = [speed_text]
     if gust_text:
         parts.append(gust_text)
-    if direction_text:
-        parts.append(direction_text)
+    if wind.get("compass"):
+        parts.append(wind["compass"])
     return "  ".join(parts)
 
 
-def _wind_direction_text(value: object) -> str | None:
-    try:
-        degrees = float(value)
-    except (TypeError, ValueError):
-        return None
-    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
-    return directions[int((degrees + 22.5) // 45) % 8]
-
-
-def _precip_text(precipitation: object, rain: object, snowfall: object) -> str | None:
+def _precip_text(current: dict) -> str | None:
     parts = []
-    precip_text = _format_number(precipitation, "mm", decimals=1)
-    rain_text = _format_number(rain, "mm rain", decimals=1)
-    snow_text = _format_number(snowfall, "cm snow", decimals=1)
-    if precip_text:
-        parts.append(precip_text)
-    if rain_text:
-        parts.append(rain_text)
-    if snow_text:
-        parts.append(snow_text)
+    for value, suffix in [
+        (current.get("precipitation_mm"), "mm"),
+        (current.get("rain_mm"), "mm rain"),
+        (current.get("snowfall_cm"), "cm snow"),
+    ]:
+        text = _format_number(value, suffix, decimals=1)
+        if text:
+            parts.append(text)
     return "  ".join(parts) if parts else None
 
 
-def _moon_phase_text(value: object) -> str | None:
-    try:
-        phase = float(value)
-    except (TypeError, ValueError):
+def _moon_text(moon: dict) -> str | None:
+    name = moon.get("name")
+    if not name:
         return None
-    if phase < 0.03 or phase > 0.97:
-        name = "new"
-    elif phase < 0.22:
-        name = "waxing crescent"
-    elif phase < 0.28:
-        name = "first quarter"
-    elif phase < 0.47:
-        name = "waxing gibbous"
-    elif phase < 0.53:
-        name = "full"
-    elif phase < 0.72:
-        name = "waning gibbous"
-    elif phase < 0.78:
-        name = "last quarter"
-    else:
-        name = "waning crescent"
-    return f"{name} ({phase:.2f})"
+    phase = moon.get("phase")
+    return f"{name} ({phase:.2f})" if isinstance(phase, (int, float)) else name
 
 
 def _sun_text(sunrise: object, sunset: object) -> str | None:
@@ -536,29 +471,26 @@ def _sun_text(sunrise: object, sunset: object) -> str | None:
 def _aurora_html(aurora: object) -> str | None:
     if not isinstance(aurora, dict):
         return None
-    tonight = aurora.get("tonight")
-    if aurora.get("error"):
-        return "unavailable"
-    probability = _format_number(aurora.get("probability_percent"), "%", decimals=0)
+    probability = _format_number(aurora.get("probability_pct"), "%", decimals=0)
     if probability is None:
         return None
-    forecast_time = aurora.get("forecast_time")
+    valid_at = aurora.get("valid_at")
     now_line = f"now {escape(probability)}"
-    if isinstance(forecast_time, str):
-        now_line = f"{now_line} valid {escape(_short_time(forecast_time))}"
-    return f"{now_line}<br>{_aurora_tonight_text(tonight)}"
+    if isinstance(valid_at, str):
+        now_line = f"{now_line} valid {escape(_short_time(valid_at))}"
+    return f"{now_line}<br>{_aurora_tonight_text(aurora.get('tonight'))}"
 
 
 def _aurora_tonight_text(tonight: object) -> str:
-    if not isinstance(tonight, dict) or tonight.get("error"):
+    if not isinstance(tonight, dict):
         return "tonight unavailable"
     kp = _format_number(tonight.get("peak_kp"), "", decimals=1)
     likelihood = tonight.get("likelihood")
     if kp is None or not isinstance(likelihood, str):
         return "tonight unavailable"
-    peak_time = tonight.get("peak_time")
-    time_text = _short_time(peak_time) if isinstance(peak_time, str) else "--"
-    scale = tonight.get("noaa_scale")
+    peak_at = tonight.get("peak_at")
+    time_text = _short_time(peak_at) if isinstance(peak_at, str) else "--"
+    scale = tonight.get("scale")
     scale_text = f" {escape(str(scale))}" if scale else ""
     return f"tonight {escape(likelihood)} peak Kp {escape(kp)}{scale_text} at {escape(time_text)}"
 
@@ -571,10 +503,13 @@ def _daily_temperature_text(low: object, high: object) -> str | None:
     return high_text or low_text
 
 
-def _indexed(values: object, index: int) -> object:
-    if not isinstance(values, list) or index >= len(values):
+def _parse_payload_time(value: object) -> datetime | None:
+    if not isinstance(value, str):
         return None
-    return values[index]
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _short_time(value: object) -> str:

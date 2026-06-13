@@ -25,7 +25,7 @@ from typing import Callable, Iterable
 
 from .load import LoadSample, LoadSummary
 from .supervisor import SupervisorSnapshot
-from .weather import WeatherReport
+from .weather import WeatherReport, weather_api_payload
 
 
 @dataclass(frozen=True)
@@ -542,50 +542,51 @@ def snapshot_metric_samples(
 
 
 def weather_metric_samples(report: WeatherReport) -> Iterable[MetricSample]:
+    # Consume the normalized weather payload so provider field names live only
+    # in weather.py; this maps the canonical schema onto stored metric names.
+    payload = weather_api_payload(report)
     captured_at = report.fetched_at.astimezone()
     source = "weather"
-    current = report.data.get("current") or {}
-    daily = report.data.get("daily") or {}
-    aurora = report.data.get("aurora")
-    if not isinstance(aurora, dict):
-        aurora = {}
+    current = payload.get("current") or {}
+    wind = current.get("wind") or {}
+    irradiance = current.get("irradiance") or {}
+    condition = current.get("condition") or {}
 
-    for metric, key, unit in [
-        ("temperature", "temperature_2m", "C"),
-        ("apparent_temperature", "apparent_temperature", "C"),
-        ("relative_humidity", "relative_humidity_2m", "%"),
-        ("cloud_cover", "cloud_cover", "%"),
-        ("precipitation", "precipitation", "mm"),
-        ("rain", "rain", "mm"),
-        ("snowfall", "snowfall", "cm"),
-        ("wind_speed", "wind_speed_10m", "km/h"),
-        ("wind_gust", "wind_gusts_10m", "km/h"),
-        ("wind_direction", "wind_direction_10m", "deg"),
-        ("weather_code", "weather_code", None),
-        ("shortwave_radiation", "shortwave_radiation", "W/m2"),
-        ("direct_radiation", "direct_radiation", "W/m2"),
-        ("diffuse_radiation", "diffuse_radiation", "W/m2"),
-        ("direct_normal_irradiance", "direct_normal_irradiance", "W/m2"),
+    for metric, value, unit in [
+        ("temperature", current.get("temperature_c"), "C"),
+        ("apparent_temperature", current.get("apparent_temperature_c"), "C"),
+        ("relative_humidity", current.get("humidity_pct"), "%"),
+        ("cloud_cover", current.get("cloud_cover_pct"), "%"),
+        ("precipitation", current.get("precipitation_mm"), "mm"),
+        ("rain", current.get("rain_mm"), "mm"),
+        ("snowfall", current.get("snowfall_cm"), "cm"),
+        ("wind_speed", wind.get("speed_kmh"), "km/h"),
+        ("wind_gust", wind.get("gust_kmh"), "km/h"),
+        ("wind_direction", wind.get("direction_deg"), "deg"),
+        ("weather_code", condition.get("code"), None),
+        ("shortwave_radiation", irradiance.get("ghi_wm2"), "W/m2"),
+        ("direct_radiation", irradiance.get("direct_wm2"), "W/m2"),
+        ("diffuse_radiation", irradiance.get("diffuse_wm2"), "W/m2"),
+        ("direct_normal_irradiance", irradiance.get("dni_wm2"), "W/m2"),
     ]:
-        value = _number(current.get(key))
         if value is not None:
-            yield MetricSample(captured_at, source, metric, value=value, unit=unit)
+            yield MetricSample(captured_at, source, metric, value=float(value), unit=unit)
 
-    sunrise = _first(daily.get("sunrise"))
+    astronomy = payload.get("astronomy") or {}
+    sunrise = astronomy.get("sunrise")
     if sunrise is not None:
         yield MetricSample(captured_at, source, "sunrise", text=str(sunrise))
-    sunset = _first(daily.get("sunset"))
+    sunset = astronomy.get("sunset")
     if sunset is not None:
         yield MetricSample(captured_at, source, "sunset", text=str(sunset))
-    moon_phase = _number(_first(daily.get("moon_phase")))
-    if moon_phase is not None:
-        yield MetricSample(captured_at, source, "moon_phase", value=moon_phase)
-    aurora_probability = _number(aurora.get("probability_percent"))
-    if aurora_probability is not None:
-        yield MetricSample(captured_at, source, "aurora_probability", value=aurora_probability, unit="%")
-    aurora_forecast_time = aurora.get("forecast_time")
-    if aurora_forecast_time is not None:
-        yield MetricSample(captured_at, source, "aurora_forecast_time", text=str(aurora_forecast_time))
+    moon = astronomy.get("moon") or {}
+    if moon.get("phase") is not None:
+        yield MetricSample(captured_at, source, "moon_phase", value=float(moon["phase"]))
+    aurora = astronomy.get("aurora") or {}
+    if aurora.get("probability_pct") is not None:
+        yield MetricSample(captured_at, source, "aurora_probability", value=float(aurora["probability_pct"]), unit="%")
+    if aurora.get("valid_at") is not None:
+        yield MetricSample(captured_at, source, "aurora_forecast_time", text=str(aurora["valid_at"]))
 
 
 def _load_samples(captured_at: datetime, load_summary: LoadSummary) -> Iterable[MetricSample]:
@@ -793,12 +794,6 @@ def _number(value) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
-
-
-def _first(values):
-    if isinstance(values, list) and values:
-        return values[0]
-    return None
 
 
 def _hours_text_value(text: str | None) -> float | None:

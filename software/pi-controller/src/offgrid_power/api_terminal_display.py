@@ -7,18 +7,6 @@ import shutil
 
 from .charge_stage import NormalizedStage
 from .terminal_display import format_cell_location_for_display, format_updated_time
-from .weather import weather_code_text
-from .web_display import (
-    _daily_temperature_text,
-    _format_number,
-    _indexed,
-    _moon_phase_text,
-    _precip_text,
-    _short_day,
-    _short_time,
-    _sun_text,
-    _wind_text,
-)
 
 
 ROW_LABEL_WIDTH = 21
@@ -95,136 +83,182 @@ def render_api_unavailable(error: str) -> str:
 
 
 def render_api_weather(payload: dict, now: datetime | None = None) -> str:
+    """Render the normalized weather API payload (see weather.weather_api_payload)."""
     width = min(shutil.get_terminal_size((100, 30)).columns, 120)
     label = payload.get("label") or "Weather"
-    data = payload.get("data") or {}
-    fetched_at = _parse_datetime(payload.get("fetched_at"))
+    observed_at = _parse_datetime(payload.get("observed_at"))
 
     lines: list[str] = [f"Off-Grid Weather - {label}".ljust(width)]
-    if fetched_at is None:
+    if observed_at is None:
         lines.append("As of: unavailable")
     else:
-        lines.append(f"As of: {format_updated_time(fetched_at)}")
+        lines.append(f"As of: {format_updated_time(observed_at)}")
     if payload.get("stale"):
         lines.append("Using last cached weather; WAN fetch failed.")
     if payload.get("error"):
         lines.append(f"Note: {payload['error']}")
 
-    if not data:
+    current = payload.get("current")
+    if not current:
         lines.append("")
         lines.append("Weather unavailable")
         return "\n".join(lines)
 
-    current = data.get("current") or {}
+    wind = current.get("wind") or {}
+    irradiance = current.get("irradiance") or {}
     lines.append("")
     lines.append("Current")
-    lines.append(_row("Condition", weather_code_text(current.get("weather_code"))))
-    lines.append(_row("Temperature", _format_number(current.get("temperature_2m"), "C", decimals=1) or "--"))
+    lines.append(_row("Condition", (current.get("condition") or {}).get("text") or "--"))
+    lines.append(_row("Temperature", _measure(current.get("temperature_c"), "C", 1) or "--"))
     for row_label, value in [
-        ("Feels Like", _format_number(current.get("apparent_temperature"), "C", decimals=1)),
-        ("Humidity", _format_number(current.get("relative_humidity_2m"), "%", decimals=0)),
-        ("Cloud", _format_number(current.get("cloud_cover"), "%", decimals=0)),
-        (
-            "Wind",
-            _wind_text(
-                current.get("wind_speed_10m"),
-                current.get("wind_gusts_10m"),
-                current.get("wind_direction_10m"),
-            ),
-        ),
-        ("Precip Now", _precip_text(current.get("precipitation"), current.get("rain"), current.get("snowfall"))),
+        ("Feels Like", _measure(current.get("apparent_temperature_c"), "C", 1)),
+        ("Humidity", _measure(current.get("humidity_pct"), "%", 0)),
+        ("Cloud", _measure(current.get("cloud_cover_pct"), "%", 0)),
+        ("Wind", _wind_text(wind)),
+        ("Precip Now", _precip_text(current)),
     ]:
         if value is not None:
             lines.append(_row(row_label, value))
 
-    hourly = data.get("hourly") or {}
-    hours = hourly.get("time") or []
-    if hours:
+    hourly = payload.get("hourly") or []
+    if hourly:
         lines.append("")
         lines.append("Next Hours")
-        for index, hour in enumerate(hours[:8]):
+        for hour in hourly[:8]:
             lines.append(
                 _row(
-                    _short_time(hour),
-                    "  ".join(
-                        item
-                        for item in [
-                            weather_code_text(_indexed(hourly.get("weather_code"), index)),
-                            _format_number(_indexed(hourly.get("temperature_2m"), index), "C", decimals=1),
-                            _format_number(_indexed(hourly.get("precipitation_probability"), index), "% precip", decimals=0),
-                            _format_number(_indexed(hourly.get("wind_speed_10m"), index), "km/h", decimals=0),
-                        ]
-                        if item
+                    _clock(hour.get("at")),
+                    _join(
+                        (hour.get("condition") or {}).get("text"),
+                        _measure(hour.get("temperature_c"), "C", 1),
+                        _measure(hour.get("precip_probability_pct"), "% precip", 0),
+                        _measure(hour.get("wind_speed_kmh"), "km/h", 0),
                     ),
                 )
             )
 
-    daily = data.get("daily") or {}
-    days = daily.get("time") or []
-    if days:
+    daily = payload.get("daily") or []
+    if daily:
         lines.append("")
         lines.append("Forecast")
-        for index, day in enumerate(days[:3]):
+        for day in daily[:3]:
             lines.append(
                 _row(
-                    _short_day(day),
-                    "  ".join(
-                        item
-                        for item in [
-                            weather_code_text(_indexed(daily.get("weather_code"), index)),
-                            _daily_temperature_text(
-                                _indexed(daily.get("temperature_2m_min"), index),
-                                _indexed(daily.get("temperature_2m_max"), index),
-                            ),
-                            _format_number(_indexed(daily.get("precipitation_probability_max"), index), "% precip", decimals=0),
-                            _format_number(_indexed(daily.get("precipitation_sum"), index), "mm", decimals=1),
-                        ]
-                        if item
+                    _day(day.get("date")),
+                    _join(
+                        (day.get("condition") or {}).get("text"),
+                        _temp_range(day.get("low_c"), day.get("high_c")),
+                        _measure(day.get("precip_probability_pct"), "% precip", 0),
+                        _measure(day.get("precip_sum_mm"), "mm", 1),
                     ),
                 )
             )
 
     lines.append("")
     lines.append("Solar Irradiance")
-    lines.append(_row("Global Horizontal", _format_number(current.get("shortwave_radiation"), "W/m2", decimals=0) or "--"))
-    lines.append(_row("Direct Radiation", _format_number(current.get("direct_radiation"), "W/m2", decimals=0) or "--"))
-    lines.append(_row("Diffuse Radiation", _format_number(current.get("diffuse_radiation"), "W/m2", decimals=0) or "--"))
-    lines.append(_row("Direct Normal", _format_number(current.get("direct_normal_irradiance"), "W/m2", decimals=0) or "--"))
+    lines.append(_row("Global Horizontal", _measure(irradiance.get("ghi_wm2"), "W/m2", 0) or "--"))
+    lines.append(_row("Direct Radiation", _measure(irradiance.get("direct_wm2"), "W/m2", 0) or "--"))
+    lines.append(_row("Diffuse Radiation", _measure(irradiance.get("diffuse_wm2"), "W/m2", 0) or "--"))
+    lines.append(_row("Direct Normal", _measure(irradiance.get("dni_wm2"), "W/m2", 0) or "--"))
 
+    astronomy = payload.get("astronomy") or {}
     lines.append("")
     lines.append("Astronomy")
-    sun = _sun_text(_indexed(daily.get("sunrise"), 0), _indexed(daily.get("sunset"), 0))
+    sun = _sun_text(astronomy.get("sunrise"), astronomy.get("sunset"))
     if sun:
         lines.append(_row("Sun", sun))
-    moon = _moon_phase_text(_indexed(daily.get("moon_phase"), 0))
-    if moon:
-        lines.append(_row("Moon", moon))
-    lines.extend(_aurora_lines(data.get("aurora")))
+    moon = astronomy.get("moon") or {}
+    if moon.get("name"):
+        phase = moon.get("phase")
+        suffix = f" ({phase:.2f})" if isinstance(phase, (int, float)) else ""
+        lines.append(_row("Moon", f"{moon['name']}{suffix}"))
+    lines.extend(_aurora_lines(astronomy.get("aurora")))
 
     return "\n".join(lines)
 
 
 def _aurora_lines(aurora: object) -> list[str]:
-    if not isinstance(aurora, dict) or aurora.get("error"):
+    if not isinstance(aurora, dict):
         return []
     lines: list[str] = []
-    probability = _format_number(aurora.get("probability_percent"), "%", decimals=0)
+    probability = _measure(aurora.get("probability_pct"), "%", 0)
     if probability:
         text = f"now {probability}"
-        forecast_time = aurora.get("forecast_time")
-        if isinstance(forecast_time, str):
-            text = f"{text} valid {_short_time(forecast_time)}"
+        valid_at = aurora.get("valid_at")
+        if isinstance(valid_at, str):
+            text = f"{text} valid {_clock(valid_at)}"
         lines.append(_row("Aurora", text))
     tonight = aurora.get("tonight")
-    if isinstance(tonight, dict) and not tonight.get("error"):
-        kp = _format_number(tonight.get("peak_kp"), "", decimals=1)
+    if isinstance(tonight, dict):
+        kp = _measure(tonight.get("peak_kp"), "", 1)
         likelihood = tonight.get("likelihood")
         if kp is not None and isinstance(likelihood, str):
-            peak_time = tonight.get("peak_time")
-            time_text = _short_time(peak_time) if isinstance(peak_time, str) else "--"
-            scale = tonight.get("noaa_scale")
+            time_text = _clock(tonight.get("peak_at")) if isinstance(tonight.get("peak_at"), str) else "--"
+            scale = tonight.get("scale")
             scale_text = f" {scale}" if scale else ""
             lines.append(_row("Aurora Tonight", f"{likelihood}  peak Kp {kp}{scale_text} around {time_text}"))
+    return lines
+
+
+def _measure(value: object, suffix: str = "", decimals: int = 1) -> str | None:
+    try:
+        return f"{float(value):.{decimals}f}{suffix}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _join(*items: str | None) -> str:
+    return "  ".join(item for item in items if item)
+
+
+def _wind_text(wind: dict) -> str | None:
+    speed = _measure(wind.get("speed_kmh"), "km/h", 0)
+    if speed is None:
+        return None
+    return _join(speed, _measure(wind.get("gust_kmh"), "km/h gust", 0), wind.get("compass"))
+
+
+def _precip_text(current: dict) -> str | None:
+    return (
+        _join(
+            _measure(current.get("precipitation_mm"), "mm", 1),
+            _measure(current.get("rain_mm"), "mm rain", 1),
+            _measure(current.get("snowfall_cm"), "cm snow", 1),
+        )
+        or None
+    )
+
+
+def _temp_range(low: object, high: object) -> str | None:
+    low_text = _measure(low, "C", 1)
+    high_text = _measure(high, "C", 1)
+    if low_text and high_text:
+        return f"{low_text}-{high_text}"
+    return high_text or low_text
+
+
+def _sun_text(sunrise: object, sunset: object) -> str | None:
+    rise = _clock(sunrise) if isinstance(sunrise, str) else "--"
+    set_ = _clock(sunset) if isinstance(sunset, str) else "--"
+    if rise == "--" and set_ == "--":
+        return None
+    return f"rise {rise}  set {set_}"
+
+
+def _clock(value: object) -> str:
+    parsed = _parse_datetime(value) if isinstance(value, str) else None
+    if parsed is None:
+        return value if isinstance(value, str) else "--"
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone()
+    return parsed.strftime("%H:%M")
+
+
+def _day(value: object) -> str:
+    parsed = _parse_datetime(value) if isinstance(value, str) else None
+    if parsed is None:
+        return value if isinstance(value, str) else "--"
+    return parsed.strftime("%a %m/%d")
     return lines
 
 

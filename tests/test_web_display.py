@@ -25,7 +25,7 @@ from offgrid_power.web_display import (
     route_display_request,
     snapshot_api_payload,
 )
-from offgrid_power.weather import WeatherReport
+from offgrid_power.weather import WeatherReport, weather_api_payload
 from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_magnum_snapshot, make_snapshot
 
 
@@ -120,7 +120,7 @@ class WebDisplayTest(unittest.TestCase):
             },
         )
 
-        html = render_kindle_weather(report)
+        html = render_kindle_weather(weather_api_payload(report))
 
         self.assertIn("XMLHttpRequest", html)
         self.assertIn("offgrid-live", html)  # live page → slow cadence
@@ -139,7 +139,7 @@ class WebDisplayTest(unittest.TestCase):
             error="network unavailable",
         )
 
-        html = render_kindle_weather(report)
+        html = render_kindle_weather(weather_api_payload(report))
 
         self.assertIn("Weather unavailable", html)
         self.assertIn("network unavailable", html)
@@ -155,7 +155,7 @@ class WebDisplayTest(unittest.TestCase):
             error="network unavailable",
         )
 
-        html = render_kindle_weather(report, now=fetched_at + timedelta(hours=1, minutes=1))
+        html = render_kindle_weather(weather_api_payload(report), now=fetched_at + timedelta(hours=1, minutes=1))
 
         self.assertIn("Weather service has been unreachable since", html)
         self.assertNotIn("12.4C", html)
@@ -267,7 +267,7 @@ class WebDisplayTest(unittest.TestCase):
         report = WeatherReport(
             label="Cabin",
             fetched_at=datetime(2026, 6, 13, 12, 30, tzinfo=timezone.utc),
-            data={"current": {"temperature_2m": 11.0, "weather_code": 3}},
+            data={"current": {"temperature_2m": 11.0, "weather_code": 3, "wind_direction_10m": 225}},
         )
 
         response = route_display_request(snapshot, "/api/v1/weather", "curl/8.0", weather_report=report)
@@ -278,7 +278,11 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["schema_version"], 1)
         self.assertEqual(payload["label"], "Cabin")
         self.assertFalse(payload["stale"])
-        self.assertEqual(payload["data"]["current"]["temperature_2m"], 11.0)
+        # Normalized, source-agnostic schema: units in keys, derivations applied.
+        self.assertEqual(payload["current"]["temperature_c"], 11.0)
+        self.assertEqual(payload["current"]["condition"], {"code": 3, "text": "overcast"})
+        self.assertEqual(payload["current"]["wind"]["compass"], "SW")
+        self.assertNotIn("data", payload)
 
     def test_routes_api_weather_handles_missing_report(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
@@ -288,7 +292,7 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertEqual(response.status.value, 200)
         self.assertTrue(payload["stale"])
-        self.assertIsNone(payload["data"])
+        self.assertIsNone(payload["current"])
         self.assertEqual(payload["error"], "weather unavailable")
 
     def test_snapshot_api_payload_includes_charge_controller_settings(self) -> None:

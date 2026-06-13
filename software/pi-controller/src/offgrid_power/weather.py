@@ -400,3 +400,199 @@ def weather_code_text(code: object) -> str:
     if value in (95, 96, 99):
         return "thunderstorm"
     return f"code {value}"
+
+
+# ---------------------------------------------------------------------------
+# Source-agnostic normalization
+#
+# Everything below turns a provider-shaped WeatherReport (currently Open-Meteo
+# + NOAA aurora) into a stable, vendor-neutral API payload. Renderers and the
+# metrics recorder consume only this schema, so the provider's field names and
+# the semantic derivations (weather-code text, wind compass, moon-phase name)
+# live in exactly one place. Units are carried in the key suffixes.
+# ---------------------------------------------------------------------------
+
+
+def wind_compass(value: object) -> str | None:
+    """8-point compass heading the wind blows *from*, or None if unparseable."""
+    try:
+        degrees = float(value)
+    except (TypeError, ValueError):
+        return None
+    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+    return directions[int((degrees + 22.5) // 45) % 8]
+
+
+def moon_phase_name(value: object) -> str | None:
+    """Phase fraction (0=new, 0.5=full) to its conventional name, or None."""
+    try:
+        phase = float(value)
+    except (TypeError, ValueError):
+        return None
+    if phase < 0.03 or phase > 0.97:
+        return "new"
+    if phase < 0.22:
+        return "waxing crescent"
+    if phase < 0.28:
+        return "first quarter"
+    if phase < 0.47:
+        return "waxing gibbous"
+    if phase < 0.53:
+        return "full"
+    if phase < 0.72:
+        return "waning gibbous"
+    if phase < 0.78:
+        return "last quarter"
+    return "waning crescent"
+
+
+def _wx_number(value: object) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _wx_indexed(values: object, index: int) -> object:
+    if isinstance(values, list) and 0 <= index < len(values):
+        return values[index]
+    return None
+
+
+def _wx_condition(code: object) -> dict:
+    number = _wx_number(code)
+    return {"code": int(number) if number is not None else None, "text": weather_code_text(code)}
+
+
+def _wx_current(current: dict) -> dict:
+    return {
+        "temperature_c": _wx_number(current.get("temperature_2m")),
+        "apparent_temperature_c": _wx_number(current.get("apparent_temperature")),
+        "humidity_pct": _wx_number(current.get("relative_humidity_2m")),
+        "cloud_cover_pct": _wx_number(current.get("cloud_cover")),
+        "precipitation_mm": _wx_number(current.get("precipitation")),
+        "rain_mm": _wx_number(current.get("rain")),
+        "snowfall_cm": _wx_number(current.get("snowfall")),
+        "condition": _wx_condition(current.get("weather_code")),
+        "wind": {
+            "speed_kmh": _wx_number(current.get("wind_speed_10m")),
+            "gust_kmh": _wx_number(current.get("wind_gusts_10m")),
+            "direction_deg": _wx_number(current.get("wind_direction_10m")),
+            "compass": wind_compass(current.get("wind_direction_10m")),
+        },
+        "irradiance": {
+            "ghi_wm2": _wx_number(current.get("shortwave_radiation")),
+            "direct_wm2": _wx_number(current.get("direct_radiation")),
+            "diffuse_wm2": _wx_number(current.get("diffuse_radiation")),
+            "dni_wm2": _wx_number(current.get("direct_normal_irradiance")),
+        },
+    }
+
+
+def _wx_hourly(hourly: dict) -> list[dict]:
+    times = hourly.get("time") or []
+    return [
+        {
+            "at": at,
+            "condition": _wx_condition(_wx_indexed(hourly.get("weather_code"), index)),
+            "temperature_c": _wx_number(_wx_indexed(hourly.get("temperature_2m"), index)),
+            "precip_probability_pct": _wx_number(_wx_indexed(hourly.get("precipitation_probability"), index)),
+            "wind_speed_kmh": _wx_number(_wx_indexed(hourly.get("wind_speed_10m"), index)),
+        }
+        for index, at in enumerate(times)
+    ]
+
+
+def _wx_daily(daily: dict) -> list[dict]:
+    days = daily.get("time") or []
+    return [
+        {
+            "date": date,
+            "condition": _wx_condition(_wx_indexed(daily.get("weather_code"), index)),
+            "low_c": _wx_number(_wx_indexed(daily.get("temperature_2m_min"), index)),
+            "high_c": _wx_number(_wx_indexed(daily.get("temperature_2m_max"), index)),
+            "precip_probability_pct": _wx_number(_wx_indexed(daily.get("precipitation_probability_max"), index)),
+            "precip_sum_mm": _wx_number(_wx_indexed(daily.get("precipitation_sum"), index)),
+        }
+        for index, date in enumerate(days)
+    ]
+
+
+def _wx_aurora(aurora: object) -> dict | None:
+    if not isinstance(aurora, dict) or aurora.get("error"):
+        return None
+    probability = _wx_number(aurora.get("probability_percent"))
+    tonight_raw = aurora.get("tonight")
+    tonight = None
+    if isinstance(tonight_raw, dict) and not tonight_raw.get("error"):
+        peak_kp = _wx_number(tonight_raw.get("peak_kp"))
+        likelihood = tonight_raw.get("likelihood")
+        if peak_kp is not None and isinstance(likelihood, str):
+            tonight = {
+                "peak_kp": peak_kp,
+                "likelihood": likelihood,
+                "peak_at": tonight_raw.get("peak_time"),
+                "scale": tonight_raw.get("noaa_scale"),
+            }
+    if probability is None and tonight is None:
+        return None
+    return {
+        "probability_pct": probability,
+        "valid_at": aurora.get("forecast_time"),
+        "tonight": tonight,
+    }
+
+
+def _wx_astronomy(daily: dict, aurora: object) -> dict:
+    phase = _wx_indexed(daily.get("moon_phase"), 0)
+    return {
+        "sunrise": _wx_indexed(daily.get("sunrise"), 0),
+        "sunset": _wx_indexed(daily.get("sunset"), 0),
+        "moon": {"phase": _wx_number(phase), "name": moon_phase_name(phase)},
+        "aurora": _wx_aurora(aurora),
+    }
+
+
+def weather_api_payload(report: "WeatherReport | None") -> dict:
+    """Normalize a WeatherReport into the source-agnostic weather API schema.
+
+    The envelope (label/observed_at/stale/error) always present; the data
+    sections are None/empty when there is no usable forecast.
+    """
+    if report is None:
+        return {
+            "schema_version": 1,
+            "label": None,
+            "observed_at": None,
+            "stale": True,
+            "error": "weather unavailable",
+            "current": None,
+            "hourly": [],
+            "daily": [],
+            "astronomy": None,
+        }
+    data = report.data or {}
+    if not data:
+        return {
+            "schema_version": 1,
+            "label": report.label,
+            "observed_at": report.fetched_at.isoformat(),
+            "stale": report.stale,
+            "error": report.error,
+            "current": None,
+            "hourly": [],
+            "daily": [],
+            "astronomy": None,
+        }
+    daily = data.get("daily") or {}
+    return {
+        "schema_version": 1,
+        "label": report.label,
+        "observed_at": report.fetched_at.isoformat(),
+        "stale": report.stale,
+        "error": report.error,
+        "current": _wx_current(data.get("current") or {}),
+        "hourly": _wx_hourly(data.get("hourly") or {}),
+        "daily": _wx_daily(daily),
+        "astronomy": _wx_astronomy(daily, data.get("aurora")),
+    }

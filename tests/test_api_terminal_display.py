@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 import unittest
@@ -15,6 +15,7 @@ from offgrid_power.api_terminal_display import (
     render_api_unavailable,
     render_api_weather,
 )
+from offgrid_power.weather import WeatherReport, weather_api_payload
 
 
 class ApiTerminalDisplayTest(unittest.TestCase):
@@ -146,14 +147,14 @@ class ApiTerminalDisplayTest(unittest.TestCase):
 
 
 class ApiWeatherDisplayTest(unittest.TestCase):
-    def _payload(self) -> dict:
-        return {
-            "schema_version": 1,
-            "label": "Cabin",
-            "fetched_at": "2026-06-13T08:30:00-04:00",
-            "stale": False,
-            "error": None,
-            "data": {
+    # Feed a provider-shaped WeatherReport through the normalizer so this
+    # exercises the full service->renderer chain, not a hand-built schema.
+    def _report(self, stale: bool = False) -> WeatherReport:
+        return WeatherReport(
+            label="Cabin",
+            fetched_at=datetime(2026, 6, 13, 8, 30, tzinfo=timezone(timedelta(hours=-4))),
+            stale=stale,
+            data={
                 "current": {
                     "weather_code": 3,
                     "temperature_2m": 11.0,
@@ -195,10 +196,10 @@ class ApiWeatherDisplayTest(unittest.TestCase):
                     "tonight": {"peak_kp": 3.7, "likelihood": "unlikely", "peak_time": "2026-06-13T23:00"},
                 },
             },
-        }
+        )
 
     def test_render_api_weather_sections(self) -> None:
-        rendered = render_api_weather(self._payload())
+        rendered = render_api_weather(weather_api_payload(self._report()))
 
         self.assertIn("Off-Grid Weather - Cabin", rendered)
         self.assertIn("As of: 08:30", rendered)
@@ -212,21 +213,18 @@ class ApiWeatherDisplayTest(unittest.TestCase):
         self.assertIn("Global Horizontal     156W/m2", rendered)
         self.assertIn("\nAstronomy\n", rendered)
         self.assertIn("Sun                   rise 05:39  set 21:39", rendered)
-        self.assertIn("Aurora", rendered)
+        self.assertIn("Moon                  waning crescent (0.92)", rendered)
+        self.assertIn("Aurora Tonight        unlikely  peak Kp 3.7 around 23:00", rendered)
 
     def test_render_api_weather_no_data(self) -> None:
-        rendered = render_api_weather(
-            {"schema_version": 1, "label": None, "fetched_at": None, "stale": True, "error": "weather unavailable", "data": None}
-        )
+        rendered = render_api_weather(weather_api_payload(None))
 
         self.assertIn("Off-Grid Weather", rendered)
         self.assertIn("Weather unavailable", rendered)
         self.assertIn("Note: weather unavailable", rendered)
 
     def test_render_api_weather_marks_stale(self) -> None:
-        payload = self._payload()
-        payload["stale"] = True
-        rendered = render_api_weather(payload)
+        rendered = render_api_weather(weather_api_payload(self._report(stale=True)))
 
         self.assertIn("Using last cached weather", rendered)
 

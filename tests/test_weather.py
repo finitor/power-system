@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 import unittest
 from datetime import datetime
@@ -11,12 +12,16 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.weather import (
+    WeatherReport,
     add_moon_phase,
     aurora_likelihood_text,
     kp_forecast_entries,
+    moon_phase_name,
     nearest_aurora_coordinate,
     normalize_longitude,
     tonight_window_from_weather,
+    weather_api_payload,
+    wind_compass,
 )
 
 
@@ -71,6 +76,98 @@ class WeatherTest(unittest.TestCase):
         self.assertEqual(aurora_likelihood_text(4.0), "watch")
         self.assertEqual(aurora_likelihood_text(5.0), "possible")
         self.assertEqual(aurora_likelihood_text(7.0), "likely")
+
+
+class WeatherDerivationsTest(unittest.TestCase):
+    def test_wind_compass_octants(self) -> None:
+        self.assertEqual(wind_compass(0), "N")
+        self.assertEqual(wind_compass(225), "SW")
+        self.assertEqual(wind_compass(359), "N")
+        self.assertIsNone(wind_compass(None))
+        self.assertIsNone(wind_compass("x"))
+
+    def test_moon_phase_name(self) -> None:
+        self.assertEqual(moon_phase_name(0.0), "new")
+        self.assertEqual(moon_phase_name(0.5), "full")
+        self.assertEqual(moon_phase_name(0.72), "last quarter")
+        self.assertEqual(moon_phase_name(0.92), "waning crescent")
+        self.assertIsNone(moon_phase_name(None))
+
+
+class WeatherApiPayloadTest(unittest.TestCase):
+    def _report(self) -> WeatherReport:
+        return WeatherReport(
+            label="Cabin",
+            fetched_at=datetime.fromisoformat("2026-06-13T08:30:00-04:00"),
+            data={
+                "current": {
+                    "weather_code": 3,
+                    "temperature_2m": 11.0,
+                    "wind_speed_10m": 5,
+                    "wind_gusts_10m": 20,
+                    "wind_direction_10m": 225,
+                    "shortwave_radiation": 156,
+                },
+                "hourly": {
+                    "time": ["2026-06-13T08:00"],
+                    "weather_code": [45],
+                    "temperature_2m": [10.2],
+                    "precipitation_probability": [24],
+                    "wind_speed_10m": [3],
+                },
+                "daily": {
+                    "time": ["2026-06-13"],
+                    "weather_code": [61],
+                    "temperature_2m_min": [7.8],
+                    "temperature_2m_max": [13.1],
+                    "sunrise": ["2026-06-13T05:39"],
+                    "sunset": ["2026-06-13T21:39"],
+                    "moon_phase": [0.92],
+                },
+                "aurora": {
+                    "probability_percent": 0,
+                    "forecast_time": "2026-06-13T09:25",
+                    "tonight": {"peak_kp": 3.7, "likelihood": "unlikely", "peak_time": "2026-06-13T23:00"},
+                },
+            },
+        )
+
+    def test_normalizes_to_source_agnostic_schema(self) -> None:
+        payload = weather_api_payload(self._report())
+
+        self.assertEqual(payload["schema_version"], 1)
+        self.assertEqual(payload["label"], "Cabin")
+        self.assertFalse(payload["stale"])
+        # Units carried in keys; derivations (code text, compass) applied once.
+        self.assertEqual(payload["current"]["temperature_c"], 11.0)
+        self.assertEqual(payload["current"]["condition"], {"code": 3, "text": "overcast"})
+        self.assertEqual(payload["current"]["wind"]["compass"], "SW")
+        self.assertEqual(payload["current"]["irradiance"]["ghi_wm2"], 156.0)
+        # Hourly/daily are lists of records, not parallel arrays.
+        self.assertEqual(payload["hourly"][0]["at"], "2026-06-13T08:00")
+        self.assertEqual(payload["hourly"][0]["condition"]["text"], "fog")
+        self.assertEqual(payload["daily"][0]["low_c"], 7.8)
+        self.assertEqual(payload["daily"][0]["high_c"], 13.1)
+        self.assertEqual(payload["astronomy"]["moon"]["name"], "waning crescent")
+        self.assertEqual(payload["astronomy"]["aurora"]["tonight"]["peak_kp"], 3.7)
+        # No OpenMeteo field names leak through.
+        self.assertNotIn("temperature_2m", json.dumps(payload))
+
+    def test_missing_report_is_unavailable_envelope(self) -> None:
+        payload = weather_api_payload(None)
+
+        self.assertTrue(payload["stale"])
+        self.assertIsNone(payload["current"])
+        self.assertEqual(payload["hourly"], [])
+        self.assertEqual(payload["error"], "weather unavailable")
+
+    def test_empty_data_keeps_envelope_without_sections(self) -> None:
+        report = WeatherReport(label="Cabin", fetched_at=datetime.fromisoformat("2026-06-13T08:30:00-04:00"), data={}, stale=True)
+        payload = weather_api_payload(report)
+
+        self.assertIsNone(payload["current"])
+        self.assertTrue(payload["stale"])
+        self.assertEqual(payload["label"], "Cabin")
 
 
 if __name__ == "__main__":
