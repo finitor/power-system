@@ -17,6 +17,11 @@ SESSION="${OFFGRID_TTY_SESSION:-wall}"
 # The display renderer caps itself at 120 columns (terminal_display.py);
 # one extra column for the pane border, the rest goes to the shell.
 DISPLAY_COLS="${OFFGRID_TTY_DISPLAY_COLS:-121}"
+FONT_TOOL="${HOME}/.local/bin/offgrid-console-font"
+
+# Restore the operator's chosen font size before laying out panes, so the
+# session is built at the right geometry. Boot loads the default (Terminus16).
+[ -x "${FONT_TOOL}" ] && "${FONT_TOOL}" apply 2>/dev/null || true
 
 ensure_session() {
   tmux -L "${SOCKET}" has-session -t "${SESSION}" 2>/dev/null && return 0
@@ -32,6 +37,14 @@ ensure_session() {
   tmux -L "${SOCKET}" resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}"
   # Land on the shell so the keyboard is immediately useful.
   tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1"
+  # Font size hotkeys (prefix + / prefix -), repeatable. Server-global, so
+  # re-bound whenever the session is rebuilt. The shell pane holds focus, so
+  # the prefix reaches this outer server rather than the nested display.
+  if [ -x "${FONT_TOOL}" ]; then
+    tmux -L "${SOCKET}" bind-key -r -T prefix + run-shell "${FONT_TOOL} up"
+    tmux -L "${SOCKET}" bind-key -r -T prefix - run-shell "${FONT_TOOL} down"
+    tmux -L "${SOCKET}" bind-key -T prefix 0 run-shell "${FONT_TOOL} reset"
+  fi
 }
 
 while true; do

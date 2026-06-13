@@ -47,6 +47,8 @@ copy_if_exists /etc/apt/apt.conf.d/52unattended-upgrades-local etc/apt/apt.conf.
 copy_if_exists /etc/default/console-setup etc/default/console-setup
 copy_if_exists "${HOME}/.local/bin/open-offgrid-console" home/offgrid-user/.local/bin/open-offgrid-console
 copy_if_exists "${HOME}/.local/bin/offgrid-tty-console" home/offgrid-user/.local/bin/offgrid-tty-console
+copy_if_exists "${HOME}/.local/bin/offgrid-console-font" home/offgrid-user/.local/bin/offgrid-console-font
+copy_if_exists "${HOME}/.local/state/offgrid/console-font-index" home/offgrid-user/.local/state/offgrid/console-font-index
 copy_if_exists "${HOME}/.profile" home/offgrid-user/.profile
 copy_if_exists "${HOME}/.config/autostart/offgrid-console.desktop" home/offgrid-user/.config/autostart/offgrid-console.desktop
 copy_if_exists "${HOME}/.ssh" home/offgrid-user/.ssh

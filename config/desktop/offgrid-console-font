@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Step the framebuffer console font up/down a preloaded size ladder.
+#
+# Console fonts are not scalable: "bigger" means loading a different PSF
+# glyph file via setfont. All the sizes below ship with console-setup
+# (/usr/share/consolefonts) so the step is just a setfont away. Every entry
+# is a Uni2-Terminus variant so Greek (the cell-delta U+0394) renders at any
+# size; see docs/runbooks/pi-64-bit-os-lite-migration.md. The chosen index is
+# persisted so it survives console/service restarts and reboots.
+#
+# Changing the cell size reflows the tty geometry (the framebuffer is fixed at
+# 1920x1080); tmux resizes its panes and the renderer adapts via its dynamic
+# terminal-size read. Usage: offgrid-console-font {up|down|reset|apply}
+
+# Small -> large. Index 1 (Terminus16, 8x16) is the default set in
+# /etc/default/console-setup and matches the previous 240x67 geometry.
+LADDER=(
+  Uni2-Terminus14      # 8x14
+  Uni2-Terminus16      # 8x16  (default)
+  Uni2-Terminus20x10   # 10x20
+  Uni2-Terminus24x12   # 12x24
+  Uni2-Terminus28x14   # 14x28
+  Uni2-Terminus32x16   # 16x32
+)
+DEFAULT_INDEX=1
+TTY="${OFFGRID_CONSOLE_TTY:-/dev/tty1}"
+STATE="${OFFGRID_CONSOLE_FONT_STATE:-${HOME}/.local/state/offgrid/console-font-index}"
+
+mkdir -p "$(dirname "${STATE}")"
+index="$(cat "${STATE}" 2>/dev/null || echo "${DEFAULT_INDEX}")"
+case "${index}" in ''|*[!0-9]*) index="${DEFAULT_INDEX}" ;; esac
+
+case "${1:-apply}" in
+  up)    index=$((index + 1)) ;;
+  down)  index=$((index - 1)) ;;
+  reset) index="${DEFAULT_INDEX}" ;;
+  apply) : ;;  # re-load the persisted size (used at console startup)
+  *) echo "usage: $0 {up|down|reset|apply}" >&2; exit 2 ;;
+esac
+
+last=$(( ${#LADDER[@]} - 1 ))
+[ "${index}" -lt 0 ] && index=0
+[ "${index}" -gt "${last}" ] && index="${last}"
+
+sudo setfont -C "${TTY}" "${LADDER[${index}]}"
+echo "${index}" > "${STATE}"
