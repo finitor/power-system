@@ -78,7 +78,13 @@ restore_reference() {
     echo "reference ${rel} -> ${dest}"
     if [ "${APPLY}" -eq 1 ]; then
         sudo mkdir -p "$(dirname "${dest}")"
-        sudo cp -a "${ROOT}/${rel}" "${dest}"
+        if [ -d "${ROOT}/${rel}" ]; then
+            sudo rm -rf "${dest}"
+            sudo mkdir -p "${dest}"
+            sudo rsync -a "${ROOT}/${rel}/" "${dest}/"
+        else
+            sudo cp "${ROOT}/${rel}" "${dest}"
+        fi
     fi
 }
 
@@ -151,7 +157,11 @@ if [ "${APPLY}" -eq 1 ]; then
     fi
     sudo systemctl daemon-reload
     sudo udevadm control --reload-rules
-    sudo nginx -t
+    if command -v nginx >/dev/null 2>&1; then
+        sudo nginx -t
+    else
+        echo "nginx not installed yet; skipping nginx -t"
+    fi
     echo "Restore applied. Run scripts/deploy.sh next."
 else
     echo "Dry run only. Re-run with --apply to restore."
