@@ -312,11 +312,13 @@ def _battery_lines(battery: dict | None) -> list[str]:
 def _solar_lines(solar: list[dict]) -> list[str]:
     lines: list[str] = []
     if not solar:
-        return ["Charge Controller 0 (Classic)", "  No data"]
+        return ["Charge Controllers", "  No data"]
     for index, controller in enumerate(solar):
         if lines:
             lines.append("")
         lines.append(_charge_controller_title(index, controller))
+        for condition in controller.get("conditions") or []:
+            lines.append(_row("Alert", condition))
         pv_parts = [
             f"{_fmt(controller.get('pv_voltage_v'), 1)}V",
             f"{_fmt(controller.get('pv_current_a'), 1)}A",
@@ -378,12 +380,9 @@ def _solar_lines(solar: list[dict]) -> list[str]:
 
 
 def _charge_controller_title(index: int, controller: dict) -> str:
-    controller_id = controller.get("id")
-    if controller_id == "classic.0":
-        return f"Charge Controller {index} (Classic)"
-    if controller_id == "epever.1":
-        return f"Charge Controller {index} (Epever)"
-    return f"Charge Controller {index}"
+    device = controller.get("device") or {}
+    name = " ".join(part for part in [device.get("vendor"), device.get("model")] if part)
+    return f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
 
 
 def _inverter_charger_lines(inverter: dict | None) -> list[str]:

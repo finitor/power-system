@@ -12,6 +12,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 from offgrid_power.cli.api_terminal_display import (
     VIEW_POWER,
     VIEW_WEATHER,
+    _with_refresh,
     compose_frame,
     derive_weather_url,
     footer,
@@ -60,6 +61,17 @@ class FooterTest(unittest.TestCase):
         weather = footer(VIEW_WEATHER)
         self.assertIn("[w] WEATHER", weather)
         self.assertIn("[p] Power", weather)
+
+
+class WithRefreshTest(unittest.TestCase):
+    def test_appends_refresh_param(self) -> None:
+        self.assertEqual(
+            _with_refresh("http://127.0.0.1:8081/api/v1/snapshot"),
+            "http://127.0.0.1:8081/api/v1/snapshot?refresh=1",
+        )
+
+    def test_uses_ampersand_when_query_present(self) -> None:
+        self.assertEqual(_with_refresh("http://host/snapshot?k=1"), "http://host/snapshot?k=1&refresh=1")
 
 
 class ComposeFrameTest(unittest.TestCase):

@@ -125,12 +125,18 @@ def main() -> int:
     view = args.view
     previous_render: str | None = None
 
+    # A manual panel load queues an out-of-cycle source poll (fire-and-forget,
+    # server-side), so the next refresh shows fresh data without this fetch
+    # ever blocking on a slow device. True on first paint and after each switch.
+    pending_refresh = True
+
     with cbreak_mode(sys.stdin) as raw:
         interactive = raw and not args.once
         try:
             while True:
                 started = time.monotonic()
-                rendered = render_view(view, args.url, weather_url, timeout=args.timeout)
+                rendered = render_view(view, args.url, weather_url, timeout=args.timeout, refresh=pending_refresh)
+                pending_refresh = False
                 body = highlight_changed_digits(previous_render, rendered)
                 if not args.no_clear:
                     clear_screen()
@@ -166,19 +172,29 @@ def main() -> int:
                     if action != view:
                         view = action
                         previous_render = None  # different view: no digit diff to carry
+                    pending_refresh = True  # any panel keypress re-polls sources
                     break
         except KeyboardInterrupt:
             print()
             return 0
 
 
-def render_view(view: str, url: str, weather_url: str, timeout: float = 5.0) -> str:
+def render_view(view: str, url: str, weather_url: str, timeout: float = 5.0, refresh: bool = False) -> str:
     if view == VIEW_WEATHER:
+        # Weather is a rate-limited network source served from cache; a panel
+        # switch does not force a refetch (see the local-sources-only choice).
         return render_weather_once(weather_url, timeout=timeout)
-    return render_once(url, timeout=timeout)
+    return render_once(url, timeout=timeout, refresh=refresh)
 
 
-def render_once(url: str, timeout: float = 5.0) -> str:
+def _with_refresh(url: str) -> str:
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}refresh=1"
+
+
+def render_once(url: str, timeout: float = 5.0, refresh: bool = False) -> str:
+    if refresh:
+        url = _with_refresh(url)
     try:
         with urlopen(url, timeout=timeout) as response:
             payload = json.loads(response.read().decode("utf-8"))

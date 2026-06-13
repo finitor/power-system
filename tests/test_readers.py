@@ -86,6 +86,43 @@ class PollingReaderTest(unittest.TestCase):
 
         self.assertEqual(reader.submit(lambda: "inline"), "inline")
 
+    def test_request_refresh_polls_out_of_cycle_without_blocking(self) -> None:
+        reads = []
+
+        def slow_read() -> int:
+            time.sleep(0.05)
+            reads.append(1)
+            return len(reads)
+
+        # Long interval: without request_refresh only the initial poll happens.
+        reader = PollingReader("dev", slow_read, interval_s=60.0)
+        reader.start()
+        try:
+            deadline = time.monotonic() + 2.0
+            while reader.reading().captured_at is None and time.monotonic() < deadline:
+                time.sleep(0.01)
+            count_after_first = len(reads)
+
+            started = time.monotonic()
+            reader.request_refresh()  # fire-and-forget: must return immediately
+            self.assertLess(time.monotonic() - started, 0.02)
+
+            deadline = time.monotonic() + 2.0
+            while len(reads) <= count_after_first and time.monotonic() < deadline:
+                time.sleep(0.01)
+        finally:
+            reader.stop()
+
+        self.assertEqual(len(reads), count_after_first + 1)
+
+    def test_request_refresh_reads_inline_when_not_started(self) -> None:
+        reads = []
+        reader = PollingReader("dev", lambda: reads.append(1) or len(reads), interval_s=60.0)
+
+        reader.request_refresh()
+
+        self.assertEqual(len(reads), 1)
+
     def test_reads_and_commands_share_one_thread(self) -> None:
         seen_threads: set[str] = set()
 

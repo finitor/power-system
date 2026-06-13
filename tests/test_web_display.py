@@ -24,6 +24,7 @@ from offgrid_power.web_display import (
     render_snapshot_unavailable,
     route_display_request,
     snapshot_api_payload,
+    wants_source_refresh,
 )
 from offgrid_power.weather import WeatherReport, weather_api_payload
 from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_magnum_snapshot, make_snapshot
@@ -72,7 +73,9 @@ class WebDisplayTest(unittest.TestCase):
         # Live-page sentinel drives the slow cadence (and recovery detection).
         self.assertIn("offgrid-live", html)
         self.assertIn("SOC 97%", html)
-        for section in ("Load", "Battery Bank", "Charge Controller 0 (Classic)", "Inverter/Charger", "Temperatures"):
+        # This snapshot has no charge controllers, so the collection renders a
+        # single empty group rather than hardcoded per-vendor sections.
+        for section in ("Load", "Battery Bank", "Charge Controllers", "Inverter/Charger", "Temperatures"):
             self.assertIn(f"<h2>{section}</h2>", html)
         # Decoded values flow through to the page.
         self.assertIn("5.1A  272W", html)
@@ -178,7 +181,9 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_snapshot(snapshot)
 
-        self.assertIn("<h2>Charge Controller 1 (Epever)</h2>", html)
+        # Only an EPEver is present, so it is index 0 in the collection: the
+        # renderer numbers by position, not by a fixed per-vendor slot.
+        self.assertIn("<h2>Charge Controller 0 (EPEver TEP10425)</h2>", html)
         self.assertIn("53.1V  0.0A  0W", html)
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
         self.assertIn("Stage: Resting (No charging)", html)
@@ -256,6 +261,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["battery"]["soc_percent"], 92)
         self.assertAlmostEqual(payload["battery"]["voltage_v"], 53.04)
         self.assertEqual([controller["id"] for controller in payload["solar"]], ["classic.0", "epever.1"])
+        # Vendor/model identity is its own block, separate from the parameters.
+        self.assertEqual(payload["solar"][0]["device"], {"vendor": "MidNite", "model": "Classic 200"})
+        self.assertEqual(payload["solar"][1]["device"], {"vendor": "EPEver", "model": "TEP10425"})
+        self.assertEqual(payload["solar"][0]["conditions"], [])
         self.assertEqual(payload["solar"][0]["daily_amp_hours_ah"], 108)
         self.assertIsNone(payload["solar"][0]["settings"])
         self.assertEqual(payload["solar"][1]["battery_voltage_v"], 53.11)
@@ -283,6 +292,39 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["current"]["condition"], {"code": 3, "text": "overcast"})
         self.assertEqual(payload["current"]["wind"]["compass"], "SW")
         self.assertNotIn("data", payload)
+
+    def test_refresh_param_invokes_hook_and_still_returns_current_snapshot(self) -> None:
+        snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
+        calls = []
+
+        response = route_display_request(
+            snapshot, "/api/v1/snapshot?refresh=1", "curl/8.0", refresh_hook=lambda: calls.append(1)
+        )
+
+        # The hook fired (queues a re-poll) but the response is the current
+        # snapshot, served without waiting on any source.
+        self.assertEqual(calls, [1])
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(json.loads(response.body)["battery"]["soc_percent"], 92)
+
+    def test_refresh_param_ignored_without_flag_or_on_weather(self) -> None:
+        snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
+        calls = []
+        hook = lambda: calls.append(1)
+
+        # No refresh flag: hook must not fire.
+        route_display_request(snapshot, "/api/v1/snapshot", "curl/8.0", refresh_hook=hook)
+        # Weather is a cached network source: refresh must not re-poll devices.
+        route_display_request(snapshot, "/api/v1/weather?refresh=1", "curl/8.0", refresh_hook=hook)
+
+        self.assertEqual(calls, [])
+
+    def test_wants_source_refresh_paths(self) -> None:
+        self.assertTrue(wants_source_refresh("/api/v1/snapshot?refresh=1"))
+        self.assertTrue(wants_source_refresh("/kindle?refresh=1"))
+        self.assertFalse(wants_source_refresh("/api/v1/snapshot"))
+        self.assertFalse(wants_source_refresh("/api/v1/weather?refresh=1"))
+        self.assertFalse(wants_source_refresh("/healthz?refresh=1"))
 
     def test_routes_api_weather_handles_missing_report(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))

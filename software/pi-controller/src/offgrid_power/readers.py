@@ -121,6 +121,18 @@ class PollingReader:
         self._commands.put((fn, future))
         return future.result(timeout=timeout_s)
 
+    def request_refresh(self) -> None:
+        """Queue an out-of-cycle poll on the device thread; returns at once.
+
+        Fire-and-forget: the actor thread runs it between polls (waking from
+        the command queue near-instantly), so a slow or wedged adapter can
+        never block the caller. The fresh value lands on a later reading().
+        """
+        if self._thread is None:
+            self.read_now()
+            return
+        self._commands.put((self.read_now, Future()))
+
     def start(self) -> None:
         if self._thread is not None:
             return

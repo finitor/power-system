@@ -10,8 +10,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from threading import Lock
 from typing import Callable
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
+from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
 from .supervisor import Supervisor, SupervisorSnapshot
 from .terminal_display import format_cell_location_for_display, format_time
@@ -296,13 +297,29 @@ def render_kindle_weather(
     return "\n".join(lines)
 
 
+# Power-data views whose ?refresh=1 should queue an out-of-cycle source poll.
+# Weather/health are excluded: weather is a rate-limited network source served
+# from cache, and health must stay a cheap liveness check.
+_SOURCE_REFRESH_PATHS = {"/api/v1/snapshot", "/", "/kindle", "/display"}
+
+
+def wants_source_refresh(path: str) -> bool:
+    parsed = urlparse(path)
+    return parsed.path in _SOURCE_REFRESH_PATHS and "1" in parse_qs(parsed.query).get("refresh", [])
+
+
 def route_display_request(
     snapshot: SupervisorSnapshot,
     path: str,
     user_agent: str,
     load_summary: LoadSummary | None = None,
     weather_report: WeatherReport | None = None,
+    refresh_hook: Callable[[], None] | None = None,
 ) -> DisplayResponse:
+    # The hook only queues a re-poll for next time; this response still carries
+    # the current snapshot, so a slow source never delays the reply.
+    if refresh_hook is not None and wants_source_refresh(path):
+        refresh_hook()
     parsed_path = urlparse(path).path
     if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
         return route_api_request(snapshot, parsed_path, load_summary=load_summary)
@@ -635,10 +652,18 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
     if snapshot.classic is not None:
         classic = snapshot.classic
         settings = snapshot.classic_settings
+        conditions: list[str] = []
+        if classic.is_hypervoc:
+            conditions.append(
+                f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"
+            )
         payload.append(
             {
             "id": "classic.0",
-            "label": "Classic 200",
+            # Vendor/model identity lives in its own block so renderers display
+            # any controller generically and never branch on which one it is.
+            "device": {"vendor": "MidNite", "model": "Classic 200"},
+            "conditions": conditions,
             "captured_at": classic.captured_at.isoformat(),
             "battery_voltage_v": classic.battery_voltage_v,
             "battery_current_a": classic.battery_current_a,
@@ -679,7 +704,8 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
         payload.append(
             {
                 "id": "epever.1",
-                "label": "EPEver TEP10425",
+                "device": {"vendor": "EPEver", "model": "TEP10425"},
+                "conditions": [],
                 "captured_at": epever.captured_at.isoformat(),
                 "battery_voltage_v": epever.battery_voltage_v,
                 "battery_current_a": epever.battery_current_a,
@@ -788,8 +814,10 @@ def run_display_server(
     snapshot_provider: Callable[[], SupervisorSnapshot] | None = None,
     load_summary_provider: Callable[[], LoadSummary | None] | None = None,
     weather_provider: Callable[[], WeatherReport | None] | None = None,
+    refresh_hook: Callable[[], None] | None = None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
+    refresh = refresh_hook or supervisor.request_refresh
     load_tracker = LoadTracker(sample_buffer=LoadSampleBuffer())
 
     class Handler(BaseHTTPRequestHandler):
@@ -840,6 +868,7 @@ def run_display_server(
                 self.headers.get("User-Agent", ""),
                 load_summary=load_summary,
                 weather_report=weather_report,
+                refresh_hook=refresh,
             )
             self.send_response(response.status.value)
             self.send_header("Content-Type", response.content_type)
@@ -856,69 +885,95 @@ def run_display_server(
 
 
 def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
+    # Iterate the normalized controller collection: the renderer carries no
+    # knowledge of which vendors or how many controllers exist. A new model
+    # appears as its own group automatically once the API reports it.
+    controllers = _solar_api_payload(snapshot)
+    if not controllers:
+        return ["<h2>Charge Controllers</h2>", "<table>", _row("State", "No data"), "</table>"]
     lines: list[str] = []
-    lines.extend(["<h2>Charge Controller 0 (Classic)</h2>", "<table>"])
-    if snapshot.classic is None:
-        lines.append(_row("State", "No data"))
-    else:
-        classic = snapshot.classic
-        lines.extend(
-            [
-                _row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V"),
-                _row("Output", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"),
-                _row("Charge Status", classic.stage.render(classic.state)),
-                *(
-                    [
-                        _row(
-                            "PV input",
-                            f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V",
-                        )
-                    ]
-                    if classic.is_hypervoc
-                    else []
-                ),
-                _row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"),
-            ]
-        )
-        if snapshot.classic_settings is not None:
-            settings = snapshot.classic_settings
-            lines.append(
-                _row(
-                    "Charge Settings",
-                    f"Limit {settings.battery_current_limit_a:.1f}A  "
-                    f"Absorb {settings.absorb_voltage_v:.1f}V {settings.absorb_time_s / 3600:.1f}h  "
-                    f"Float {settings.float_voltage_v:.1f}V  "
-                    f"EQ {settings.equalize_voltage_v:.1f}V",
-                )
-            )
-    lines.append("</table>")
+    for index, controller in enumerate(controllers):
+        lines.extend(_controller_section_lines(index, controller))
+    return lines
 
-    lines.extend(["<h2>Charge Controller 1 (Epever)</h2>", "<table>"])
-    if snapshot.epever is None:
-        lines.append(_row("State", "No data"))
-    else:
-        epever = snapshot.epever
-        lines.extend(
-            [
-                _row("PV", f"{epever.pv_voltage_v:.1f}V  {epever.pv_current_a:.1f}A  {epever.pv_power_w}W"),
-                _row("Output", f"{epever.battery_voltage_v:.1f}V  {epever.battery_current_a:.1f}A  {epever.battery_power_w}W"),
-                _row("Charge Status", epever.stage.render()),
-                _row("Rated", f"{epever.rated_pv_voltage_v:.0f}V PV  {epever.rated_charging_current_a:.0f}A charge"),
-            ]
+
+def _controller_section_lines(index: int, controller: dict) -> list[str]:
+    device = controller.get("device") or {}
+    name = " ".join(part for part in [device.get("vendor"), device.get("model")] if part)
+    title = f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
+    lines = [f"<h2>{escape(title)}</h2>", "<table>"]
+
+    for condition in controller.get("conditions") or []:
+        lines.append(_row("Alert", condition))
+
+    pv_parts = [_meas(controller.get("pv_voltage_v"), "V", 1), _meas(controller.get("pv_current_a"), "A", 1)]
+    if controller.get("last_voc_v") is not None:
+        pv_parts.append(f"Voc {_meas(controller.get('last_voc_v'), 'V', 1)}")
+    elif controller.get("pv_power_w") is not None:
+        pv_parts.append(_meas(controller.get("pv_power_w"), "W", 0))
+    lines.append(_row("PV", "  ".join(pv_parts)))
+
+    lines.append(
+        _row(
+            "Output",
+            f"{_meas(controller.get('battery_voltage_v'), 'V', 1)}  "
+            f"{_meas(controller.get('battery_current_a'), 'A', 1)}  "
+            f"{_meas(controller.get('battery_power_w'), 'W', 0)}",
         )
-        if snapshot.epever_settings is not None:
-            settings = snapshot.epever_settings
-            lines.append(
-                _row(
-                    "Charge Settings",
-                    f"Type {settings.battery_type}  "
-                    f"Boost {settings.boost_voltage_v:.1f}V  "
-                    f"Float {settings.float_voltage_v:.1f}V  "
-                    f"LVD {settings.low_voltage_disconnect_v:.1f}V",
-                )
+    )
+
+    stage = NormalizedStage.from_dict(controller.get("charge_stage"))
+    lines.append(_row("Charge Status", stage.render(controller.get("state"))))
+
+    if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
+        lines.append(
+            _row(
+                "Production Today",
+                f"{_meas(controller.get('daily_energy_kwh'), 'kWh', 1)}  {_meas(controller.get('daily_amp_hours_ah'), 'Ah', 0)}",
             )
+        )
+
+    if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
+        lines.append(
+            _row(
+                "Rated",
+                f"{_meas(controller.get('rated_pv_voltage_v'), 'V', 0)} PV  "
+                f"{_meas(controller.get('rated_charging_current_a'), 'A', 0)} charge",
+            )
+        )
+
+    settings = controller.get("settings")
+    if settings is not None:
+        if "current_limit_a" in settings:
+            value = (
+                f"Limit {_meas(settings.get('current_limit_a'), 'A', 1)}  "
+                f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)} {_hours_text(settings.get('absorb_time_s'))}  "
+                f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)}  "
+                f"EQ {_meas(settings.get('equalize_voltage_v'), 'V', 1)}"
+            )
+        else:
+            value = (
+                f"Type {settings.get('battery_type') or 'unknown'}  "
+                f"Boost {_meas(settings.get('boost_voltage_v'), 'V', 1)}  "
+                f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)}  "
+                f"LVD {_meas(settings.get('low_voltage_disconnect_v'), 'V', 1)}"
+            )
+        lines.append(_row("Charge Settings", value))
+
     lines.append("</table>")
     return lines
+
+
+def _meas(value: object, suffix: str, decimals: int = 1) -> str:
+    text = _format_number(value, suffix, decimals)
+    return text if text is not None else "--"
+
+
+def _hours_text(seconds: object) -> str:
+    try:
+        return f"{float(seconds) / 3600:.1f}h"
+    except (TypeError, ValueError):
+        return "--"
 
 
 def _inverter_charger_section(snapshot: SupervisorSnapshot) -> list[str]:

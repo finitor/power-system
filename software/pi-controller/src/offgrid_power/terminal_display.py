@@ -45,7 +45,9 @@ def format_cell_location_for_display(location: str | None) -> str:
     if not separator:
         return location
     try:
-        return f"{int(pack_text)}|{int(cell_text)}"
+        # Hyphen, not a pipe: "1|16" reads like the numeral run "1116" on the
+        # low-res wall console; "1-16" keeps bank and cell legibly distinct.
+        return f"{int(pack_text)}-{int(cell_text)}"
     except ValueError:
         return location
 

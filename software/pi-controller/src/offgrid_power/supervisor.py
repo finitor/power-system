@@ -140,6 +140,19 @@ class Supervisor:
                 return
             time.sleep(0.2)
 
+    def request_refresh(self) -> None:
+        """Queue an out-of-cycle poll of every device; returns immediately.
+
+        Fire-and-forget so a slow source can never block the caller (e.g. an
+        HTTP request triggered by a manual panel switch). The fresh values are
+        picked up by the next read_snapshot(). A no-op when readers are not
+        running, since read_snapshot then polls every device directly anyway.
+        """
+        if self._readers is None:
+            return
+        for reader in self._readers.values():
+            reader.request_refresh()
+
     def write_classic_charge_settings(self, **kwargs) -> None:
         """Write Classic charge settings via the device's actor thread.
 
