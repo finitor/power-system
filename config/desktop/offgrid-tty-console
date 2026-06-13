@@ -14,9 +14,11 @@ set -uo pipefail
 
 SOCKET="${OFFGRID_TTY_SOCKET:-offgrid-tty}"
 SESSION="${OFFGRID_TTY_SESSION:-wall}"
-# The display renderer caps itself at 120 columns (terminal_display.py);
-# one extra column for the pane border, the rest goes to the shell.
-DISPLAY_COLS="${OFFGRID_TTY_DISPLAY_COLS:-121}"
+# Keep the telemetry pane readable without starving the operator shell.
+# The renderer can use up to 120 columns, but the 192-column tty created by
+# the current console font feels better with roughly half the screen left for
+# commands.
+DISPLAY_COLS="${OFFGRID_TTY_DISPLAY_COLS:-96}"
 FONT_TOOL="${HOME}/.local/bin/offgrid-console-font"
 
 # Restore the operator's chosen font size before laying out panes, so the
@@ -34,9 +36,13 @@ ensure_session() {
   # The inner session keeps its status line; a second one is clutter.
   tmux -L "${SOCKET}" set-option -t "${SESSION}" status off
   tmux -L "${SOCKET}" split-window -h -t "${SESSION}:console.0"
-  tmux -L "${SOCKET}" resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}"
   # Land on the shell so the keyboard is immediately useful.
   tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1"
+}
+
+apply_layout() {
+  tmux -L "${SOCKET}" resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}" 2>/dev/null || true
+  tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1" 2>/dev/null || true
 }
 
 # Font size hotkeys. Set on every startup — the tmux server outlives a
@@ -60,6 +66,7 @@ setup_bindings() {
 
 while true; do
   ensure_session
+  apply_layout
   setup_bindings
   tmux -L "${SOCKET}" attach -t "${SESSION}"
   sleep 2

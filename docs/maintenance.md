@@ -21,7 +21,7 @@ Use `scripts/restore-config.sh` as a starting point. Document the exact Pi image
 
 | Date | Git Commit | Pi Image / OS | Notes |
 |---|---|---|---|
-| 2026-06-13 | `4db22d5` | Raspberry Pi OS Lite 64-bit, Debian GNU/Linux 13/trixie | 32 GB dry-run microSD in service; former 64 GB card retained as rollback. Reboot validated with `/srv/telemetry` on external SSD, supervisor/console/nginx/timers active, health check green. |
+| 2026-06-13 | `7f3f438` | Raspberry Pi OS Lite 64-bit, Debian GNU/Linux 13/trixie | 32 GB dry-run microSD in service; former 64 GB card retained as rollback. Reboot validated with `/srv/telemetry` on external SSD, tty autologin console, supervisor/console/nginx/timers active, Tailscale restored, health check green. |
 
 ## Follow-Up Observations
 

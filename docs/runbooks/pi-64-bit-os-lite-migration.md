@@ -235,6 +235,11 @@ belongs to the login's own tmux session. Same console, ~zero additional RAM.
 This answers the former open question about whether the rebuilt image needs a
 desktop: no.
 
+The outer tty tmux layout defaults the left display pane to 96 columns. That is
+intentionally narrower than the renderer's 120-column cap so a 192-column
+console leaves a useful shell pane. Override with `OFFGRID_TTY_DISPLAY_COLS`
+only if the physical display/font geometry changes enough to justify it.
+
 **Validated 2026-06-12 on the current 32-bit image as a migration dry run:**
 `systemctl set-default multi-user.target` plus this guard appended to
 `~/.profile` (no `.bash_profile` exists, and creating one would stop bash
@@ -273,6 +278,14 @@ the saved size on startup. setfont reflows the tty (the framebuffer is fixed
 at 1920x1080, so a bigger cell = fewer cols/rows); tmux resizes its panes and
 the renderer adapts via its dynamic terminal-size read. Both the boot-default
 config and the saved index are in the migration backup manifest.
+
+**Tailscale:** `scripts/install-pi.sh` installs Tailscale from the official
+Tailscale apt repository when it is missing, then enables `tailscaled`.
+`scripts/backup-config.sh` includes `/var/lib/tailscale` and
+`/etc/default/tailscaled`, and `scripts/restore-config.sh` restores them so a
+future card swap can keep the same machine identity. If no identity was
+restored, run `sudo tailscale up --hostname=blueberry`, approve the auth URL,
+and rename/remove any stale duplicate device in the Tailscale admin console.
 
 ## Post-Migration Follow-Ups
 
