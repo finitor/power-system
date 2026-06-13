@@ -7,10 +7,11 @@ supervisor is offline.
 
 ## Current Status
 
-Parked on 2026-06-12 while waiting for a second microSD card. Do not overwrite
-the current working card.
+Dry run completed on 2026-06-13 using the salvaged 32 GB microSD. The card is
+currently in service as `blueberry`; the former 64 GB Samsung card remains the
+physical rollback.
 
-Completed preparation:
+Preparation completed before the dry run:
 
 - Migration backup created from the live Pi:
   `backups/pi-migration/offgrid-blueberry-20260612T120203Z.tar.gz` on the
@@ -27,12 +28,25 @@ Completed preparation:
 - `/srv/telemetry` is on the external Samsung SSD 840 EVO 500 GB, not on the
   boot microSD.
 
-Resume for a dry run with the salvaged 32 GB microSD, but keep the current
-working card untouched. A 32 GB card is enough for a rehearsal because root
-uses about 7.3 GB and telemetry writes live on the external SSD. Preferred
-final target remains a 128 GB high-endurance microSDXC, UHS-I U1/U3, A1 or A2,
-from a reputable vendor. The SanDisk 128 GB High Endurance card
-`SDSQQNR-128G-GN6IA` is an acceptable final target.
+A 32 GB card was enough for the rehearsal because root used about 7.3 GB and
+telemetry writes live on the external SSD. Preferred final target remains a
+128 GB high-endurance microSDXC, UHS-I U1/U3, A1 or A2, from a reputable
+vendor. The SanDisk 128 GB High Endurance card `SDSQQNR-128G-GN6IA` is an
+acceptable final target.
+
+Validated after the 64-bit rebuild:
+
+- Raspberry Pi OS Lite 64-bit, Debian GNU/Linux 13/trixie, `aarch64`.
+- Repo deployed at Git commit `4db22d5`.
+- Reboot survived; `/srv/telemetry` remounted from the external SSD.
+- `offgrid-supervisor`, `offgrid-console`, `nginx`,
+  `offgrid-can-watchdog.timer`, and `offgrid-metrics-export.timer` are enabled
+  and active.
+- Supervisor `/healthz` returns `ok`; nginx Kindle path returns OK.
+- CAN is up listen-only at 500 kbit/s.
+- Classic, battery CAN, and EPEver telemetry are healthy.
+- Temporary migration sudoers file was removed; normal sudo requires a
+  password again.
 
 ## Goal
 
