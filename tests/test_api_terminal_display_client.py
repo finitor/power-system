@@ -9,6 +9,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
+import os
+import select
+import signal
+
 from offgrid_power.cli.api_terminal_display import (
     VIEW_POWER,
     VIEW_WEATHER,
@@ -16,6 +20,7 @@ from offgrid_power.cli.api_terminal_display import (
     compose_frame,
     derive_weather_url,
     footer,
+    resize_wakeup,
     resolve_key,
 )
 
@@ -77,6 +82,22 @@ class WithRefreshTest(unittest.TestCase):
 
     def test_uses_ampersand_when_query_present(self) -> None:
         self.assertEqual(_with_refresh("http://host/snapshot?k=1"), "http://host/snapshot?k=1&refresh=1")
+
+
+class ResizeWakeupTest(unittest.TestCase):
+    def test_disabled_yields_none(self) -> None:
+        with resize_wakeup(False) as fd:
+            self.assertIsNone(fd)
+
+    @unittest.skipUnless(hasattr(signal, "SIGWINCH"), "no SIGWINCH on this platform")
+    def test_sigwinch_makes_fd_readable_and_restores_handler(self) -> None:
+        before = signal.getsignal(signal.SIGWINCH)
+        with resize_wakeup(True) as fd:
+            self.assertIsNotNone(fd)
+            os.kill(os.getpid(), signal.SIGWINCH)
+            ready, _, _ = select.select([fd], [], [], 1.0)
+            self.assertIn(fd, ready)
+        self.assertEqual(signal.getsignal(signal.SIGWINCH), before)
 
 
 class ComposeFrameTest(unittest.TestCase):

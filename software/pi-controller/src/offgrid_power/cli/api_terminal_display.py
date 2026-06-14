@@ -12,8 +12,10 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
+import os
 import select
 import shutil
+import signal
 import sys
 import time
 from urllib.error import HTTPError, URLError
@@ -124,6 +126,35 @@ def cbreak_mode(stream):
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+@contextlib.contextmanager
+def resize_wakeup(enabled: bool):
+    """Yield a read-fd that becomes readable on SIGWINCH (terminal resize).
+
+    Lets the render loop re-pin the bottom footer the instant the console is
+    resized — e.g. a font-size change reflows the tty taller — instead of
+    leaving the footer dangling until the next periodic refresh. Uses a
+    self-pipe wakeup fd so a plain select() wakes on the signal. Yields None
+    when disabled (non-interactive) or unsupported. Must run on the main thread.
+    """
+    if not enabled or not hasattr(signal, "SIGWINCH"):
+        yield None
+        return
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(read_fd, False)
+    os.set_blocking(write_fd, False)
+    previous_wakeup = signal.set_wakeup_fd(write_fd)
+    # A handler must be installed for Python to route the signal to the wakeup
+    # fd; the body itself does nothing — the readable fd is the signal.
+    previous_handler = signal.signal(signal.SIGWINCH, lambda *_: None)
+    try:
+        yield read_fd
+    finally:
+        signal.signal(signal.SIGWINCH, previous_handler)
+        signal.set_wakeup_fd(previous_wakeup)
+        os.close(read_fd)
+        os.close(write_fd)
+
+
 def main() -> int:
     args = parse_args()
     weather_url = args.weather_url or derive_weather_url(args.url)
@@ -135,7 +166,7 @@ def main() -> int:
     # ever blocking on a slow device. True on first paint and after each switch.
     pending_refresh = True
 
-    with cbreak_mode(sys.stdin) as raw:
+    with cbreak_mode(sys.stdin) as raw, resize_wakeup(raw and not args.once) as winch_fd:
         interactive = raw and not args.once
         try:
             while True:
@@ -155,8 +186,8 @@ def main() -> int:
                 if args.once:
                     return 0
 
-                # Wait out the refresh interval, but let a recognized keypress
-                # cut it short and switch the view immediately.
+                # Wait out the refresh interval, but cut it short on a recognized
+                # keypress (switch view) or a terminal resize (re-pin the footer).
                 while True:
                     remaining = args.interval - (time.monotonic() - started)
                     if remaining <= 0:
@@ -164,8 +195,20 @@ def main() -> int:
                     if not interactive:
                         time.sleep(remaining)
                         break
-                    if not select.select([sys.stdin], [], [], remaining)[0]:
+                    watch = [sys.stdin] if winch_fd is None else [sys.stdin, winch_fd]
+                    ready = select.select(watch, [], [], remaining)[0]
+                    if not ready:
                         continue
+                    if winch_fd is not None and winch_fd in ready:
+                        # Console resized (e.g. font-size change reflowed the
+                        # tty): drain the wakeup byte(s) and re-render now so the
+                        # bottom-pinned footer follows the new viewport height.
+                        try:
+                            os.read(winch_fd, 4096)
+                        except OSError:
+                            pass
+                        previous_render = None  # geometry changed: no digit diff
+                        break
                     char = sys.stdin.read(1)
                     if not char:
                         continue
