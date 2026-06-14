@@ -474,6 +474,19 @@ def _wx_number(value: object) -> float | None:
         return None
 
 
+def _wx_irradiance(value: object) -> float | None:
+    """Irradiance is physically non-negative; clamp to 0.
+
+    Open-Meteo derives horizontal direct radiation as roughly GHI - diffuse,
+    so in near-fully-diffuse conditions (fog) it can land a watt or two below
+    zero from model/rounding noise. Negative irradiance is meaningless, so the
+    normalized payload clamps it for every consumer (displays and the metrics
+    recorder alike).
+    """
+    number = _wx_number(value)
+    return None if number is None else max(0.0, number)
+
+
 def _wx_indexed(values: object, index: int) -> object:
     if isinstance(values, list) and 0 <= index < len(values):
         return values[index]
@@ -502,10 +515,10 @@ def _wx_current(current: dict) -> dict:
             "compass": wind_compass(current.get("wind_direction_10m")),
         },
         "irradiance": {
-            "ghi_wm2": _wx_number(current.get("shortwave_radiation")),
-            "direct_wm2": _wx_number(current.get("direct_radiation")),
-            "diffuse_wm2": _wx_number(current.get("diffuse_radiation")),
-            "dni_wm2": _wx_number(current.get("direct_normal_irradiance")),
+            "ghi_wm2": _wx_irradiance(current.get("shortwave_radiation")),
+            "direct_wm2": _wx_irradiance(current.get("direct_radiation")),
+            "diffuse_wm2": _wx_irradiance(current.get("diffuse_radiation")),
+            "dni_wm2": _wx_irradiance(current.get("direct_normal_irradiance")),
         },
     }
 

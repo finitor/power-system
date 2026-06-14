@@ -156,6 +156,18 @@ class WeatherApiPayloadTest(unittest.TestCase):
         # No OpenMeteo field names leak through.
         self.assertNotIn("temperature_2m", json.dumps(payload))
 
+    def test_irradiance_clamps_negative_noise_to_zero(self) -> None:
+        # Open-Meteo can emit slightly-negative direct radiation in fog
+        # (direct = GHI - diffuse). Irradiance is non-negative; clamp it.
+        report = self._report()
+        report.data["current"]["direct_radiation"] = -1.0
+        report.data["current"]["shortwave_radiation"] = 170.0
+
+        irradiance = weather_api_payload(report)["current"]["irradiance"]
+
+        self.assertEqual(irradiance["direct_wm2"], 0.0)
+        self.assertEqual(irradiance["ghi_wm2"], 170.0)
+
     def test_missing_report_is_unavailable_envelope(self) -> None:
         payload = weather_api_payload(None)
 
