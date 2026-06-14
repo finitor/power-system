@@ -63,7 +63,9 @@ class FooterTest(unittest.TestCase):
         self.assertIn("[p] Power", weather)
 
     def test_includes_font_size_reminder(self) -> None:
-        self.assertIn("Font  ↓F7  ↑F8", footer(VIEW_POWER))
+        # 4-space gap separates the font group from the view controls; single
+        # spaces inside the group.
+        self.assertIn("[q] Quit    Font ↓F7 ↑F8", footer(VIEW_POWER))
 
 
 class WithRefreshTest(unittest.TestCase):

@@ -82,8 +82,10 @@ def footer(view: str) -> str:
             "[space] Toggle",
             "[q] Quit",
             # Font size is an outer-tmux concern (F7/F8 at the root table), not
-            # a renderer key — this is just a reminder the controls exist.
-            "Font  ↓F7  ↑F8",
+            # a renderer key — this is just a reminder the controls exist. The
+            # 2 leading spaces add to the join's 2 for a 4-space gap that sets
+            # this group apart from the view controls; 1 space within the group.
+            "  Font ↓F7 ↑F8",
         ]
     )
 
