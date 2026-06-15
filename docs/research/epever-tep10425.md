@@ -1,6 +1,6 @@
 # EPEver TEP10425 Integration Notes
 
-Unit on hand 2026-06-10. Manual: `~/Dropbox/manuals/solar/TEP-Manual-EN-V1.1.pdf`
+Unit on hand 2026-06-10. Manual: `~/Dropbox/manuals/solar/Epever-TEP-Manual-EN-V1.1.pdf`
 (60 pp, v1.1). Notes here focus on what integration with the supervisor and
 the Cubix bank needs; page refs are manual page numbers.
 
@@ -67,11 +67,49 @@ moving the cable from a Magnum tap, swap A/B before changing anything else.
 **Port 9** (RTS/BMS/CAN multiplexed): correction to the accessories-section
 reading — the BMS-Link module is only needed for *other* manufacturers'
 BMS protocols. **Pylon-protocol batteries connect directly to port 9 with
-BMS protocol number 21** (Pylon cable CC-RJ45-RJ45-PYLON-200, pins 3/6 —
-i.e. RS485-based Pylon). Port 9 also carries CAN (pin 5 = CAN-L) and the
-RTS-D47K temp sensor (protocol number 32). So the Cubix pairing path for a
-future UBS experiment is: battery's Pylon RS485 port → port 9 pins 3/6,
-BPRO=21.
+BMS protocol number 21** (Pylon cable CC-RJ45-RJ45-PYLON-200), and the
+RTS-D47K temp sensor uses protocol number 32.
+
+Full port-9 pinout, confirmed from the manual §1.2.1 (it carries **both**
+RS485 and CAN on the same RJ45, sharing GND on pin 8):
+
+| Pin | Definition | Pin | Definition |
+|---|---|---|---|
+| 1 | / | 5 | CAN-L |
+| 2 | / | 6 | RS485-A |
+| 3 | RS485-B | 7 | / |
+| 4 | CAN-H | 8 | GND |
+
+The manual does **not** state which transport (RS485 3/6 vs CAN 4/5) a given
+BMS protocol number rides — it punts to the EPEVER website's protocol table.
+The 2026-06-12 session assumed Pylon-21 was RS485 and wired pins 3/6; it heard
+nothing at any baud. Since the Cubix is proven to emit Pylon frames over CAN,
+the open hypothesis is that Pylon-21 here is **CAN-based** (pins 4/5), which
+would explain the silent RS485 tap. Decide it by sniffing CAN on pins 4/5
+with BPRO=21 set.
+
+**Port-9 CAN sniff (single-adapter bench procedure).** With only one
+SH-C31G, move it off the Cubix for the test. Wiring is nearly identical to
+the Cubix CAN port — CAN-H/CAN-L are the same pins; only GND moves:
+
+| SH-C31G | Cubix CAN | EPever port 9 |
+|---|---|---|
+| CANH | pin 4 | pin 4 |
+| CANL | pin 5 | pin 5 |
+| GND | pin 3/6 | pin 8 (optional on isolated adapter, short run) |
+
+- Leave the SH-C31G's onboard terminator enabled (sw1 up / sw2 down ≈ 125 Ω);
+  whether port 9 terminates CAN internally is unconfirmed, so be the one
+  guaranteed terminator.
+- Stop the supervisor and `offgrid-can-watchdog.timer` first — the watchdog
+  auto-resets `can0` every ~2 min and will fight the experiment.
+- Bring `can0` up listen-only at 500 kbit/s (Cubix bitrate; Pylon-CAN is
+  usually 500k) and `candump can0`. If silent, sweep bitrates via the
+  `can_survey` CLI — listen-only, so harmless.
+- A clean silent bus (zero frames AND zero error counters) cannot distinguish
+  "EPever not transmitting" from an open wire — see
+  [troubleshooting.md](../troubleshooting.md). The pin-4/5 match to the Cubix
+  cable removes the wiring variable, which is the point of reusing it.
 
 ## Remote parameter setting (3.3.7)
 
@@ -224,12 +262,101 @@ the Solar Guardian UI values.
 - `0x9047` Parallel Max Charging Current is real and writable, but it is a
   parallel-system ceiling rather than the normal taper knob. It appears to
   require 10 A increments.
-- No true charger enable/disable register was discovered. Until proven
-  otherwise, "disable" must be implemented by conservative current/voltage
-  targets or by an external hardware/PV disconnect path.
+- ~~No true charger enable/disable register was discovered.~~ **Superseded
+  2026-06-15:** there *is* a true charge enable/disable — it is a **coil**,
+  not a holding register, which is why holding-register sniffing missed it.
+  See "Modbus control surface" below. Charge "disable" no longer needs
+  conservative setpoints or an external disconnect.
 - A later PV-connected test should repeat the Home-page sniff while the
   controller is actually charging, to map the charging-current/power fields
   and status-bit transitions under load.
+
+## Modbus control surface (COM port = port 8)
+
+Established 2026-06-15. The COM port (manual item 8, RS485 Modbus, pins
+3=B/6=A/8=GND) is where the supervisor controls the controller. Two distinct
+spaces matter:
+
+### Coils (function 0x01 read / 0x05 write) — the missing on/off switches
+
+These are single-bit read/write outputs, a separate address space from the
+holding registers (coil 0 ≠ holding register 0). All prior control work used
+holding registers (function 0x10), so the coils were never read — which is
+why the charge on/off control was invisible.
+
+| Coil | Name | Charge-control use |
+|---:|---|---|
+| **0x0000** | **Charging device on/off** (1=on, 0=off) | **TRUE 0 A charge stop.** Verified read/write/reversible over port 8 on 2026-06-15 (wrote 0→read 0→wrote 1→read 1). The hard-stop the current taper can't give (`0x9013` floors at 1 A). |
+| 0x0001 | Output control mode manual/auto | load output (not charge) |
+| 0x0002 | Manual control the load | load output |
+| 0x0003 | Default control the load | load output |
+| 0x0005 | Enable load test mode | load test |
+| 0x0006 | Force the load on/off | load test |
+| 0x000D | Restore system defaults | **⛔ destructive — would wipe User profile / BPRO / setpoints; never write** |
+| 0x000E | Clear generation statistics | telemetry reset; avoid |
+
+The controller's load-output terminal is not in our power path (all loads are
+on the 48 V bus / inverter per `../wiring.md`), so the load coils are doubly
+irrelevant. Coil `0x0000` is the only charge-control coil.
+
+Supervisor primitive: `write_coil(0, False)` to stop charging,
+`write_coil(0, True)` to resume. Still to confirm under PV: that it drives
+current to 0 (control plane verified; current-zeroing not yet observed,
+charging was idle with no PV), and whether the off state survives a
+power-cycle / PV-restart (if not, re-assert each poll).
+
+### Charge-knob holding registers (TEP-specific 0x9000 map; live values 2026-06-15)
+
+The `0x9000` settings block is TEP-specific — derived from the Solar Guardian
+sniff plus live reads, not any generic EPEver map. The `0x3000` input
+registers and the coils above are standard, but do **not** trust a generic
+`0x9000` layout here.
+
+| Reg | Name | Live | Decoded | Role |
+|---|---|---:|---|---|
+| `0x9008` | Charging-limit voltage | 6000 | 60.00 V | hard CV ceiling; writer aborts targets above this |
+| `0x900A` | Equalization V | 5440 | 54.40 V | EQ target |
+| `0x900B` | Boost/absorption V | 5440 | 54.40 V | absorption target (primary policy knob) |
+| `0x900C` | Float V | 5410 | 54.10 V | float target |
+| `0x900D` | Boost-recovery V | 5280 | 52.80 V | re-enter-boost threshold |
+| `0x9013` | Max charging current | 8000 | 80.00 A | current taper (1–100 A, centiamps; floors at 1 A) |
+| `0x9014` | Boost/"Bulk" charging time | 120 | 120 min | absorption-hold duration (see caveat) |
+| `0x9015` | Equalize charging time | 120 | 120 min | equalize duration |
+| `0x9038` | Charge mode | 0 | Voltage | keep |
+| `0x9039` / `0x903A` | Full-charge protect / recover SOC | 99 / 95 | % | SOC cutoff — **deprioritized**, see below |
+| `0x9047` | Parallel max current | 1200 | 10 A steps | only if paralleling (N/A) |
+| `0x9049` | PV restart period | 10 | 10 min | restart delay after cutoff/clouds |
+
+(Boost/float read 54.40/54.10 = aligned to Classic practice, not stock
+57.6/55.2 — actively managed by the Classic-copy sync.)
+
+**Stage-duration caveat (`0x9014`).** Solar Guardian labels it "Bulk Charging
+Time," but on a lithium config this is effectively the absorption/CV-hold
+timer (hold `0x900B` boost voltage for this many minutes, then drop to float
+`0x900C`). EPEver's bulk/boost labeling is loose and the TEP has no published
+register doc, so confirm behaviorally under PV. For LiFePO4 a 120-min hold
+every cycle is more than needed; trimming `0x9014` (or setting
+`0x900B`≈`0x900C` to collapse absorption into float) reduces time-at-high-V
+stress through the controller's own autonomous cycle.
+
+**Why `0x9039` SOC cutoff is deprioritized.** It would need a trustworthy SOC
+on the controller, which means a BMS link to the EPEver we don't have. More
+fundamentally, the supervisor already owns *both* ends of the loop: it reads
+SOC from the Cubix CAN broadcast and can drive coil `0x0000` / `0x9013` /
+the voltage block directly over port 8. So SOC-based charge cutoff belongs in
+the supervisor (`if soc >= X: write_coil(0, False)`), not delegated to the
+controller's fixed internal behavior. `0x9039` is strictly dominated.
+
+### Why the CAN / BMS-over-CAN path was abandoned (2026-06-15)
+
+Coil `0x0000` makes the native closed-loop pursuit moot, but for the record:
+all 35 EPEver BMS protocols are RS485 (Modbus/Telecom/User-Define) — **none
+are CAN**; Pylon is protocol 21 = RS485, on port-9 pins 3/6. The port-9 CAN
+broadcast (`0x17343732`, PGN 0x33400, `EDP=1` → proprietary, not RV-C/J1939)
+is the controller's own parallel/monitoring telemetry, status-only. Active
+CAN injection produced no response and no usable register write (a one-time
+`0x9041` blip did not reproduce). There is no usable CAN-write path; the
+true charge-stop is coil `0x0000` over port 8 instead.
 
 ## Operational gotchas spotted
 

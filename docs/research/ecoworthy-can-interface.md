@@ -22,7 +22,7 @@ Observed bench wiring and bus state:
 
 - Battery CAN RJ45 pin 4 wired to SH-C31G `CANH`.
 - Battery CAN RJ45 pin 5 wired to SH-C31G `CANL`.
-- Battery CAN RJ45 pin 3 or 6 wired to SH-C31G `GND`.
+- Battery CAN RJ45 pin 3 or 6 wired to SH-C31G `GND` (later found optional — see 2026-06-15 note below).
 - Adapter enumerated as native SocketCAN: `1d50:606f OpenMoko, Inc. Geschwister Schneider CAN adapter`.
 - Linux interface appeared as `can0`.
 - `can-utils` was installed on the Pi for `candump`.
@@ -52,6 +52,19 @@ can0  379   [8]  C8 00 00 00 00 00 00 00
 ```
 
 The bus is now proven electrically connected and readable from the Pi. It is not yet proven to expose all telemetry or any safe control surface needed by the supervisor.
+
+### 2026-06-15: GND optional, 2-wire CAN over a 100 ft run
+
+While prepping to move the SH-C31G to the EPEver for a CAN sniff, GND was
+removed at the adapter (CAN-H/CAN-L only). The supervisor display kept
+receiving Cubix battery telemetry uninterrupted, across a **100 ft patch
+cable**. So on the isolated SH-C31G, the documented pin-3/6 GND connection is
+**not required** for a reliable CAN link at 500 kbit/s on this run length —
+the differential pair alone suffices. (Isolation is what makes this safe; a
+non-isolated adapter could still want the ground reference.) This matters
+beyond convenience: when reusing the same crimped cable on EPEver port 9, the
+GND wire would otherwise land on an RS485 signal pin (port-9 pins 3/6 are
+RS485-A/B, not GND), so dropping GND is the clean way to reuse the cable.
 
 ## Decoded Telemetry
 

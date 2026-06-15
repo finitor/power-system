@@ -27,6 +27,7 @@ Use this file as the canonical wiring record. Update it whenever a physical conn
 | From | To | Signal Type | Cable / Connector | Notes |
 |---|---|---|---|---|
 | Raspberry Pi USB | Eco-Worthy Cubix 100 CAN port | CAN | DSD TECH SH-C31G, Cat-6 cable, RJ45 battery-side plug | Battery RJ45 pin 4 CANH1, pin 5 CANL1, pin 3 or 6 GND |
+| Raspberry Pi USB | EPEver TEP10425 port 9 (CAN) | CAN | DSD TECH SH-C31G (shared with Cubix; one adapter on hand) | Port-9 RJ45 pin 4 CAN-H, pin 5 CAN-L, pin 8 GND (manual §1.2.1). CAN pair is the same pins as the Cubix cable; only GND differs (Cubix 3/6 → EPever 8). Port 9 also carries RS485 on pins 3/6. Bench-only CAN sniff to test whether Pylon BPRO=21 rides CAN; see [epever research notes](research/epever-tep10425.md). |
 | Raspberry Pi USB | Eco-Worthy Cubix 100 RS485-1 port | RS485 | Waveshare isolated USB-RS485/422, Cat-6 cable, RJ45 battery-side plug | Battery RJ45 pins 1/8 B1, pins 2/7 A1, pins 3/6 GND |
 | Raspberry Pi USB | MagnaSine 4448 network port | RS485 | Waveshare isolated USB-RS485/422, 4-wire RJ11 cable, RJ45 straight-through coupler, Cat-6 patch, RJ45 screw-terminal breakout | Bench-measured breakout mapping: RJ45 pin 4 +14 V, pin 5 GND, pin 6 RS485 A / D+, pin 3 RS485 B / D-. Connect only pin 6 to adapter A/D+ and pin 3 to adapter B/D- for first try; leave pins 4 and 5 disconnected from the USB adapter. |
 | Eco-Worthy Cubix 100 RS232 port | Eco-Worthy ESM-100 remote display | RS232 / accessory power | Native short cable is RJ12 6P6C straight-through by wire-color inspection | Do not substitute Midnite Classic remote cable; it is RJ12 6P6C reversed/rolled with pin positions mirrored end-to-end |
@@ -36,6 +37,32 @@ Use this file as the canonical wiring record. Update it whenever a physical conn
 | Raspberry Pi GPIO | Optocoupler isolation board | Digital output | Low-voltage control wiring | Pi heater permissive; fail-off when Pi/GPIO is inactive |
 | 12 V control rail | Heater SSR input | Digital control | Thermostat, NC thermal switch, Pi permissive | Thermostat and Pi switch SSR input only, not heater current |
 | 12 V control rail | Vent fan / damper | Digital control | Thermostat cooling relay | Fan/ventilation path for warm enclosure conditions |
+
+### RJ12 modular-jack breakout (CAN bench tap)
+
+Sacrificial T568B Ethernet patch cable landed on the RJ12 modular-jack
+breakout for the port-9 CAN work. First color is the patch-cable conductor,
+second is the breakout's flying-lead wire. Signal column is EPever TEP10425
+port 9 (pin 4 CAN-H, pin 5 CAN-L, pin 3 RS485-B per manual §1.2.1); CAN-H/CAN-L
+are on the same pins for the Cubix CAN port.
+
+| Patch wire (T568B) | RJ45 pin | Breakout wire | Signal (EPever port 9) |
+|---|---:|---|---|
+| white/orange | 1 | blue | — (unused) |
+| orange | 2 | orange | — (unused) |
+| white/green | 3 | black | RS485-B |
+| blue | 4 | **red** | **CAN-H** |
+| white/blue | 5 | **green** | **CAN-L** |
+| green | 6 | yellow | RS485-A |
+| white/brown | 7 | brown | — (unused) |
+| brown | 8 | white | GND |
+
+All eight conductors are broken out. For the CAN tap only two wires matter:
+**CAN-H = red, CAN-L = green.** The full RS485 pair is also available
+(RS485-B = black, RS485-A = yellow) if the RS485 path is ever revisited, and
+GND is on the white wire (pin 8) — unneeded on the isolated SH-C31G for this
+run, but there if a ground reference is wanted. Verify color-to-pin continuity
+before trusting it.
 
 ## Labels
 
