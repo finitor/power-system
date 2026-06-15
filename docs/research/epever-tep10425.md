@@ -393,6 +393,34 @@ charging-limit ceiling (0x9008), and `EpeverClient.write_charge_voltages`
 refuses unless Battery Type = User (code 6). Stop the supervisor before
 running with `--write` so it isn't contending for the adapter.
 
+## PV inputs and charge capacity (spec table, 2026-06-15)
+
+Resolves the dual-PV-input questions (checklist 5/7).
+
+- **Two PV inputs** (PV1/PV2), supported only on TEP10415/TEP10425.
+- **Max PV input current: 50 A × 2** (50 A *per input*).
+- **Rated charging current (battery-side output): 100 A** — the binding
+  limit. The "rated charging power 5200 W" is just 100 A × ~52 V charge
+  voltage; at 48 V it is ~4800 W.
+- **Max PV open-circuit voltage: 250 V** at lowest temp / 225 V at 25 °C.
+- **PV Connection Mode** = holding `0x9042`: **INDE (independent)** vs **CENT
+  (centralized/paralleled)**. INDE tracks the two inputs as independent MPPT
+  channels (two arrays, different orientation/strings allowed); CENT treats
+  externally-paralleled inputs as one. **Our unit reads `0x9042 = 0 =
+  Independent.**
+- Tolerates over-paneling: charging-current/power limits + high-temp derate
+  clip excess PV to the rated output safely.
+
+**Capacity reasoning.** 5200 W/100 A is the controller's *total output
+ceiling*, shared across both inputs — not a per-array figure. One 4s3p array
+(~3200–3700 W STC, ~2800–3300 W realistic peak) uses roughly two-thirds of
+it. A second array fills the headroom (~2000 W if co-oriented to avoid
+simultaneous-peak clipping). But since the inputs are independent MPPT, a
+*larger* second array on a different orientation (E/W or different tilt) is
+usually the better play: peaks don't coincide, midday clipping is brief, and
+total daily kWh is higher. Per-input 50 A and 250 V Voc easily accommodate a
+2000–3500 W array (4s ≈ 140–180 V, well under 250 V; <25 A, well under 50 A).
+
 ## Bench checklist before installation
 
 1. Power from a bench supply / battery, connect Waveshare RS485 to the COM
@@ -404,9 +432,9 @@ running with `--write` so it isn't contending for the adapter.
 4. **Deciding observation:** watch CAN frame 0x351 (CVL/CCL) through a
    genuine full-charge event — if the Cubix never modulates its limits,
    UBS is permanently unsuitable as the policy plane here.
-5. Spec-table questions for the dual PV inputs: independent MPPT trackers
-   or internally paralleled? Per-input Voc/current limits? (Matters for
-   the Classic-failure contingency below.)
+5. ~~Spec-table questions for the dual PV inputs.~~ **Resolved** — see "PV
+   inputs and charge capacity" above (50 A×2 inputs, 100 A output, INDE/CENT
+   modes, ours Independent).
 6. Record ARM/DSP firmware versions in the inventory notes.
-7. Confirm PV-input behavior near the 250 V cold-Voc limit assumption
-   against the spec table before wiring the 4s3p array.
+7. PV-input Voc limit confirmed: **250 V cold / 225 V at 25 °C** — verify the
+   4s3p string's cold Voc stays under 250 V before wiring.
