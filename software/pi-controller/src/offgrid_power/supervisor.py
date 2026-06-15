@@ -88,7 +88,7 @@ class Supervisor:
         self._status_condition_counts: dict[str, int] = {}
         self._readers: dict[str, PollingReader] | None = None
 
-    def start_readers(self, interval_s: float = 5.0) -> None:
+    def start_readers(self, interval_s: float = 5.0, expire_after_s: float | None = None) -> None:
         """Switch to per-device actor threads.
 
         Each configured adapter is owned by one thread: it polls on an
@@ -101,19 +101,26 @@ class Supervisor:
             return
         readers: dict[str, PollingReader] = {}
         if self.classic is not None:
-            readers["classic"] = PollingReader("classic", self.classic.read, interval_s)
+            readers["classic"] = PollingReader(
+                "classic", self.classic.read, interval_s, expire_after_s=expire_after_s
+            )
         if self.epever is not None:
-            readers["epever"] = PollingReader("epever", self.epever.read, interval_s)
+            readers["epever"] = PollingReader(
+                "epever", self.epever.read, interval_s, expire_after_s=expire_after_s
+            )
         if self.battery is not None:
             readers["battery"] = PollingReader(
                 "battery",
                 lambda: validated_battery_snapshot(self.battery.read()),
                 interval_s,
+                expire_after_s=expire_after_s,
             )
         if self.ambient is not None:
             readers["ambient"] = PollingReader("ambient", self.ambient.read, interval_s)
         if self.magnum is not None:
-            readers["magnum"] = PollingReader("magnum", self.magnum.read, interval_s)
+            readers["magnum"] = PollingReader(
+                "magnum", self.magnum.read, interval_s, expire_after_s=expire_after_s
+            )
         for reader in readers.values():
             reader.start()
         self._readers = readers
@@ -306,7 +313,10 @@ class Supervisor:
                     devices["ambient"] = reading.value
                 continue
 
-            if reading.value is not None:
+            # Past the expiry, the cached value is too old to show: leave the
+            # device None so the displays render "No data". Staleness below
+            # still warns while the last-good value is shown in the grace window.
+            if reading.value is not None and not reading.is_expired(now):
                 if name == "classic":
                     devices["classic"], devices["classic_settings"] = reading.value
                 elif name == "epever":

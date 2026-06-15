@@ -27,6 +27,7 @@ class DisplayConfig:
     refresh_seconds: float = 30.0
     clear_screen: bool = True
     battery_capacity_ah: float = 200.0
+    unavailable_after_seconds: float = 300.0
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,7 @@ def load_config() -> SupervisorConfig:
             refresh_seconds=env_float("SUPERVISOR_REFRESH_SECONDS", 30.0),
             clear_screen=env_bool("SUPERVISOR_DISPLAY_CLEAR", True),
             battery_capacity_ah=env_float("BATTERY_CAPACITY_AH", 200.0),
+            unavailable_after_seconds=env_float("SUPERVISOR_UNAVAILABLE_AFTER_SECONDS", 300.0),
         ),
         battery_can=BatteryCanConfig(
             protocol=os.getenv("BATTERY_CAN_PROTOCOL", "pylon"),

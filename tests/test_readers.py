@@ -62,6 +62,18 @@ class PollingReaderTest(unittest.TestCase):
         self.assertAlmostEqual(fresh.age_seconds(now), 5.0)
         self.assertIsNone(never.age_seconds(now))
 
+    def test_expiry_is_separate_from_staleness(self) -> None:
+        now = datetime.now(timezone.utc)
+        # Stale (>20s) but within the 300s expiry: warn, keep showing.
+        grace = DeviceReading("dev", 1, now - timedelta(seconds=120), None, 20, expire_after_s=300)
+        expired = DeviceReading("dev", 1, now - timedelta(seconds=400), None, 20, expire_after_s=300)
+        no_expiry = DeviceReading("dev", 1, now - timedelta(seconds=9999), None, 20)
+
+        self.assertTrue(grace.is_stale(now))
+        self.assertFalse(grace.is_expired(now))
+        self.assertTrue(expired.is_expired(now))
+        self.assertFalse(no_expiry.is_expired(now))  # None expiry never drops
+
     def test_submit_runs_command_on_actor_thread(self) -> None:
         reader = PollingReader("dev", lambda: 1, interval_s=60.0)
         reader.start()
@@ -143,8 +155,10 @@ class PollingReaderTest(unittest.TestCase):
 
 
 class FakeReader:
-    def __init__(self, name: str, value, captured_at, error=None, stale_after_s: float = 20.0) -> None:
-        self._reading = DeviceReading(name, value, captured_at, error, stale_after_s)
+    def __init__(
+        self, name: str, value, captured_at, error=None, stale_after_s: float = 20.0, expire_after_s=None
+    ) -> None:
+        self._reading = DeviceReading(name, value, captured_at, error, stale_after_s, expire_after_s)
 
     def reading(self) -> DeviceReading:
         return self._reading
@@ -202,6 +216,20 @@ class SupervisorReaderModeTest(unittest.TestCase):
 
         self.assertEqual(snapshot.magnum, "old-value")
         self.assertEqual(snapshot.status_text, "WARNING")
+        self.assertTrue(
+            any("Magnum inverter telemetry stale" in condition for condition in snapshot.status_conditions),
+            snapshot.status_conditions,
+        )
+
+    def test_expired_reading_drops_value_but_keeps_warning(self) -> None:
+        expired = datetime.now(timezone.utc) - timedelta(seconds=400)
+        supervisor = self._supervisor_with_readers(
+            {"magnum": FakeReader("magnum", "old-value", expired, stale_after_s=20.0, expire_after_s=300.0)}
+        )
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertIsNone(snapshot.magnum)
         self.assertTrue(
             any("Magnum inverter telemetry stale" in condition for condition in snapshot.status_conditions),
             snapshot.status_conditions,

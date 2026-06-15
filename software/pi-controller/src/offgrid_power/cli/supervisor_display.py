@@ -46,6 +46,12 @@ def parse_args() -> argparse.Namespace:
         help="Read devices synchronously in the main loop instead of per-device actor threads",
     )
     parser.add_argument("--battery-capacity-ah", type=float, default=config.display.battery_capacity_ah)
+    parser.add_argument(
+        "--unavailable-after-seconds",
+        type=float,
+        default=config.display.unavailable_after_seconds,
+        help="Drop a device's cached readings (render 'No data') after this many seconds without a good read",
+    )
     parser.add_argument("--web-display", action="store_true", help="Serve the same supervisor snapshots over HTTP")
     parser.add_argument("--web-host", default="0.0.0.0", help="HTTP display bind address")
     parser.add_argument("--web-port", type=int, default=8080, help="HTTP display port")
@@ -275,7 +281,9 @@ def main() -> int:
     # queued onto the owning thread. --once keeps the synchronous path so a
     # single probe reads every device exactly once.
     if not args.no_device_readers and not args.once:
-        supervisor.start_readers(interval_s=args.interval)
+        supervisor.start_readers(
+            interval_s=args.interval, expire_after_s=args.unavailable_after_seconds
+        )
         supervisor.wait_for_initial_readings()
 
     try:

@@ -36,6 +36,7 @@ class DeviceReading:
     captured_at: datetime | None  # when the last good value was read
     error: str | None             # error from the most recent attempt, else None
     stale_after_s: float
+    expire_after_s: float | None = None  # drop the value past this age; None = never
 
     def age_seconds(self, now: datetime | None = None) -> float | None:
         if self.captured_at is None:
@@ -49,6 +50,19 @@ class DeviceReading:
             # Never read successfully: not "stale", just absent.
             return False
         return age > self.stale_after_s
+
+    def is_expired(self, now: datetime | None = None) -> bool:
+        """Past the (optional) expiry: the cached value is too old to show.
+
+        Distinct from is_stale: staleness warns but keeps showing the
+        last-good value; expiry drops it so consumers render "No data".
+        """
+        if self.expire_after_s is None:
+            return False
+        age = self.age_seconds(now)
+        if age is None:
+            return False
+        return age > self.expire_after_s
 
 
 class PollingReader:
@@ -66,10 +80,12 @@ class PollingReader:
         read_fn: Callable[[], object],
         interval_s: float = 5.0,
         stale_after_s: float | None = None,
+        expire_after_s: float | None = None,
     ) -> None:
         self.name = name
         self.interval_s = interval_s
         self.stale_after_s = stale_after_s if stale_after_s is not None else interval_s * 4
+        self.expire_after_s = expire_after_s
         self._read_fn = read_fn
         self._lock = Lock()
         self._value: object | None = None
@@ -104,6 +120,7 @@ class PollingReader:
                 captured_at=self._captured_at,
                 error=self._error,
                 stale_after_s=self.stale_after_s,
+                expire_after_s=self.expire_after_s,
             )
 
     def submit(self, fn: Callable[[], object], timeout_s: float = 10.0) -> object:
