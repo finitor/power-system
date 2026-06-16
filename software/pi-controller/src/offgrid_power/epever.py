@@ -116,7 +116,13 @@ class EpeverClient:
             live = read_input_registers(client, 0x3100, 8, self.unit)
             temperatures = read_input_registers(client, 0x3110, 2, self.unit)
             soc = read_input_registers(client, 0x311A, 1, self.unit)
-            status = read_input_registers(client, 0x3200, 2, self.unit)
+            # The TEP10425's status block is offset by one from the generic
+            # Tracer map: the "charging equipment status" word the generic doc
+            # places at 0x3201 actually lives at 0x3202 here (0x3201 reads a
+            # flat zero even while charging). Read through 0x3202 so the decode
+            # has the real status word. Confirmed live 2026-06-16: charging at
+            # ~3.4 A read 0x3202=0x0009 (running + Boost) while 0x3201=0x0000.
+            status = read_input_registers(client, 0x3200, 3, self.unit)
             settings = read_holding_registers(client, 0x9000, 20, self.unit)
             return (
                 decode_telemetry(rated, live, temperatures, soc, status, captured_at),
@@ -243,7 +249,8 @@ def decode_telemetry(
 ) -> EpeverTelemetry:
     battery_current_a = live[5] / 100
     battery_voltage_v = live[4] / 100
-    status_raw = status[1]
+    # 0x3202 (status[2]) is the TEP's charging-equipment-status word; see read().
+    status_raw = status[2]
     charging_code = (status_raw >> 2) & 0x03
     return EpeverTelemetry(
         captured_at=captured_at or datetime.now(timezone.utc),

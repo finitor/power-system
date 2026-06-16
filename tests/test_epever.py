@@ -12,6 +12,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from unittest import mock
 
+from offgrid_power.charge_stage import ChargeStage
 from offgrid_power.epever import EpeverClient, decode_settings, decode_telemetry
 
 
@@ -123,7 +124,9 @@ class EpeverDecodeTest(unittest.TestCase):
             live=[0, 0, 0, 0, 5311, 0, 0, 0],
             temperatures=[0, 0],
             soc=[2055],
-            status=[24576, 0],
+            # status is 0x3200..0x3202; the charging-equipment-status word is
+            # 0x3202 (status[2]) on the TEP, not 0x3201 (which reads zero).
+            status=[0, 0, 0],
             captured_at=CAPTURED_AT,
         )
 
@@ -139,6 +142,23 @@ class EpeverDecodeTest(unittest.TestCase):
         self.assertEqual(telemetry.rated_pv_voltage_v, 250.0)
         self.assertEqual(telemetry.rated_charging_current_a, 100.0)
         self.assertEqual(telemetry.rated_battery_voltage_v, 48.0)
+
+    def test_reads_charging_status_from_0x3202_not_0x3201(self) -> None:
+        # Live capture 2026-06-16 while charging at ~3.4 A: the generic-map
+        # 0x3201 stayed zero, while 0x3202=0x0009 carried running + Boost.
+        # 0x3201 zero must NOT mask the real status at 0x3202.
+        telemetry = decode_telemetry(
+            rated=[42, 4, 25000, 10000, 61248, 7, 4800, 10000, 61248],
+            live=[16320, 113, 18600, 0, 5436, 343, 0, 0],
+            temperatures=[0, 0],
+            soc=[2055],
+            status=[0, 0, 0x0009],
+            captured_at=CAPTURED_AT,
+        )
+
+        self.assertEqual(telemetry.status_raw, 0x0009)
+        self.assertEqual(telemetry.charging_status, "Boost")
+        self.assertEqual(telemetry.canonical_stage, ChargeStage.ABSORB)
 
     def test_decodes_battery_settings(self) -> None:
         settings = decode_settings(
