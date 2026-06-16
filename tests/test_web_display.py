@@ -420,6 +420,17 @@ class WebDisplayTest(unittest.TestCase):
         # No telemetry, no error captured -> no_data.
         self.assertEqual(checks["classic"]["reason"], "no_data")
 
+    def test_health_checks_report_unconfigured_device_as_disabled(self) -> None:
+        # An adapter that isn't configured at all is "disabled", not "offline":
+        # no read was attempted, so "no data" would be misleading.
+        snapshot = make_snapshot(disabled_devices=frozenset({"magnum"}))
+
+        checks = json.loads(route_display_request(snapshot, "/api/v1/health", "curl/8.0").body)["checks"]
+
+        self.assertEqual(checks["magnum"], {"status": "disabled", "reason": "disabled", "detail": None})
+        # A configured-but-silent device still reads as offline/no_data.
+        self.assertEqual(checks["classic"]["status"], "offline")
+
     def test_api_health_critical_condition_returns_service_unavailable(self) -> None:
         snapshot = make_snapshot(
             status_conditions=["Battery cell overvoltage"], status_severity=STATUS_ERROR

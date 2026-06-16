@@ -42,6 +42,10 @@ class SupervisorSnapshot:
     errors: list[str]
     status_conditions: list[str] = field(default_factory=list)
     status_severity: str = STATUS_OK
+    # Devices with no adapter configured at all, so no read is attempted. Lets
+    # health reporting say "disabled" rather than "offline" (which implies a
+    # read was tried and returned nothing).
+    disabled_devices: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:
@@ -235,6 +239,20 @@ class Supervisor:
             errors=errors,
             status_conditions=status_conditions,
             status_severity=status_severity,
+            disabled_devices=self._disabled_devices(),
+        )
+
+    def _disabled_devices(self) -> frozenset[str]:
+        return frozenset(
+            name
+            for name, client in (
+                ("classic", self.classic),
+                ("epever", self.epever),
+                ("battery", self.battery),
+                ("magnum", self.magnum),
+                ("ambient", self.ambient),
+            )
+            if client is None
         )
 
     def _collect_direct(self) -> tuple[dict, list[str], list[StatusConditionCandidate]]:

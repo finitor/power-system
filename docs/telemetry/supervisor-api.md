@@ -54,11 +54,14 @@ from *down*:
   `WARNING` (degraded, still `200`); `503` is reserved for a critical condition
   such as battery overvoltage. `ok` is `true` for any non-`ERROR` state.
 
-The `checks` object reports per-device status (`ok` | `offline` | `error`) with
-a `reason` and the error `detail`, so a consumer sees *which* device is degraded
-and *what was observed* — not just the overall verdict. `reason` is classified
-only from the observed failure signature, never an inferred root cause:
+The `checks` object reports per-device status (`ok` | `disabled` | `offline` |
+`error`) with a `reason` and the error `detail`, so a consumer sees *which*
+device is degraded and *what was observed* — not just the overall verdict.
+`disabled` means no adapter is configured, so no read is attempted (distinct
+from `offline`, which means a read was tried and returned nothing). `reason` is
+classified only from the observed signature, never an inferred root cause:
 
+- `disabled` — no adapter configured for this device.
 - `transport_absent` — the serial port/adapter is not present (`Could not open …`).
 - `no_response` — the port opened but the remote device stayed silent (Modbus timeout).
 - `no_data` — `offline`: no telemetry and no captured error.
@@ -80,7 +83,7 @@ Example (one controller offline — degraded, HTTP `200`):
     "classic": {"status": "ok", "reason": null, "detail": null},
     "epever": {"status": "error", "reason": "no_response", "detail": "EPEver read failed: Modbus timeout"},
     "battery": {"status": "ok", "reason": null, "detail": null},
-    "magnum": {"status": "offline", "reason": "no_data", "detail": null},
+    "magnum": {"status": "disabled", "reason": "disabled", "detail": null},
     "ambient": {"status": "ok", "reason": null, "detail": null}
   }
 }

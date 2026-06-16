@@ -269,6 +269,16 @@ class SupervisorSemanticsTest(unittest.TestCase):
         self.assertEqual(snapshot.status_text, "ERROR")
         self.assertIn("Battery cell overvoltage risk: max cell 3.610V >= 3.600V", snapshot.status_conditions)
 
+    def test_unconfigured_adapters_are_marked_disabled(self) -> None:
+        snapshot = Supervisor(classic=None, battery=FakeBatteryCanClient()).read_snapshot()
+
+        # No client configured -> disabled (no read attempted), not offline.
+        self.assertIn("magnum", snapshot.disabled_devices)
+        self.assertIn("classic", snapshot.disabled_devices)
+        self.assertIn("epever", snapshot.disabled_devices)
+        # A configured adapter is not disabled.
+        self.assertNotIn("battery", snapshot.disabled_devices)
+
 
 class TerminalDisplayTest(unittest.TestCase):
     def test_renders_full_snapshot_with_all_groups(self) -> None:

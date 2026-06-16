@@ -590,6 +590,8 @@ def _offline_reason(status: str, detail: str | None) -> str | None:
     # "no_response" = the port opened but the remote device stayed silent.
     if status == "ok":
         return None
+    if status == "disabled":
+        return "disabled"
     if status == "offline":
         return "no_data"
     text = (detail or "").lower()
@@ -608,6 +610,8 @@ def _health_checks(snapshot: SupervisorSnapshot) -> dict:
             detail = next((msg for msg in snapshot.errors if msg.startswith(error_prefix)), None)
         if detail is not None:
             status = "error"
+        elif name in snapshot.disabled_devices:
+            status = "disabled"
         elif getter(snapshot) is None:
             status = "offline"
         else:
