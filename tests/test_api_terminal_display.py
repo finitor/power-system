@@ -140,6 +140,8 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertNotIn("Temps", rendered)
         self.assertIn("Battery terminal      17.0C", rendered)
         self.assertIn("CC0 FET               31.0C", rendered)
+        self.assertNotIn("CC1 battery", rendered)
+        self.assertNotIn("CC1 device", rendered)
         self.assertIn("INV FET               30C", rendered)
         self.assertIn("Sensor 0 ambient temp 18.2C", rendered)
         self.assertNotIn("Press Ctrl-C", rendered)

@@ -395,6 +395,11 @@ def _control_epever_charge_settings(supervisor: Supervisor, payload: dict) -> Di
             "boost_v": _optional_number(payload, "boost_voltage_v"),
             "float_v": _optional_number(payload, "float_voltage_v"),
             "equalize_v": _optional_number(payload, "equalize_voltage_v"),
+            "boost_reconnect_v": _first_optional_number(
+                payload,
+                "boost_reconnect_voltage_v",
+                "bulk_recovery_voltage_v",
+            ),
         }
         voltage_kwargs = {key: value for key, value in voltage_kwargs.items() if value is not None}
         current_a = _optional_number(payload, "max_charging_current_a")
@@ -537,6 +542,13 @@ def _optional_number(payload: dict, key: str) -> float | None:
         raise ValueError(f"{key} must be a number") from exc
 
 
+def _first_optional_number(payload: dict, *keys: str) -> float | None:
+    for key in keys:
+        if key in payload and payload.get(key) is not None:
+            return _optional_number(payload, key)
+    return None
+
+
 def _optional_int(payload: dict, key: str) -> int | None:
     value = _optional_number(payload, key)
     return None if value is None else int(value)
@@ -552,6 +564,8 @@ def _epever_settings_api_payload(settings) -> dict | None:
         "equalize_voltage_v": settings.equalize_voltage_v,
         "boost_voltage_v": settings.boost_voltage_v,
         "float_voltage_v": settings.float_voltage_v,
+        "boost_reconnect_voltage_v": settings.boost_reconnect_voltage_v,
+        "bulk_recovery_voltage_v": settings.boost_reconnect_voltage_v,
         "max_charging_current_a": settings.max_charging_current_a,
     }
 
@@ -989,6 +1003,8 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                     "boost_voltage_v": settings.boost_voltage_v,
                     "float_voltage_v": settings.float_voltage_v,
                     "equalize_voltage_v": settings.equalize_voltage_v,
+                    "boost_reconnect_voltage_v": settings.boost_reconnect_voltage_v,
+                    "bulk_recovery_voltage_v": settings.boost_reconnect_voltage_v,
                     "low_voltage_disconnect_v": settings.low_voltage_disconnect_v,
                     "discharging_limit_voltage_v": settings.discharging_limit_voltage_v,
                 },
@@ -1405,12 +1421,6 @@ def _temperature_section(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
         lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
         lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
-    if snapshot.epever is not None:
-        epever = snapshot.epever
-        if epever.battery_temp_c is not None:
-            lines.append(_row("CC1 battery", f"{epever.battery_temp_c:.1f}C"))
-        if epever.device_temp_c is not None:
-            lines.append(_row("CC1 device", f"{epever.device_temp_c:.1f}C"))
     if snapshot.magnum is not None:
         inv = snapshot.magnum
         lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))

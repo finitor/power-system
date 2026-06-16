@@ -42,17 +42,25 @@ class FakeControlSupervisor:
         self.voltage_calls = []
         self.current_calls = []
         self.charge_calls = []
+        self.last_boost_reconnect_v = 53.6
 
     def read_snapshot(self):
         return self.snapshot
 
     def write_epever_charge_voltages(self, **kwargs):
         self.voltage_calls.append(kwargs)
-        return make_epever_settings(boost_voltage_v=kwargs.get("boost_v", 54.7))
+        self.last_boost_reconnect_v = kwargs.get("boost_reconnect_v", self.last_boost_reconnect_v)
+        return make_epever_settings(
+            boost_voltage_v=kwargs.get("boost_v", 54.7),
+            boost_reconnect_voltage_v=self.last_boost_reconnect_v,
+        )
 
     def write_epever_max_charging_current(self, current_a):
         self.current_calls.append(current_a)
-        return make_epever_settings(max_charging_current_a=current_a)
+        return make_epever_settings(
+            boost_reconnect_voltage_v=self.last_boost_reconnect_v,
+            max_charging_current_a=current_a,
+        )
 
     def set_epever_charging(self, enabled):
         self.charge_calls.append(enabled)
@@ -146,6 +154,19 @@ class WebDisplayTest(unittest.TestCase):
         # Inverter/Charger telemetry renders.
         self.assertIn("60.0Hz", html)
         self.assertIn("Inverting", html)
+
+    def test_kindle_snapshot_hides_untrusted_cc1_temperature_rows(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(),
+            epever=make_epever_telemetry(battery_temp_c=0.0, device_temp_c=0.0),
+        )
+
+        html = render_kindle_snapshot(snapshot)
+
+        self.assertIn("Battery terminal", html)
+        self.assertIn("CC0 FET", html)
+        self.assertNotIn("CC1 battery", html)
+        self.assertNotIn("CC1 device", html)
 
     def test_renders_kindle_snapshot_with_empty_and_error_snapshots(self) -> None:
         # Degraded states must render, not raise: this is what the wall
@@ -335,6 +356,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIsNone(payload["solar"][0]["settings"])
         self.assertEqual(payload["solar"][1]["battery_voltage_v"], 53.11)
         self.assertEqual(payload["solar"][1]["settings"]["battery_type"], "User")
+        self.assertEqual(payload["solar"][1]["settings"]["bulk_recovery_voltage_v"], 53.6)
         self.assertEqual(payload["load"]["estimated_autonomy_hours"], 46.0)
 
     def test_routes_api_weather_as_json(self) -> None:
@@ -525,14 +547,23 @@ class WebDisplayTest(unittest.TestCase):
         response = route_control_request(
             supervisor,
             "/api/v1/control/epever/charge-settings",
-            {"boost_voltage_v": 55.6, "equalize_voltage_v": 55.6, "max_charging_current_a": 80},
+            {
+                "boost_voltage_v": 55.6,
+                "equalize_voltage_v": 55.6,
+                "bulk_recovery_voltage_v": 54.9,
+                "max_charging_current_a": 80,
+            },
         )
         payload = json.loads(response.body)
 
         self.assertEqual(response.status.value, 200)
         self.assertTrue(payload["ok"])
-        self.assertEqual(supervisor.voltage_calls, [{"boost_v": 55.6, "equalize_v": 55.6}])
+        self.assertEqual(
+            supervisor.voltage_calls,
+            [{"boost_v": 55.6, "equalize_v": 55.6, "boost_reconnect_v": 54.9}],
+        )
         self.assertEqual(supervisor.current_calls, [80.0])
+        self.assertEqual(payload["settings"]["bulk_recovery_voltage_v"], 54.9)
         self.assertEqual(payload["settings"]["max_charging_current_a"], 80.0)
 
     def test_control_api_syncs_epever_from_classic_with_voltage_offset(self) -> None:

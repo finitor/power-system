@@ -349,12 +349,6 @@ def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
         lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
         lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
-    if snapshot.epever is not None:
-        epever = snapshot.epever
-        if epever.battery_temp_c is not None:
-            lines.append(_row("CC1 battery", f"{epever.battery_temp_c:.1f}C"))
-        if epever.device_temp_c is not None:
-            lines.append(_row("CC1 device", f"{epever.device_temp_c:.1f}C"))
     if snapshot.magnum is not None:
         inv = snapshot.magnum
         lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))

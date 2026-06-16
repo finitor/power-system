@@ -82,9 +82,16 @@ Successful EPEver charge-setting writes return the controller readback:
   "boost_voltage_v": 55.6,
   "equalize_voltage_v": 55.6,
   "float_voltage_v": 54.7,
+  "bulk_recovery_voltage_v": 54.9,
   "max_charging_current_a": 80.0
 }
 ```
+
+`boost_voltage_v` maps to the EPEver manual's BCV / Bulk Charging Voltage.
+`bulk_recovery_voltage_v` is accepted as an alias for
+`boost_reconnect_voltage_v` and maps to BVR / Bulk Voltage Recovery, the
+threshold below float where the controller may re-enter boost/bulk after
+having dropped to float.
 
 The supervisor-side EPEver writer preserves the rest of the `0x9007..0x9012`
 voltage block and refuses unsafe or unsupported requests, including non-User

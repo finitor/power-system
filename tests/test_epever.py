@@ -150,6 +150,22 @@ class EpeverWriteTest(unittest.TestCase):
         self.assertEqual(fake.regs[0x900B], 5760)  # boost untouched
         self.assertEqual(fake.regs[0x900A], 5830)  # equalize untouched
 
+    def test_write_charge_voltages_can_update_boost_reconnect(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            settings = EpeverClient().write_charge_voltages(boost_reconnect_v=54.9)
+        self.assertEqual(fake.regs[0x900D], 5490)
+        self.assertEqual(fake.regs[0x900B], 5760)  # boost untouched
+        self.assertEqual(fake.regs[0x900C], 5520)  # float untouched
+        self.assertEqual(settings.boost_reconnect_voltage_v, 54.9)
+
+    def test_write_charge_voltages_rejects_boost_reconnect_at_or_above_float(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            with self.assertRaisesRegex(ValueError, "boost reconnect voltage must be below float"):
+                EpeverClient().write_charge_voltages(boost_reconnect_v=55.2)
+        self.assertEqual(fake.writes, [])
+
     def test_write_charge_voltages_rejects_boost_above_equalize(self) -> None:
         fake = FakeModbusClient()
         with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):

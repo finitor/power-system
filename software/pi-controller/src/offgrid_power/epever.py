@@ -265,8 +265,9 @@ class EpeverClient:
         equalize_v: float | None = None,
         boost_v: float | None = None,
         float_v: float | None = None,
+        boost_reconnect_v: float | None = None,
     ) -> EpeverChargeSettings:
-        """Read-modify-write the equalize/boost/float charge voltages.
+        """Read-modify-write the EPEver charge-voltage block.
 
         The voltage block 0x9007-0x9012 (centivolts) is written as a unit via
         function 0x10, so we read the live block, overwrite only the named
@@ -276,10 +277,15 @@ class EpeverClient:
         code 0, though 6 also maps to User); the controller rejects
         charge-voltage writes otherwise.
         """
-        targets = {0x900A: equalize_v, 0x900B: boost_v, 0x900C: float_v}
+        targets = {0x900A: equalize_v, 0x900B: boost_v, 0x900C: float_v, 0x900D: boost_reconnect_v}
         if all(v is None for v in targets.values()):
             raise ValueError("write_charge_voltages: nothing to write")
-        for label, value in (("equalize", equalize_v), ("boost", boost_v), ("float", float_v)):
+        for label, value in (
+            ("equalize", equalize_v),
+            ("boost", boost_v),
+            ("float", float_v),
+            ("boost reconnect", boost_reconnect_v),
+        ):
             if value is not None and not (0.0 < value <= 65.0):
                 raise ValueError(f"EPEver {label} voltage out of range: {value}")
 
@@ -309,10 +315,16 @@ class EpeverClient:
             equalize = block[0x900A - 0x9007]
             boost = block[0x900B - 0x9007]
             float_ = block[0x900C - 0x9007]
+            boost_reconnect = block[0x900D - 0x9007]
             if boost > equalize:
                 raise ValueError(
                     "EPEver boost voltage cannot exceed equalize voltage: "
                     f"boost {boost / 100:.2f} V, equalize {equalize / 100:.2f} V"
+                )
+            if boost_reconnect >= float_:
+                raise ValueError(
+                    "EPEver boost reconnect voltage must be below float voltage: "
+                    f"boost reconnect {boost_reconnect / 100:.2f} V, float {float_ / 100:.2f} V"
                 )
             for label, raw in (("equalize", equalize), ("boost", boost), ("float", float_)):
                 if raw > charging_limit:
@@ -331,6 +343,7 @@ class EpeverClient:
                 ("equalize", equalize_v, settings.equalize_voltage_v),
                 ("boost", boost_v, settings.boost_voltage_v),
                 ("float", float_v, settings.float_voltage_v),
+                ("boost reconnect", boost_reconnect_v, settings.boost_reconnect_voltage_v),
             ):
                 if value is not None and abs(readback - value) >= 0.01:
                     raise RuntimeError(

@@ -296,6 +296,8 @@ class TerminalDisplayTest(unittest.TestCase):
         self.assertIn("44.0%", rendered)
         self.assertIn("52.41V", rendered)
         self.assertIn("SOC:  30%", rendered)
+        self.assertNotIn("CC1 battery", rendered)
+        self.assertNotIn("CC1 device", rendered)
 
     def test_renders_disconnected_ambient_probe(self) -> None:
         rendered = render_snapshot(Supervisor(classic=None, ambient=None).read_snapshot())

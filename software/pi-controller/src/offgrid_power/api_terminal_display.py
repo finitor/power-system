@@ -453,15 +453,12 @@ def _temperature_lines(payload: dict) -> list[str]:
     for index, controller in enumerate(solar):
         temps = controller.get("temperatures_c") or {}
         prefix = f"CC{index}"
-        if temps.get("battery") is not None:
-            label = "Battery terminal" if index == 0 else f"{prefix} battery"
-            lines.append(_row(label, f"{_fmt(temps.get('battery'), 1)}C"))
+        if index == 0 and temps.get("battery") is not None:
+            lines.append(_row("Battery terminal", f"{_fmt(temps.get('battery'), 1)}C"))
         if temps.get("fet") is not None:
             lines.append(_row(f"{prefix} FET", f"{_fmt(temps.get('fet'), 1)}C"))
         if temps.get("pcb") is not None:
             lines.append(_row(f"{prefix} PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
-        if temps.get("device") is not None:
-            lines.append(_row(f"{prefix} device", f"{_fmt(temps.get('device'), 1)}C"))
     if inverter.get("battery_temp_c") is not None:
         lines.append(_row("INV battery", f"{_fmt(inverter.get('battery_temp_c'), 0)}C"))
     if inverter.get("transformer_temp_c") is not None:
