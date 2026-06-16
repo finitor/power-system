@@ -41,6 +41,11 @@ ensure_session() {
 }
 
 apply_layout() {
+  # Hold the window at the largest attached client (the framebuffer tty),
+  # so a smaller client attaching over SSH cannot shrink it and reflow the
+  # nested display pane. Still tracks tty1's font-size resizes (it stays the
+  # largest client). Set every startup; the server outlives getty restarts.
+  tmux -L "${SOCKET}" set-option -g window-size largest 2>/dev/null || true
   tmux -L "${SOCKET}" resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}" 2>/dev/null || true
   tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1" 2>/dev/null || true
 }
