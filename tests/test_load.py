@@ -36,7 +36,12 @@ from offgrid_power.load import (
     estimate_load_today_text,
     load_today_text,
 )
-from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_snapshot
+from snapshot_helpers import (
+    make_battery_snapshot,
+    make_classic_telemetry,
+    make_epever_telemetry,
+    make_snapshot,
+)
 
 
 def _load_snapshot(captured_at: datetime, classic_daily_ah: int = 108, current_soc: int = 92):
@@ -58,6 +63,16 @@ class LoadEstimateTest(unittest.TestCase):
         )
 
         self.assertAlmostEqual(estimate_load_current_a(snapshot), 4.0)
+
+    def test_estimates_load_current_sums_classic_and_epever_charge_sources(self) -> None:
+        # Classic 0 A (tapered off), EPEver 4.71 A carrying the bus, battery
+        # net 0 A: load must be the full 4.71 A, not 0 A from the Classic alone.
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(battery_current_a=0.0),
+            epever=make_epever_telemetry(battery_current_a=4.71),
+            battery=decode_pylon_snapshot([CanFrame(0x356, bytes.fromhex("0C15000000000000"))]),
+        )
+        self.assertAlmostEqual(estimate_load_current_a(snapshot), 4.71)
 
     def test_load_current_unavailable_without_battery_measurements(self) -> None:
         self.assertIsNone(estimate_load_current_a(make_snapshot()))
