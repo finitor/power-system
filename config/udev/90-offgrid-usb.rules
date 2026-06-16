@@ -8,11 +8,13 @@
 # so the supervisor does not need a manual restart to recover frame reception.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", ATTR{idProduct}=="606f", ATTR{power/control}="on", RUN+="/bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; sleep 1 && ip link set can0 down 2>/dev/null; ip link set can0 type can bitrate 500000 listen-only on; ip link set can0 up'"
 
-# Prolific PL2303 — DSD TECH SH-U11H RS485 adapter, now assigned to EPEver.
+# Prolific PL2303 — DSD TECH SH-U11H isolated RS485 adapter, assigned to the
+# Magnum network tap (passive, read-only). Its switchable termination is left
+# unpopulated so the Pi does not add a third terminator to the Magnum bus.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="23a3", ATTR{power/control}="on"
-# Stable name: USB enumeration order changes when adapters are added, so the
-# supervisor must never reference a bare /dev/ttyUSBn for the EPEver bus.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="epever-rs485"
+# Stable name keyed on the unique serial, so it never collides with another
+# 067b:23a3 or with the EPEver adapter; the supervisor references /dev/magnum-rs485.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", ATTRS{serial}=="DZBSb11CN12", SYMLINK+="magnum-rs485"
 
 # FT232R cable — Cubix BMS RS485 bench/diagnostic access. Keyed on serial
 # because FTDI 0403:6001 is shared with the (ordered) Waveshare EPEver
@@ -20,9 +22,8 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", SYMLINK+="e
 # verify the Waveshare's serial differs when it arrives.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="A50285BI", SYMLINK+="cubix-rs485"
 
-# KL0823B 2-wire USB-RS485 adapter — temporary EPEver control burn-in
-# adapter (CH340). It was originally assigned to the Magnum network tap, but
-# Magnum telemetry/control is parked while the OEM remote is used directly.
+# KL0823B 2-wire USB-RS485 adapter (CH340) — the EPEver TEP10425 COM port.
+# (It was once the Magnum tap; the Magnum tap moved to the SH-U11H above.)
 # Keyed on VID:PID because CH340s carry no unique serial; if another CH340 is
 # ever added, switch one of them to a port-path rule.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", ATTR{power/control}="on"
