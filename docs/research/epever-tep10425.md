@@ -4,6 +4,37 @@ Unit on hand 2026-06-10. Manual: `~/Dropbox/manuals/solar/Epever-TEP-Manual-EN-V
 (60 pp, v1.1). Notes here focus on what integration with the supervisor and
 the Cubix bank needs; page refs are manual page numbers.
 
+## Live register corrections (2026-06-16) — the generic Tracer map does NOT hold
+
+The TEP's input/status register layout is **offset and word-swapped** versus
+the generic EPEver/Tracer map. Confirmed live during the array-1 dry-run:
+
+- **Charging-equipment status is `0x3202`, not `0x3201`.** The generic-map
+  `0x3201` reads a flat `0x0000` even while charging; the real status word is at
+  `0x3202` (`0x0009` = D0 running + D3–D2=2 → Boost while charging at 3.4 A). The
+  bit decode `(raw >> 2) & 0x03` and the status dictionary were already correct —
+  only the source register was wrong. `read()` now pulls `0x3200` ×3 and decodes
+  `status[2]`. This is why the EPEver showed a phantom "Resting" indefinitely.
+- **Energy block is big-endian by word** (opposite the live `0x3100` registers),
+  so decode generation counters **high-word-first**:
+  - `0x330C/0x330D` = **generated today** (RTC-day-anchored, resets at device midnight).
+  - `0x3310/0x3311` = **lifetime generated total** (monotonic — survived the RTC
+    date jump that reset today/month, and keeps climbing). This is the counter the
+    windowed-consumption / autonomy calc differences.
+  - `0x3313` (=200) is a constant field, **not** energy.
+  - Scaling provisional (`/100` = kWh); the magnitude reads low vs energy
+    delivered, so confirm against the panel's accumulated-kWh.
+- **`0x311A` is not SOC** (read 1727%); the controller has no BMS link, so it
+  can't know SOC. Code guards it to `None`.
+- **RTC at holding `0x9019..0x901B`.** Encoding (confirmed by readback):
+  `r0 = minute<<8 | second`, `r1 = day<<8 | hour`, `r2 = (year-2000)<<8 | month`.
+  Found mis-set to **2024-10-06** (~20 months + ~12 h off) — the crystal keeps
+  good time but the value was wrong (likely a dead RTC backup defaulting on power
+  loss). Set to local time 2026-06-16; the date jump immediately reset the
+  today/month buckets, confirming they're RTC-driven. **Open: does the set survive
+  a power-cycle?** If not, daily counters can't be trusted — which is why the
+  autonomy design differences the monotonic *total* and never relies on the clock.
+
 ## Battery profiles (3.3.5)
 
 - Native **LFP16S** profile (48 V, 16S — our bank): OVD 58.4 V, charging
@@ -286,24 +317,24 @@ why the charge on/off control was invisible.
 
 | Coil | Name | Charge-control use |
 |---:|---|---|
-| **0x0000** | **Charging device on/off** (1=on, 0=off) | **TRUE 0 A charge stop.** Verified read/write/reversible over port 8 on 2026-06-15 (wrote 0→read 0→wrote 1→read 1). The hard-stop the current taper can't give (`0x9013` floors at 1 A). |
+| **0x0000** | **Charging device on/off** (1=on, 0=off) | **TRUE 0 A charge stop.** Verified read/write/reversible 2026-06-15, and **current-zeroing confirmed under live PV 2026-06-16** (drove 4 A → 0.00 A and back). The hard-stop the current taper can't give (`0x9013` floors at 1 A). Now in code: `EpeverClient.set_charging()`. |
 | 0x0001 | Output control mode manual/auto | load output (not charge) |
 | 0x0002 | Manual control the load | load output |
 | 0x0003 | Default control the load | load output |
 | 0x0005 | Enable load test mode | load test |
 | 0x0006 | Force the load on/off | load test |
 | 0x000D | Restore system defaults | **⛔ destructive — would wipe User profile / BPRO / setpoints; never write** |
-| 0x000E | Clear generation statistics | telemetry reset; avoid |
+| 0x000E | Clear generation statistics | **NO-OP on the TEP** — verified 2026-06-16 (byte-identical 0x3300 energy block before/after a pulse). The panel's CAE maps elsewhere or is panel-only. Don't rely on it; the windowed-energy design needs no clear anyway. |
 
 The controller's load-output terminal is not in our power path (all loads are
 on the 48 V bus / inverter per `../wiring.md`), so the load coils are doubly
 irrelevant. Coil `0x0000` is the only charge-control coil.
 
-Supervisor primitive: `write_coil(0, False)` to stop charging,
-`write_coil(0, True)` to resume. Still to confirm under PV: that it drives
-current to 0 (control plane verified; current-zeroing not yet observed,
-charging was idle with no PV), and whether the off state survives a
-power-cycle / PV-restart (if not, re-assert each poll).
+Supervisor primitive: `EpeverClient.set_charging(False)` to stop charging,
+`set_charging(True)` to resume (coil `0x0000`, with read-back verify); also
+`scripts/epever-coil.py charge {on|off}`. Current-zeroing **confirmed under
+PV 2026-06-16** (4 A → 0.00 A → back). Still unconfirmed: whether the off
+state survives a power-cycle / PV-restart (if not, re-assert each poll).
 
 ### Charge-knob holding registers (TEP-specific 0x9000 map; live values 2026-06-15)
 
