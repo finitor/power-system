@@ -127,6 +127,7 @@ class EpeverDecodeTest(unittest.TestCase):
             # status is 0x3200..0x3202; the charging-equipment-status word is
             # 0x3202 (status[2]) on the TEP, not 0x3201 (which reads zero).
             status=[0, 0, 0],
+            energy=[0] * 14,
             captured_at=CAPTURED_AT,
         )
 
@@ -153,12 +154,29 @@ class EpeverDecodeTest(unittest.TestCase):
             temperatures=[0, 0],
             soc=[2055],
             status=[0, 0, 0x0009],
+            energy=[0] * 14,
             captured_at=CAPTURED_AT,
         )
 
         self.assertEqual(telemetry.status_raw, 0x0009)
         self.assertEqual(telemetry.charging_status, "Boost")
         self.assertEqual(telemetry.canonical_stage, ChargeStage.ABSORB)
+
+    def test_decodes_generated_today_high_word_first(self) -> None:
+        # Live capture 2026-06-16: 0x330C=0, 0x330D=318 -> 3.18 kWh when decoded
+        # high-word-first (the TEP's energy block is big-endian by word).
+        energy = [0] * 14
+        energy[12], energy[13] = 0x0000, 318  # 0x330C, 0x330D
+        telemetry = decode_telemetry(
+            rated=[42, 4, 25000, 10000, 61248, 7, 4800, 10000, 61248],
+            live=[0, 0, 0, 0, 5311, 0, 0, 0],
+            temperatures=[0, 0],
+            soc=[2055],
+            status=[0, 0, 0],
+            energy=energy,
+            captured_at=CAPTURED_AT,
+        )
+        self.assertAlmostEqual(telemetry.generated_today_kwh, 3.18)
 
     def test_decodes_battery_settings(self) -> None:
         settings = decode_settings(

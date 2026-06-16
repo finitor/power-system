@@ -52,6 +52,7 @@ class EpeverTelemetry:
     rated_battery_voltage_v: float
     rated_charging_current_a: float
     rated_pv_voltage_v: float
+    generated_today_kwh: float | None = None
 
     @property
     def canonical_stage(self) -> ChargeStage:
@@ -123,9 +124,13 @@ class EpeverClient:
             # has the real status word. Confirmed live 2026-06-16: charging at
             # ~3.4 A read 0x3202=0x0009 (running + Boost) while 0x3201=0x0000.
             status = read_input_registers(client, 0x3200, 3, self.unit)
+            # Energy-statistics block; we want generated-energy-today at
+            # 0x330C/0x330D. The TEP stores these big-endian by word (opposite
+            # the live registers), so decode high-word-first; see decode_telemetry.
+            energy = read_input_registers(client, 0x3300, 14, self.unit)
             settings = read_holding_registers(client, 0x9000, 20, self.unit)
             return (
-                decode_telemetry(rated, live, temperatures, soc, status, captured_at),
+                decode_telemetry(rated, live, temperatures, soc, status, energy, captured_at),
                 decode_settings(settings, captured_at),
             )
         finally:
@@ -245,6 +250,7 @@ def decode_telemetry(
     temperatures: list[int],
     soc: list[int],
     status: list[int],
+    energy: list[int],
     captured_at: datetime | None = None,
 ) -> EpeverTelemetry:
     battery_current_a = live[5] / 100
@@ -252,6 +258,13 @@ def decode_telemetry(
     # 0x3202 (status[2]) is the TEP's charging-equipment-status word; see read().
     status_raw = status[2]
     charging_code = (status_raw >> 2) & 0x03
+    # Generated energy today: 0x330C/0x330D (indices 12/13 from 0x3300), decoded
+    # high-word-first (TEP word order is opposite the live registers). Provisional
+    # scaling (/100 = kWh); validate against the local-midnight rollover now that
+    # the device RTC is set. The reset *event* is observable regardless of scale.
+    generated_today_kwh = None
+    if len(energy) >= 14:
+        generated_today_kwh = ((energy[12] << 16) + energy[13]) / 100
     return EpeverTelemetry(
         captured_at=captured_at or datetime.now(timezone.utc),
         pv_voltage_v=live[0] / 100,
@@ -268,6 +281,7 @@ def decode_telemetry(
         rated_battery_voltage_v=rated[6] / 100,
         rated_charging_current_a=rated[3] / 100,
         rated_pv_voltage_v=rated[2] / 100,
+        generated_today_kwh=generated_today_kwh,
     )
 
 

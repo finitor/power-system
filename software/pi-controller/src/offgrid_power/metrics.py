@@ -658,6 +658,8 @@ def _epever_samples(captured_at: datetime, epever) -> Iterable[MetricSample]:
     yield MetricSample(captured_at, source, "status_raw", value=float(epever.status_raw))
     yield MetricSample(captured_at, source, "charge_stage", text=epever.canonical_stage.value)
     yield MetricSample(captured_at, source, "charge_stage_vendor", text=epever.charging_status)
+    if epever.generated_today_kwh is not None:
+        yield MetricSample(captured_at, source, "generated_today", value=epever.generated_today_kwh, unit="kWh")
 
 
 def _epever_settings_samples(captured_at: datetime, settings) -> Iterable[MetricSample]:

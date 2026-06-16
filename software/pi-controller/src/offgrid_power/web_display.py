@@ -792,6 +792,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 "charge_stage": epever.stage.as_dict(),
                 "state": None,
                 "status_raw": epever.status_raw,
+                "generated_today_kwh": epever.generated_today_kwh,
                 "temperatures_c": {
                     "battery": epever.battery_temp_c,
                     "device": epever.device_temp_c,
