@@ -34,6 +34,13 @@ CHARGING_STATUS = {
     3: "Equalize",
 }
 
+# Control coils (function 0x01 read / 0x05 write) -- a separate address space
+# from the 0x9000 holding registers (coil 0 != holding register 0). Only these
+# two are ever written. NB: coil 0x000D = "restore system defaults" is
+# DESTRUCTIVE (wipes the User profile / setpoints) and is never written here.
+COIL_CHARGE_ON_OFF = 0x0000           # 1 = charging enabled, 0 = true hard stop
+COIL_CLEAR_GENERATION_STATS = 0x000E  # pulse True to zero accumulated energy
+
 
 @dataclass(frozen=True)
 class EpeverTelemetry:
@@ -173,6 +180,76 @@ class EpeverClient:
                     f"wrote {current_a:.1f} A, read {readback!r} A"
                 )
             return settings
+        finally:
+            client.close()
+
+    def _open_client(self) -> ModbusSerialClient:
+        client = ModbusSerialClient(
+            port=self.device,
+            baudrate=self.baud,
+            parity="N",
+            stopbits=1,
+            bytesize=8,
+            timeout=self.timeout,
+        )
+        if not client.connect():
+            raise ConnectionError(f"Could not open {self.device}")
+        return client
+
+    def read_charge_enabled(self) -> bool:
+        """Read the charge on/off coil (0x0000): True = charging enabled."""
+        client = self._open_client()
+        try:
+            response = client.read_coils(
+                address=COIL_CHARGE_ON_OFF, count=1, device_id=self.unit
+            )
+            if response.isError():
+                raise RuntimeError(f"EPEver charge-coil read failed: {response}")
+            return bool(response.bits[0])
+        finally:
+            client.close()
+
+    def set_charging(self, enabled: bool) -> bool:
+        """Write the charge on/off coil (0x0000) and return the read-back state.
+
+        This is the true 0 A hard stop the current taper cannot give (0x9013
+        floors at 1 A). Reads the coil back and verifies it took.
+        """
+        client = self._open_client()
+        try:
+            write = client.write_coil(
+                address=COIL_CHARGE_ON_OFF, value=enabled, device_id=self.unit
+            )
+            if write.isError():
+                raise RuntimeError(f"EPEver charge-coil write failed: {write}")
+            response = client.read_coils(
+                address=COIL_CHARGE_ON_OFF, count=1, device_id=self.unit
+            )
+            if response.isError():
+                raise RuntimeError(f"EPEver charge-coil read-back failed: {response}")
+            state = bool(response.bits[0])
+            if state != enabled:
+                raise RuntimeError(
+                    f"EPEver charge-coil read-back mismatch: wrote {enabled}, read {state}"
+                )
+            return state
+        finally:
+            client.close()
+
+    def clear_generation_statistics(self) -> None:
+        """Pulse the clear-generation-statistics coil (0x000E).
+
+        DESTRUCTIVE and irreversible: zeroes the controller's accumulated
+        generation/energy counters. Distinct from coil 0x000D (restore factory
+        defaults), which we never write.
+        """
+        client = self._open_client()
+        try:
+            write = client.write_coil(
+                address=COIL_CLEAR_GENERATION_STATS, value=True, device_id=self.unit
+            )
+            if write.isError():
+                raise RuntimeError(f"EPEver clear-generation-statistics write failed: {write}")
         finally:
             client.close()
 

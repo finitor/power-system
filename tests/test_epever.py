@@ -27,6 +27,14 @@ class _Resp:
         return False
 
 
+class _CoilResp:
+    def __init__(self, bits):
+        self.bits = bits
+
+    def isError(self) -> bool:  # noqa: N802 - pymodbus interface name
+        return False
+
+
 class FakeModbusClient:
     """In-memory EPEver holding-register file for write tests."""
 
@@ -53,6 +61,8 @@ class FakeModbusClient:
     def __init__(self, **_):
         self.regs = dict(self.BASE)
         self.writes: list[tuple[int, list[int]]] = []
+        self.coils: dict[int, bool] = {}
+        self.coil_writes: list[tuple[int, bool]] = []
 
     def connect(self) -> bool:
         return True
@@ -65,6 +75,14 @@ class FakeModbusClient:
         for i, value in enumerate(values):
             self.regs[address + i] = value
         return _Resp(list(values))
+
+    def read_coils(self, address, count, device_id):
+        return _CoilResp([self.coils.get(address + i, False) for i in range(count)])
+
+    def write_coil(self, address, value, device_id):
+        self.coil_writes.append((address, bool(value)))
+        self.coils[address] = bool(value)
+        return _CoilResp([bool(value)])
 
     def close(self) -> None:
         pass
@@ -91,6 +109,22 @@ class EpeverWriteTest(unittest.TestCase):
         self.assertEqual(fake.regs[0x9011], 4440)
         self.assertEqual(fake.regs[0x9012], 4240)
         self.assertEqual(settings.boost_voltage_v, 54.8)
+
+    def test_set_charging_writes_coil_zero_and_reads_back(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            self.assertFalse(EpeverClient().set_charging(False))
+            self.assertTrue(EpeverClient().set_charging(True))
+        # Charge on/off is coil 0x0000, never a holding register.
+        self.assertEqual([w[0] for w in fake.coil_writes], [0x0000, 0x0000])
+        self.assertEqual([w[1] for w in fake.coil_writes], [False, True])
+        self.assertEqual(fake.writes, [])
+
+    def test_clear_generation_statistics_pulses_coil_0x000e(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            EpeverClient().clear_generation_statistics()
+        self.assertEqual(fake.coil_writes, [(0x000E, True)])
 
     def test_write_charge_voltages_requires_user_battery_type(self) -> None:
         fake = FakeModbusClient()
