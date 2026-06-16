@@ -40,7 +40,7 @@ flowchart LR
 | Inverter/charger | Converts 48 V DC to AC and charges from AC input when available | MagnaSine 4448 |
 | Battery temperature control | Keeps batteries inside a safe temperature window | 48 V ceramic heater, insulated/ventilatable enclosure, thermostat, Pi permissive, thermal cutoffs |
 | Supervisory controller | Reads telemetry, logs state, displays dashboard, and coordinates non-critical control | Raspberry Pi |
-| Data services | Telemetry transport, database, dashboard, logs | Local-first SQLite with R2 store-and-forward; MQTT remains an optional live transport |
+| Data services | Telemetry transport, database, dashboard, logs | Local-first SQLite with Backblaze B2 store-and-forward; MQTT remains an optional live transport |
 
 ## Data Flow
 

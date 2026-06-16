@@ -92,9 +92,10 @@ sequence and the deploy.sh self-update lesson.
 
 ## 9. Operator actions — USER
 
-- `offgrid-metrics-export.timer` is disabled on the Pi — confirm whether R2
-  export is intentionally manual-only right now (re-enable as part of
-  decision 0003 once the export format is settled).
+- ~~`offgrid-metrics-export.timer` disabled — confirm export cadence~~
+  **DONE:** the timer is enabled and runs daily at 12:05 to Backblaze B2.
+  Export format is settled per decision 0003 — Parquet since the 64-bit
+  migration (2026-06-13 OS, serializer swap 2026-06-16).
 
 ## 10. Combined charge-current coordination for parallel controllers — DEFERRED
 

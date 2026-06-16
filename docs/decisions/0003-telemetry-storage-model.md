@@ -215,6 +215,17 @@ changes. Phase 1 performs the cutover.
    itself also has no armv7l wheel — ad hoc analysis runs on the Mac
    (or any 64-bit box), querying B2 plus a synced copy of the SQLite
    store.
+
+   **Follow-up 2026-06-16 — Parquet now live (NDJSON detour over):** the
+   64-bit migration completed 2026-06-13 (Raspberry Pi OS Lite 64-bit,
+   Debian 13/trixie, `aarch64`, Python 3.13.5), so the armv7l wheel
+   constraint above no longer applies. `pyarrow==24.0.0` was added to the
+   package deps and `build_export_batch` now writes snappy Parquet
+   (`.parquet` objects) under the same hive layout. The B2 bucket was reset
+   to a clean Parquet-only state — the old `.ndjson.gz` objects were deleted
+   without backfill (operator chose a clean start). The original decision —
+   ship date-partitioned Parquet, one DuckDB engine over local + object
+   store — is now realized exactly as written.
 7. ~~Backfill optional~~ **Resolved 2026-06-12 — discarded.** Operator chose
    simplicity over history: the legacy tables were dropped from the live DB
    (14.4 MB → 416 KB after VACUUM) and the retired CSVs/access log deleted

@@ -317,12 +317,12 @@ and rename/remove any stale duplicate device in the Tailscale admin console.
 
 Once `uname -m` reports `aarch64` and telemetry is healthy:
 
-- **Parquet serializer swap** (the one ADR 0003 amendment forced by armv7l):
-  add `pyarrow` to the Pi venv and change the serialization in
-  `build_export_batch` (`offgrid_power/r2_export.py`). The object layout is
-  already Parquet-shaped (`metrics/{samples,events}/date=YYYY-MM-DD/`), so
-  only the body format and object suffix change. Optionally convert the
-  existing NDJSON archive objects with a one-shot workstation job.
+- ~~**Parquet serializer swap**~~ **DONE 2026-06-16:** `pyarrow==24.0.0`
+  added to the package deps (installs into the Pi venv on deploy);
+  `build_export_batch` (`offgrid_power/r2_export.py`) writes snappy Parquet
+  (`.parquet` objects) under the unchanged hive layout. The old NDJSON
+  archive objects were deleted rather than converted — operator chose a
+  clean start, so the B2 bucket is now uniformly Parquet.
 - **DuckDB on-Pi becomes possible** (aarch64 wheel exists) for local rollups
   or serving history charts without the workstation; set `memory_limit` on a
   1 GB host.

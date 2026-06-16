@@ -91,6 +91,8 @@ SELECT captured_at, value FROM metrics.samples
 WHERE source = 'battery' AND metric = 'soc';
 ```
 
+The exporter is S3-generic: it accepts `R2_`, `B2_`, or `S3_` prefixed variables (first match wins per `env_first`). **The live deployment uses Backblaze B2** (bucket `magpie-metrics`, region `us-east-005`). The Cloudflare R2 block below is an equivalent alternative, not a second active target.
+
 ## Cloudflare R2 Configuration
 
 Set these on the Pi for R2:

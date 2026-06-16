@@ -9,7 +9,7 @@ building the Magnum inverter on/off write path banked in
 
 When the cabin is unoccupied, keep the inverter **off** to conserve the
 bank, and periodically wake it to power the Starlink terminal long enough
-to forward stored telemetry (the existing R2/S3 store-and-forward export),
+to forward stored telemetry (the existing object-store store-and-forward export to Backblaze B2),
 then shut the inverter back off.
 
 ## Why this is worth it — the real win is inverter idle draw
@@ -76,7 +76,7 @@ AC idle draw at all — but that is a hardware change, not this feature.
 2. Toggle inverter ON; verify it came on (status readback).
 3. Wait for Starlink link — poll for WAN reachability rather than a fixed
    timer (cold boot + acquisition is minutes and variable).
-4. Run the R2/S3 export; confirm it drained the unsent queue.
+4. Run the object-store export; confirm it drained the unsent queue.
 5. Toggle inverter OFF; verify it went off; retry if not.
 6. Log the cycle (duration, Wh estimate, records forwarded) for autonomy
    accounting.
@@ -104,4 +104,4 @@ AC idle draw at all — but that is a hardware change, not this feature.
   rate-limited) on the KL0823B — note its CH340 auto-direction is fine for
   one-shot toggles (see inventory note).
 - An away-mode flag and a scheduler (systemd timer or supervisor-internal).
-- Confirm the R2 export exposes a "queue drained" signal the loop can wait on.
+- Confirm the export exposes a "queue drained" signal the loop can wait on.
