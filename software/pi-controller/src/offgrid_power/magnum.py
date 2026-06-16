@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -176,6 +177,14 @@ class MagnumClient:
         self._max_cycles = max_cycles
 
     def read(self) -> MagnumSnapshot | None:
+        if self._device and not os.path.exists(self._device):
+            # A missing serial node means the adapter is unplugged/absent.
+            # Surface it as an error (mirroring the EPEver's "Could not open …")
+            # so the supervisor records it and health reporting classifies it as
+            # transport_absent, rather than swallowing it as "no data". Failures
+            # after a successful open stay best-effort (return None): a silent
+            # bus is no-data, not an adapter fault.
+            raise ConnectionError(f"Could not open {self._device}")
         try:
             return asyncio.run(self._read_async())
         except Exception as exc:

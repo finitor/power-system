@@ -11,6 +11,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.magnum import (
     InverterEventTracker,
+    MagnumClient,
     MagnumSnapshot,
     _find_packets,
     _snapshot_from_cycle,
@@ -151,6 +152,18 @@ class InverterEventTrackerTest(unittest.TestCase):
         t = InverterEventTracker()
         t.observe(_magnum(True))
         self.assertIsNone(t.observe(None))
+
+
+class MagnumClientTest(unittest.TestCase):
+    def test_read_raises_when_serial_device_is_absent(self) -> None:
+        # An unplugged adapter (no serial node) is surfaced as an error so the
+        # supervisor can classify it as transport_absent, not swallowed as None.
+        client = MagnumClient("/dev/definitely-not-a-real-magnum-adapter")
+
+        with self.assertRaises(ConnectionError) as ctx:
+            client.read()
+
+        self.assertIn("Could not open", str(ctx.exception))
 
 
 if __name__ == "__main__":
