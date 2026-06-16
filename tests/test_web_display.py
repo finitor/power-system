@@ -176,7 +176,7 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_renders_epever_charge_controller_group(self) -> None:
         snapshot = make_snapshot(
-            epever=make_epever_telemetry(),
+            epever=make_epever_telemetry(generated_today_kwh=0.12),
             epever_settings=make_epever_settings(),
         )
 
@@ -189,6 +189,10 @@ class WebDisplayTest(unittest.TestCase):
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
         self.assertIn("Stage: Resting (No charging)", html)
         self.assertIn("Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", html)
+        # cc group mirrors the Classic: daily generation as "Production Today",
+        # and no static "Rated" line.
+        self.assertIn("Production Today", html)
+        self.assertNotIn("Rated", html)
 
     def test_renders_bms_protections_and_alarms(self) -> None:
         snapshot = make_snapshot(

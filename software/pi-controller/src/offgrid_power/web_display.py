@@ -787,12 +787,14 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 "pv_current_a": epever.pv_current_a,
                 "pv_power_w": epever.pv_power_w,
                 "battery_soc_percent": epever.battery_soc_percent,
-                "rated_pv_voltage_v": epever.rated_pv_voltage_v,
-                "rated_charging_current_a": epever.rated_charging_current_a,
                 "charge_stage": epever.stage.as_dict(),
                 "state": None,
                 "status_raw": epever.status_raw,
-                "generated_today_kwh": epever.generated_today_kwh,
+                # Expose the EPEver's daily generation under the shared
+                # daily_energy_kwh key so the vendor-agnostic renderers show it
+                # as "Production Today", structured like the Classic group.
+                # (The rated PV/charge figures are static, so we drop them.)
+                "daily_energy_kwh": epever.generated_today_kwh,
                 "generated_total_kwh": epever.generated_total_kwh,
                 "temperatures_c": {
                     "battery": epever.battery_temp_c,
@@ -1004,12 +1006,12 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
     lines.append(_row("Charge Status", stage.render(controller.get("state"))))
 
     if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
-        lines.append(
-            _row(
-                "Production Today",
-                f"{_meas(controller.get('daily_energy_kwh'), 'kWh', 1)}  {_meas(controller.get('daily_amp_hours_ah'), 'Ah', 0)}",
-            )
-        )
+        parts = []
+        if controller.get("daily_energy_kwh") is not None:
+            parts.append(_meas(controller.get("daily_energy_kwh"), "kWh", 1))
+        if controller.get("daily_amp_hours_ah") is not None:
+            parts.append(_meas(controller.get("daily_amp_hours_ah"), "Ah", 0))
+        lines.append(_row("Production Today", "  ".join(parts)))
 
     if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
         lines.append(

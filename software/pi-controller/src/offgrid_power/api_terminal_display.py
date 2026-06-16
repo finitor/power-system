@@ -344,13 +344,12 @@ def _solar_lines(solar: list[dict]) -> list[str]:
         stage = NormalizedStage.from_dict(controller.get("charge_stage"))
         lines.append(_row("Charge Status", stage.render(controller.get("state"))))
         if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
-            lines.append(
-                _row(
-                    "Production Today",
-                    f"{_fmt(controller.get('daily_energy_kwh'), 1)}kWh  "
-                    f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah",
-                )
-            )
+            parts = []
+            if controller.get("daily_energy_kwh") is not None:
+                parts.append(f"{_fmt(controller.get('daily_energy_kwh'), 1)}kWh")
+            if controller.get("daily_amp_hours_ah") is not None:
+                parts.append(f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah")
+            lines.append(_row("Production Today", "  ".join(parts)))
         if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
             lines.append(
                 _row(

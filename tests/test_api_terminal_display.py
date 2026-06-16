@@ -79,8 +79,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     "battery_power_w": 0,
                     "charge_stage": {"canonical": "Resting", "vendor": "No charging"},
                     "state": None,
-                    "rated_pv_voltage_v": 250.0,
-                    "rated_charging_current_a": 100.0,
+                    "daily_energy_kwh": 0.1,
                     "temperatures_c": {"battery": 0.0, "device": 0.0},
                     "settings": {
                         "battery_type": "User",
@@ -128,7 +127,10 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V 0.5h  Float 55.0V  EQ 55.6V", rendered)
         self.assertIn("Charge Controller 0 (MidNite Classic 200)\n", rendered)
         self.assertIn("\n\nCharge Controller 1 (EPEver TEP10425)\n", rendered)
-        self.assertIn("Rated                 250V PV  100A charge", rendered)
+        # cc1 mirrors cc0: a "Production Today" line (kWh only, no Ah from the
+        # EPEver), and no static "Rated" line.
+        self.assertIn("Production Today      0.1kWh", rendered)
+        self.assertNotIn("Rated", rendered)
         self.assertIn("Charge Settings       Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", rendered)
         self.assertIn("\n\nInverter/Charger\n", rendered)
         self.assertIn("DC                    53.2V  4A  213W", rendered)
