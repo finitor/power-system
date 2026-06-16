@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import gzip
+import io
 import json
 import sqlite3
 import sys
 import unittest
 from pathlib import Path
 
+import pyarrow.parquet as pq
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
+
+
+def _read_parquet(body: bytes) -> list[dict]:
+    return pq.read_table(io.BytesIO(body)).to_pylist()
 
 from offgrid_power.metrics import (
     MetricSample,
@@ -38,9 +44,9 @@ class R2ExportTest(unittest.TestCase):
             self.assertEqual(batch.records, (("sample", 1),))
             self.assertRegex(
                 batch.object_key,
-                r"^metrics/samples/date=2026-06-05/20\d{6}T\d{6}Z-[0-9a-f]{32}\.ndjson\.gz$",
+                r"^metrics/samples/date=2026-06-05/20\d{6}T\d{6}Z-[0-9a-f]{32}\.parquet$",
             )
-            records = [json.loads(line) for line in gzip.decompress(batch.body).decode("utf-8").splitlines()]
+            records = _read_parquet(batch.body)
             self.assertEqual(records[0]["record_type"], "sample")
             self.assertEqual(records[0]["record_id"], sample.sample_id())
             self.assertEqual(records[0]["site_id"], "cabin")
@@ -48,7 +54,7 @@ class R2ExportTest(unittest.TestCase):
             self.assertEqual(records[0]["metric"], "soc")
             self.assertEqual(records[0]["value"], 91.0)
             self.assertEqual(records[0]["unit"], "%")
-            self.assertEqual(records[0]["tags"], {"pack": "0"})
+            self.assertEqual(dict(records[0]["tags"]), {"pack": "0"})
 
             # Events drain after samples, into their own partition.
             mark_batch_exported(connection, batch, "2026-06-05T12:05:00+00:00")
@@ -57,13 +63,13 @@ class R2ExportTest(unittest.TestCase):
             self.assertEqual(event_batch.records, (("event", 1),))
             self.assertRegex(
                 event_batch.object_key,
-                r"^metrics/events/date=2026-06-05/20\d{6}T\d{6}Z-[0-9a-f]{32}\.ndjson\.gz$",
+                r"^metrics/events/date=2026-06-05/20\d{6}T\d{6}Z-[0-9a-f]{32}\.parquet$",
             )
-            records = [json.loads(line) for line in gzip.decompress(event_batch.body).decode("utf-8").splitlines()]
+            records = _read_parquet(event_batch.body)
             self.assertEqual(records[0]["record_type"], "event")
             self.assertEqual(records[0]["record_id"], event.event_id())
             self.assertEqual(records[0]["event"], "lbco_cutout")
-            self.assertEqual(records[0]["detail"]["fault"], "LOW_BAT")
+            self.assertEqual(json.loads(records[0]["detail"])["fault"], "LOW_BAT")
 
     def test_batches_split_by_capture_date_oldest_first(self) -> None:
         with sqlite3.connect(":memory:") as connection:

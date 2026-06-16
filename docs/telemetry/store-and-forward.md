@@ -8,7 +8,7 @@ Use S3-compatible object storage, such as Cloudflare R2 or Backblaze B2, as a du
 
 1. `offgrid-supervisor` records flat metric samples and irregular events in `/srv/telemetry/data/metrics.sqlite` on the SSD-backed data volume.
 2. `offgrid-r2-export` reads unexported local rows from SQLite.
-3. The exporter writes bounded gzip-compressed NDJSON batches to the bucket.
+3. The exporter writes bounded Parquet batches to the bucket.
 4. Only after the object store accepts the object should the exporter mark those rows exported.
 5. Downstream consumers are intentionally undecided. A future iOS app, importer, or dashboard can read batch objects and deduplicate by a stable exported record id.
 
@@ -59,22 +59,21 @@ SELECT COUNT(*) FROM samples WHERE exported_at IS NULL;
 Each batch holds one table and one local capture date, under a hive-style partition (oldest unexported date drains first):
 
 ```text
-metrics/samples/date=YYYY-MM-DD/YYYYMMDDTHHMMSSZ-<batch_id>.ndjson.gz
-metrics/events/date=YYYY-MM-DD/YYYYMMDDTHHMMSSZ-<batch_id>.ndjson.gz
+metrics/samples/date=YYYY-MM-DD/YYYYMMDDTHHMMSSZ-<batch_id>.parquet
+metrics/events/date=YYYY-MM-DD/YYYYMMDDTHHMMSSZ-<batch_id>.parquet
 ```
 
-Serialization is gzipped NDJSON, not Parquet: the Pi is 32-bit (armv7l) and pyarrow ships no wheels for it (decision 0003, amended). DuckDB reads `.ndjson.gz` from S3 natively, and the layout already matches Parquet conventions, so a future 64-bit upgrade swaps only the serializer. Rows per object are uniform:
+Serialization is Apache Parquet (snappy-compressed), written with pyarrow. The exporter shipped gzipped NDJSON while the Pi ran 32-bit armv7l — pyarrow/DuckDB had no wheels for that platform — and decision 0003 chose a Parquet-shaped layout precisely so the 64-bit upgrade would swap only the serializer. With the Pi on 64-bit Raspberry Pi OS the serializer is now Parquet (objects written before the swap remain `.ndjson.gz`; DuckDB reads both). Each object is single-table, so its schema is uniform.
 
-```json
-{"record_type":"sample","site_id":"cabin","record_id":"<sample sha256>","local_row_id":123,"captured_at":"2026-06-05T12:00:00+00:00","source":"battery","metric":"soc","value":91.0,"text":null,"unit":"%","tags":{}}
-{"record_type":"event","site_id":"cabin","record_id":"<event sha256>","local_row_id":4,"captured_at":"2026-06-05T12:00:00+00:00","source":"magnum","event":"lbco_cutout","detail":{"fault":"LOW_BAT"}}
-```
+`samples` columns: `record_type`, `site_id`, `record_id` (sample sha256), `local_row_id` (int64), `captured_at`, `source`, `metric`, `value` (float64), `text`, `unit`, `tags` (map<string,string>).
+
+`events` columns: `record_type`, `site_id`, `record_id` (event sha256), `local_row_id` (int64), `captured_at`, `source`, `event`, `detail` (JSON string — heterogeneous across event types, so it stays a string rather than a fixed struct).
 
 `local_row_id` is diagnostic only. Consumers should use the content-hash `record_id` as the idempotency key.
 
 ## Ad Hoc Queries with DuckDB
 
-DuckDB has no armv7l wheel either, so analysis runs on the Mac (or any 64-bit box), spanning the bucket and a synced copy of the local store in one session:
+Analysis runs on the Mac (or any 64-bit box), spanning the bucket and a synced copy of the local store in one session:
 
 ```sql
 INSTALL httpfs; LOAD httpfs;
@@ -83,7 +82,7 @@ CREATE SECRET b2 (TYPE s3, KEY_ID '...', SECRET '...',
 
 -- archive in the bucket (partition-pruned by the date= path)
 SELECT captured_at, value
-FROM read_json('s3://<bucket>/metrics/samples/date=2026-06-*/*.ndjson.gz')
+FROM read_parquet('s3://<bucket>/metrics/samples/date=2026-06-*/*.parquet')
 WHERE source = 'battery' AND metric = 'soc';
 
 -- live store (scp blueberry.local:/srv/telemetry/data/metrics.sqlite first)

@@ -1,12 +1,18 @@
-"""Store-and-forward metric export to an S3-compatible object store."""
+"""Store-and-forward metric export to an S3-compatible object store.
+
+Batches serialize to Apache Parquet via pyarrow. The exporter shipped
+gzipped NDJSON while the Pi ran 32-bit armv7l (no pyarrow/duckdb wheels
+existed for that platform); on the 64-bit OS the serializer is Parquet,
+which is what the DuckDB analysis side reads natively.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import gzip
 import hashlib
 import hmac
+import io
 import json
 import sqlite3
 from pathlib import Path
@@ -14,6 +20,9 @@ from typing import Iterable
 from urllib.error import HTTPError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from .metrics import initialize_metrics_db
 
@@ -147,7 +156,7 @@ def export_metrics_once(db_path: str | Path, config: R2Config, limit: int = 5000
         if batch is None:
             return ExportResult(batch_id=None, object_key=None, row_count=0, uploaded=False)
 
-    R2PutClient(config).put_object(batch.object_key, batch.body, "application/x-ndjson")
+    R2PutClient(config).put_object(batch.object_key, batch.body, "application/vnd.apache.parquet")
 
     uploaded_at = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(db_path, timeout=60) as connection:
@@ -165,8 +174,40 @@ def export_metrics_once(db_path: str | Path, config: R2Config, limit: int = 5000
 # Per-table export streams. Each batch holds one table and one local
 # capture date, so every object has a uniform schema and lands under a
 # hive-style date partition that DuckDB can prune
-# (e.g. metrics/samples/date=2026-06-12/<ts>-<batch>.ndjson.gz).
+# (e.g. metrics/samples/date=2026-06-12/<ts>-<batch>.parquet).
 _EXPORT_TABLES = ("samples", "events")
+
+# Parquet column types per table. Each batch is single-table, so the
+# schema is uniform per object. tags is a map (uniformly string->string);
+# event detail is heterogeneous across event types, so it stays a JSON
+# string column rather than a fixed struct.
+_SAMPLE_SCHEMA = pa.schema(
+    [
+        ("record_type", pa.string()),
+        ("site_id", pa.string()),
+        ("record_id", pa.string()),
+        ("local_row_id", pa.int64()),
+        ("captured_at", pa.string()),
+        ("source", pa.string()),
+        ("metric", pa.string()),
+        ("value", pa.float64()),
+        ("text", pa.string()),
+        ("unit", pa.string()),
+        ("tags", pa.map_(pa.string(), pa.string())),
+    ]
+)
+_EVENT_SCHEMA = pa.schema(
+    [
+        ("record_type", pa.string()),
+        ("site_id", pa.string()),
+        ("record_id", pa.string()),
+        ("local_row_id", pa.int64()),
+        ("captured_at", pa.string()),
+        ("source", pa.string()),
+        ("event", pa.string()),
+        ("detail", pa.string()),
+    ]
+)
 
 
 def build_export_batch(
@@ -183,16 +224,13 @@ def build_export_batch(
             continue
         records = _unexported_records(connection, table, day, limit)
         payload_records = [_record_to_payload(record, site_id) for record in records]
-        body = gzip.compress(
-            "\n".join(json.dumps(record, sort_keys=True, separators=(",", ":")) for record in payload_records).encode("utf-8")
-            + b"\n"
-        )
+        body = _serialize_parquet(table, payload_records)
         content_sha256 = hashlib.sha256(body).hexdigest()
         batch_id = content_sha256[:32]
         created_at = datetime.now(timezone.utc)
         object_key = (
             f"{prefix.strip('/')}/{table}/date={day}/"
-            f"{created_at:%Y%m%dT%H%M%SZ}-{batch_id}.ndjson.gz"
+            f"{created_at:%Y%m%dT%H%M%SZ}-{batch_id}.parquet"
         )
         return ExportBatch(
             batch_id=batch_id,
@@ -205,6 +243,45 @@ def build_export_batch(
             content_sha256=content_sha256,
         )
     return None
+
+
+def _serialize_parquet(table: str, payload_records: list[dict]) -> bytes:
+    schema, columns = _arrow_columns(table, payload_records)
+    arrays = [pa.array(columns[field.name], type=field.type) for field in schema]
+    arrow_table = pa.Table.from_arrays(arrays, schema=schema)
+    buffer = io.BytesIO()
+    pq.write_table(arrow_table, buffer, compression="snappy")
+    return buffer.getvalue()
+
+
+def _arrow_columns(table: str, payload_records: list[dict]) -> tuple[pa.Schema, dict[str, list]]:
+    if table == "samples":
+        return _SAMPLE_SCHEMA, {
+            "record_type": [record["record_type"] for record in payload_records],
+            "site_id": [record["site_id"] for record in payload_records],
+            "record_id": [record["record_id"] for record in payload_records],
+            "local_row_id": [record["local_row_id"] for record in payload_records],
+            "captured_at": [record["captured_at"] for record in payload_records],
+            "source": [record["source"] for record in payload_records],
+            "metric": [record["metric"] for record in payload_records],
+            "value": [record["value"] for record in payload_records],
+            "text": [record["text"] for record in payload_records],
+            "unit": [record["unit"] for record in payload_records],
+            "tags": [record["tags"] for record in payload_records],
+        }
+    return _EVENT_SCHEMA, {
+        "record_type": [record["record_type"] for record in payload_records],
+        "site_id": [record["site_id"] for record in payload_records],
+        "record_id": [record["record_id"] for record in payload_records],
+        "local_row_id": [record["local_row_id"] for record in payload_records],
+        "captured_at": [record["captured_at"] for record in payload_records],
+        "source": [record["source"] for record in payload_records],
+        "event": [record["event"] for record in payload_records],
+        "detail": [
+            json.dumps(record["detail"], sort_keys=True, separators=(",", ":"))
+            for record in payload_records
+        ],
+    }
 
 
 def mark_batch_exported(connection: sqlite3.Connection, batch: ExportBatch, uploaded_at: str) -> None:
