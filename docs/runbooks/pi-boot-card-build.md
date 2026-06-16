@@ -1,14 +1,15 @@
-# Raspberry Pi 64-Bit OS Lite Migration
+# Building a New Pi Boot Card
 
-Plan for rebuilding the supervisory Raspberry Pi on Raspberry Pi OS Lite
-64-bit. This intentionally favors a small number of broad steps over minimum
-downtime. The power system can be manually monitored and controlled while the
-supervisor is offline.
+Standard procedure for building a new boot microSD for the supervisory
+Raspberry Pi. Raspberry Pi OS Lite 64-bit is the established baseline for this
+system. The procedure intentionally favors a small number of broad steps over
+minimum downtime. The power system can be manually monitored and controlled
+while the supervisor is offline.
 
-## Current Status
+## Build History
 
-Dry run completed on 2026-06-13 using the salvaged 32 GB microSD. The card is
-currently in service as `blueberry`; the former 64 GB Samsung card remains the
+**2026-06-13 — first 64-bit build.** Dry run on the salvaged 32 GB microSD;
+card now in service as `blueberry`. The former 64 GB Samsung card is the
 physical rollback.
 
 Preparation completed before the dry run:
@@ -29,10 +30,10 @@ Preparation completed before the dry run:
   boot microSD.
 
 A 32 GB card was enough for the rehearsal because root used about 7.3 GB and
-telemetry writes live on the external SSD. Preferred final target remains a
-128 GB high-endurance microSDXC, UHS-I U1/U3, A1 or A2, from a reputable
-vendor. The SanDisk 128 GB High Endurance card `SDSQQNR-128G-GN6IA` is an
-acceptable final target.
+telemetry writes live on the external SSD. The original 64 GB Samsung card
+(`mmcblk0`, 59.6 GiB, product `GC2QT`) is the current target for the next
+build. A 128 GB high-endurance microSDXC (UHS-I U1/U3, A1 or A2) such as the
+SanDisk `SDSQQNR-128G-GN6IA` is an acceptable future upgrade.
 
 Validated after the 64-bit rebuild:
 
@@ -50,26 +51,22 @@ Validated after the 64-bit rebuild:
 
 ## Goal
 
-Move the Pi from its current OS image to a clean 64-bit Lite install so modern
-Python, Node, arm64 packages, and local developer tools are easier to run.
+Build a clean boot card running Raspberry Pi OS Lite 64-bit with the full
+supervisor stack deployed and telemetry healthy. Modern Python, Node, arm64
+packages, and local developer tools are all available on this baseline.
 
-Secondary goal: verify whether Codex CLI is practical on the Pi after the base
-supervisor is healthy. Codex CLI should not block restoration of telemetry.
+## Approach
 
-## Migration Strategy
-
-Use a clean image and restore, not an in-place architecture upgrade.
+Use a clean image and restore, not an in-place upgrade.
 
 Reasons:
 
-- A clean install is simpler to reason about than converting a live 32-bit
-  system.
-- Existing supervisor downtime is acceptable for hours or days.
-- The current backup, restore, and install scripts are placeholders, so the
-  safest preparation is to make the restore path explicit before wiping the
-  card.
-- The Pi is a Raspberry Pi 3 Model B v1.2 with 1 GB RAM, so 64-bit compatibility
-  is useful but memory headroom needs care.
+- A clean install is simpler to reason about.
+- Supervisor downtime is acceptable for hours or days.
+- The backup, restore, and install scripts make the restore path explicit and
+  repeatable.
+- The Pi is a Raspberry Pi 3 Model B v1.2 with 1 GB RAM; memory headroom needs
+  care (see below).
 
 ### Memory headroom: resolved by choosing Lite
 
@@ -128,28 +125,50 @@ and a supervisor deploy.
 
 ## High-Level Procedure
 
-1. Leave the current working microSD card untouched as the physical rollback.
-2. Flash the dry-run microSD with Raspberry Pi OS Lite 64-bit and configure SSH,
-   hostname, locale, timezone, and network.
-3. Boot the Pi from the new card and confirm SSH access by hostname and IP.
-4. Clone the repo:
-   `git clone git@github.com:finitor/power-system.git ~/power-system`.
-5. Copy the migration backup archive to the new Pi.
-6. Restore local config and telemetry:
-   `cd ~/power-system && scripts/restore-config.sh --apply ~/offgrid-blueberry-20260612T120203Z.tar.gz`.
-7. Bootstrap packages, venv, config rendering, tests, restart, and deploy
-   health checks: `scripts/install-pi.sh`.
-8. Run `scripts/health-check.sh`.
-9. Reboot once and repeat `scripts/health-check.sh`.
-10. Only after telemetry is healthy, try installing and running Codex CLI
-    locally. Treat performance or memory problems as a separate follow-up.
+1. Take a fresh backup from the running Pi before touching anything:
+   `cd ~/power-system && scripts/backup-config.sh`
+   Note the archive path printed at the end — you will use it in steps 5–8.
 
-Preparation steps 1-3 from the original plan are already complete as of
-2026-06-12; see Current Status above.
+2. Leave the current working microSD card as the physical rollback; do not
+   erase it until the new card has passed all health checks.
+
+3. Flash the target microSD card with Raspberry Pi OS Lite 64-bit. Use
+   Raspberry Pi Imager; set the hostname (`blueberry`), your SSH public key,
+   locale, timezone, and network in its advanced options before writing.
+
+4. Boot the Pi from the new card and confirm SSH access by hostname and IP.
+
+5. Copy the backup archive to the new Pi:
+   `scp <archive> <user>@blueberry.local:~`
+
+6. Extract SSH keys from the archive so the git clone can authenticate:
+   ```sh
+   ARCHIVE=~/<archive-filename>.tar.gz
+   BUNDLE="$(tar -tzf "${ARCHIVE}" | head -1 | cut -d/ -f1)"
+   tar -xzf "${ARCHIVE}" --strip-components=3 -C "${HOME}" \
+       "${BUNDLE}/home/offgrid-user/.ssh"
+   chmod 700 "${HOME}/.ssh" && find "${HOME}/.ssh" -type f -exec chmod 600 {} \;
+   ```
+
+7. Clone the repo:
+   `git clone git@github.com:finitor/power-system.git ~/power-system`
+
+8. Restore local config and telemetry:
+   `cd ~/power-system && scripts/restore-config.sh --apply <archive>`
+
+9. Bootstrap packages, venv, config rendering, tests, and deploy:
+   `scripts/install-pi.sh`
+
+10. Start a new SSH session — `install-pi.sh` adds `$USER` to the `offgrid`
+    group, which only takes effect after re-login.
+
+11. Run `scripts/health-check.sh`.
+
+12. Reboot once and repeat `scripts/health-check.sh`.
 
 ## Validation
 
-Minimum successful migration checks:
+Minimum checks:
 
 ```sh
 uname -m
@@ -185,13 +204,13 @@ For long package installs, create a local tmux session that watches the new Pi
 over SSH:
 
 ```sh
-tmux new-session -d -s pi64-watch \
-  "ssh -t -o UserKnownHostsFile=/tmp/offgrid-pi-known-hosts tvetter@192.168.0.200 'sudo tail -F /var/log/apt/term.log /var/log/dpkg.log'"
+tmux new-session -d -s pi-bootstrap-watch \
+  "ssh -t -o UserKnownHostsFile=/tmp/offgrid-pi-known-hosts <user>@192.168.0.200 'sudo tail -F /var/log/apt/term.log /var/log/dpkg.log'"
 
-tmux split-window -t pi64-watch -v \
-  "ssh -t -o UserKnownHostsFile=/tmp/offgrid-pi-known-hosts tvetter@192.168.0.200 'while true; do clear; date; echo; ps -eo pid,ppid,stat,pcpu,pmem,comm,args | egrep \"apt|dpkg|pip|python|unittest|deploy|install-pi|offgrid|nginx|systemctl\" | grep -v egrep; echo; systemctl --failed --no-pager; sleep 3; done'"
+tmux split-window -t pi-bootstrap-watch -v \
+  "ssh -t -o UserKnownHostsFile=/tmp/offgrid-pi-known-hosts <user>@192.168.0.200 'while true; do clear; date; echo; ps -eo pid,ppid,stat,pcpu,pmem,comm,args | egrep \"apt|dpkg|pip|python|unittest|deploy|install-pi|offgrid|nginx|systemctl\" | grep -v egrep; echo; systemctl --failed --no-pager; sleep 3; done'"
 
-tmux attach -t pi64-watch
+tmux attach -t pi-bootstrap-watch
 ```
 
 Useful keys:
@@ -204,7 +223,7 @@ Ctrl-b then d         detach and leave it running
 Clean up later:
 
 ```sh
-tmux kill-session -t pi64-watch
+tmux kill-session -t pi-bootstrap-watch
 ```
 
 ## Local Console Without a Desktop
@@ -284,7 +303,7 @@ renderer's footer shows a `Font  ↓F7  ↑F8` reminder. setfont reflows the tty
 (the framebuffer is fixed at 1920x1080, so a bigger cell = fewer cols/rows);
 tmux resizes its panes and the renderer adapts via its dynamic terminal-size
 read. The console re-applies the saved size on startup. Both the boot-default
-config and the saved index are in the migration backup manifest.
+config and the saved index are in the backup manifest.
 
 **Tailscale:** `scripts/install-pi.sh` installs Tailscale from the official
 Tailscale apt repository when it is missing, then enables `tailscaled`.
@@ -294,7 +313,7 @@ future card swap can keep the same machine identity. If no identity was
 restored, run `sudo tailscale up --hostname=blueberry`, approve the auth URL,
 and rename/remove any stale duplicate device in the Tailscale admin console.
 
-## Post-Migration Follow-Ups
+## Post-Build Tasks
 
 Once `uname -m` reports `aarch64` and telemetry is healthy:
 
@@ -308,6 +327,7 @@ Once `uname -m` reports `aarch64` and telemetry is healthy:
   or serving history charts without the workstation; set `memory_limit` on a
   1 GB host.
 - Codex CLI experiment, per the secondary goal.
+- **Claude CLI setup:** install Claude CLI for on-Pi use. Steps not yet documented — add to this runbook after next install.
 
 ## Rollback
 
@@ -318,39 +338,25 @@ The simplest rollback is physical:
 3. Boot and confirm `blueberry.local` returns.
 4. Run the normal health checks.
 
-Do not erase the old SD card or backup image until the 64-bit install has
-survived at least one deploy, one reboot, and a representative telemetry run.
+Do not erase the old SD card or backup image until the new card has survived
+at least one deploy, one reboot, and a representative telemetry run.
 
-## Prep Work To Do In Repo
+## Script and Repo Support
 
-- Done: `scripts/backup-config.sh` creates a timestamped migration backup.
-- Done: `scripts/restore-config.sh` restores local config and telemetry with an
-  explicit `--apply` guard.
-- Done: backup/restore preserves `/etc/fstab`, boot config, hostname, hosts,
-  cloud-init host template/config, sudoers snippets, SSH daemon local config,
-  NetworkManager/systemd-networkd/wpa_supplicant config, and Tailscale
-  identity as migration references. Restore appends only the `/srv/telemetry`
-  fstab entry to a fresh image, avoiding stale root/boot PARTUUIDs; arbitrary
-  sudoers snippets are kept as reference only, and deploy recreates the known
-  operator NOPASSWD drop-in from tracked config.
-- Done: `scripts/install-pi.sh` installs the minimal package and venv bootstrap
-  for Raspberry Pi OS Lite 64-bit, installs Tailscale if missing, then runs
-  deploy.
-- Done: `scripts/health-check.sh` runs the validation checks above.
-- Add the chosen OS image and package baseline to `docs/maintenance.md` after
-  the migration.
+- `scripts/backup-config.sh` — creates a timestamped config backup archive.
+- `scripts/restore-config.sh` — restores local config and telemetry with an
+  explicit `--apply` guard. Preserves `/etc/fstab`, boot config, hostname,
+  hosts, cloud-init, sudoers, SSH daemon config, NetworkManager/wpa config,
+  and Tailscale identity. Appends only the `/srv/telemetry` fstab entry to a
+  fresh image; boot PARTUUIDs are left as reference only.
+- `scripts/install-pi.sh` — installs OS packages (including `sqlite3`), Python
+  venv, Tailscale, and runs deploy.
+- `scripts/health-check.sh` — runs the validation checks above.
 
 ## Open Questions
 
 - Which exact Raspberry Pi OS Lite 64-bit image should be pinned as the
-  migration baseline?
-- Which exact card was purchased and installed?
-- Should `/srv/telemetry` stay on the SD card for the migration, or move to
-  external storage during the rebuild? Current state is external SSD mounted at
-  `/srv/telemetry`.
-- Resolved 2026-06-12: the rebuilt Lite image does not need a desktop for the
-  local console — the chain is terminal-only and runs on a tty (see "Local
-  Console Without a Desktop"). This also resolves the memory-headroom concern
-  in the rebuild's favor (see "Memory headroom: resolved by choosing Lite").
-- Does local Codex CLI need authenticated interactive use on the Pi, or only
-  occasional CLI runs over SSH?
+  build baseline? Record the image version in `docs/maintenance.md` after the
+  next build.
+- Does local Codex CLI or Claude CLI need authenticated interactive use on
+  the Pi, or only occasional CLI runs over SSH?

@@ -108,8 +108,8 @@ if ! grep -q 'offgrid-tty-console' "${HOME}/.profile" 2>/dev/null; then
 
 # Off-grid wall display: the tty1 autologin session becomes the console
 # (composed console: display pane + ready shell).
-# See docs/runbooks/pi-64-bit-os-lite-migration.md, "Local Console Without
-# a Desktop". Other ttys (Alt+F2...) stay normal shells.
+# See docs/runbooks/pi-boot-card-build.md, "Local Console Without a Desktop".
+# Other ttys (Alt+F2...) stay normal shells.
 if [ "$(tty)" = "/dev/tty1" ] && [ -z "${DISPLAY:-}" ] && [ -x "$HOME/.local/bin/offgrid-tty-console" ]; then
     exec "$HOME/.local/bin/offgrid-tty-console"
 fi

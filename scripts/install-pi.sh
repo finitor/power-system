@@ -25,6 +25,7 @@ sudo apt-get install -y \
     python3-pip \
     python3-venv \
     rsync \
+    sqlite3 \
     tmux \
     usbutils
 
@@ -41,6 +42,9 @@ mkdir -p "${HOME}/.local/bin" "${HOME}/.config/autostart"
 # Ownership is handled by deploy.sh (service account) and the supervisor
 # unit's ExecStartPre chown; bootstrap only needs the directories to exist.
 sudo mkdir -p /srv/telemetry/data /srv/telemetry/logs /var/lib/offgrid
+# Allow the operator to create SQLite lock files without immutable=1 workaround.
+sudo chmod g+w /srv/telemetry/data
+sudo usermod -aG offgrid "$USER"
 
 echo "== python environment =="
 if [ ! -d "${VENV}" ]; then
