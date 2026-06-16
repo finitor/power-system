@@ -55,8 +55,15 @@ from *down*:
   such as battery overvoltage. `ok` is `true` for any non-`ERROR` state.
 
 The `checks` object reports per-device status (`ok` | `offline` | `error`) with
-the error detail, so a consumer sees *which* device is degraded, not just the
-overall verdict.
+a `reason` and the error `detail`, so a consumer sees *which* device is degraded
+and *what was observed* — not just the overall verdict. `reason` is classified
+only from the observed failure signature, never an inferred root cause:
+
+- `transport_absent` — the serial port/adapter is not present (`Could not open …`).
+- `no_response` — the port opened but the remote device stayed silent (Modbus timeout).
+- `no_data` — `offline`: no telemetry and no captured error.
+- `unknown` — an error that doesn't match a known signature (`detail` carries it).
+- `null` — `ok`.
 
 Example (one controller offline — degraded, HTTP `200`):
 
@@ -70,11 +77,11 @@ Example (one controller offline — degraded, HTTP `200`):
   "errors": ["EPEver read failed: Modbus timeout"],
   "conditions": [],
   "checks": {
-    "classic": {"status": "ok", "detail": null},
-    "epever": {"status": "error", "detail": "EPEver read failed: Modbus timeout"},
-    "battery": {"status": "ok", "detail": null},
-    "magnum": {"status": "offline", "detail": null},
-    "ambient": {"status": "ok", "detail": null}
+    "classic": {"status": "ok", "reason": null, "detail": null},
+    "epever": {"status": "error", "reason": "no_response", "detail": "EPEver read failed: Modbus timeout"},
+    "battery": {"status": "ok", "reason": null, "detail": null},
+    "magnum": {"status": "offline", "reason": "no_data", "detail": null},
+    "ambient": {"status": "ok", "reason": null, "detail": null}
   }
 }
 ```

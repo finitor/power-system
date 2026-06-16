@@ -396,10 +396,29 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["errors"], ["EPEver read failed: timeout"])
         self.assertEqual(
             payload["checks"]["epever"],
-            {"status": "error", "detail": "EPEver read failed: timeout"},
+            {"status": "error", "reason": "no_response", "detail": "EPEver read failed: timeout"},
         )
         # A device with no telemetry and no error reads as offline, not error.
-        self.assertEqual(payload["checks"]["classic"], {"status": "offline", "detail": None})
+        self.assertEqual(
+            payload["checks"]["classic"], {"status": "offline", "reason": "no_data", "detail": None}
+        )
+
+    def test_health_checks_distinguish_absent_adapter_from_silent_device(self) -> None:
+        snapshot = make_snapshot(
+            errors=[
+                "EPEver read failed: Modbus Error: No response received after 3 retries",
+                "Magnum read failed: Could not open /dev/magnum-rs485",
+            ]
+        )
+
+        checks = json.loads(route_display_request(snapshot, "/api/v1/health", "curl/8.0").body)["checks"]
+
+        # Port opened, device silent -> no_response (remote device absent/unresponsive).
+        self.assertEqual(checks["epever"]["reason"], "no_response")
+        # Serial node missing -> transport_absent (adapter unplugged).
+        self.assertEqual(checks["magnum"]["reason"], "transport_absent")
+        # No telemetry, no error captured -> no_data.
+        self.assertEqual(checks["classic"]["reason"], "no_data")
 
     def test_api_health_critical_condition_returns_service_unavailable(self) -> None:
         snapshot = make_snapshot(

@@ -584,6 +584,22 @@ _HEALTH_COMPONENTS: tuple[tuple[str, str | None, Callable[[SupervisorSnapshot], 
 )
 
 
+def _offline_reason(status: str, detail: str | None) -> str | None:
+    # Classify only from the observed failure signature — never an inferred
+    # root cause. "transport_absent" = the serial port/adapter is not present;
+    # "no_response" = the port opened but the remote device stayed silent.
+    if status == "ok":
+        return None
+    if status == "offline":
+        return "no_data"
+    text = (detail or "").lower()
+    if "could not open" in text or "no such file or directory" in text or "no such device" in text:
+        return "transport_absent"
+    if "no response" in text or "timeout" in text or "timed out" in text:
+        return "no_response"
+    return "unknown"
+
+
 def _health_checks(snapshot: SupervisorSnapshot) -> dict:
     checks: dict = {}
     for name, error_prefix, getter in _HEALTH_COMPONENTS:
@@ -596,7 +612,7 @@ def _health_checks(snapshot: SupervisorSnapshot) -> dict:
             status = "offline"
         else:
             status = "ok"
-        checks[name] = {"status": status, "detail": detail}
+        checks[name] = {"status": status, "reason": _offline_reason(status, detail), "detail": detail}
     return checks
 
 
