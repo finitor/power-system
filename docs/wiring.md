@@ -77,6 +77,13 @@ Use durable labels on both ends of each cable. Match physical labels to the name
 | CC-1 | Charge controller area | Midnite Solar Classic 200 |
 | INV-1 | Inverter area | MagnaSine 4448 |
 | PI-1 | Control enclosure | Raspberry Pi supervisory controller |
+| RS485 0 | USB-RS485 adapter body / EPever COM lead | KL0823B USB-RS485 (chip: CH340, `1a86:7523`); serves `/dev/epever-rs485`, the EPever TEP10425 COM port |
+
+The KL0823B's CH340 has **no unique USB serial** — every unit reports the same
+`1a86:7523`, so two of them are USB-indistinguishable (this caused the
+`/dev/epever-rs485` symlink collision; see the supervisor unit notes). The
+physical **"RS485 0"** label is therefore the only reliable per-unit
+identifier. Standing rule: never run two identical CH340 adapters at once.
 
 ## Photos
 
