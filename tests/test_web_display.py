@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from offgrid_power.canbus import CanFrame, PylonCanSnapshot, PylonStatus, decode_pylon_snapshot
 from offgrid_power.classic import ClassicChargeSettings
 from offgrid_power.load import LoadSummary
-from offgrid_power.supervisor import Supervisor
+from offgrid_power.supervisor import STATUS_ERROR, Supervisor
 from offgrid_power.web_display import (
     SnapshotCache,
     is_kindle_user_agent,
@@ -374,16 +374,45 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["solar"][0]["settings"]["absorb_voltage_v"], 55.2)
         self.assertEqual(payload["solar"][0]["settings"]["absorb_time_s"], 300)
 
-    def test_routes_api_health_uses_service_unavailable_for_error_snapshot(self) -> None:
-        snapshot = make_snapshot(errors=["Classic read failed: timeout"])
+    def test_healthz_is_liveness_only_and_stays_ok_with_offline_device(self) -> None:
+        # A device read failure must not fail the liveness probe: the supervisor
+        # is still running, so restarting it would not help.
+        snapshot = make_snapshot(errors=["EPEver read failed: timeout"])
+
+        response = route_display_request(snapshot, "/healthz", "curl/8.0")
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(response.body, b"ok\n")
+
+    def test_api_health_offline_device_is_degraded_not_error(self) -> None:
+        snapshot = make_snapshot(errors=["EPEver read failed: timeout"])
+
+        response = route_display_request(snapshot, "/api/v1/health", "curl/8.0")
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)  # degraded, not down
+        self.assertEqual(payload["status"], "WARNING")
+        self.assertTrue(payload["ok"])  # degraded is still "up", just not perfect
+        self.assertEqual(payload["errors"], ["EPEver read failed: timeout"])
+        self.assertEqual(
+            payload["checks"]["epever"],
+            {"status": "error", "detail": "EPEver read failed: timeout"},
+        )
+        # A device with no telemetry and no error reads as offline, not error.
+        self.assertEqual(payload["checks"]["classic"], {"status": "offline", "detail": None})
+
+    def test_api_health_critical_condition_returns_service_unavailable(self) -> None:
+        snapshot = make_snapshot(
+            status_conditions=["Battery cell overvoltage"], status_severity=STATUS_ERROR
+        )
 
         response = route_display_request(snapshot, "/api/v1/health", "curl/8.0")
         payload = json.loads(response.body)
 
         self.assertEqual(response.status.value, 503)
-        self.assertFalse(payload["ok"])
         self.assertEqual(payload["status"], "ERROR")
-        self.assertEqual(payload["errors"], ["Classic read failed: timeout"])
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["conditions"], ["Battery cell overvoltage"])
 
     def test_snapshot_api_payload_includes_status_conditions(self) -> None:
         snapshot = make_snapshot(status_conditions=["Battery cell delta high"])

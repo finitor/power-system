@@ -21,7 +21,8 @@ Display clients are read-only:
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/health` | Small machine-readable readiness check |
+| `GET` | `/healthz` | Liveness probe (process up and producing snapshots) |
+| `GET` | `/api/v1/health` | Machine-readable health: degraded vs down, with per-device checks |
 | `GET` | `/api/v1/snapshot` | Complete latest display snapshot |
 | `GET` | `/api/v1/status` | Future supervisor/export/storage status |
 | `GET` | `/api/v1/metrics/latest` | Future normalized latest metric sample list |
@@ -40,18 +41,41 @@ Only `/api/v1/health` and `/api/v1/snapshot` are part of the first implementatio
 
 ## Health
 
-`GET /api/v1/health` returns `200` when the supervisor has a usable latest snapshot and `503` when the snapshot is unavailable or unhealthy.
+Two endpoints with deliberately different jobs, so a watcher can tell *degraded*
+from *down*:
 
-Example:
+- **`GET /healthz`** — liveness. Returns `200 ok` whenever the supervisor can
+  produce a snapshot (process and poll loop alive), and `503` only when it
+  cannot produce one at all. An offline device does **not** fail it — restarting
+  the supervisor would not bring the device back. This is the endpoint a
+  restart-watcher (systemd, an uptime monitor) should poll.
+- **`GET /api/v1/health`** — diagnostic health. Maps the snapshot's severity to
+  HTTP: `OK`/`WARNING` → `200`, `ERROR` → `503`. A single device offline is
+  `WARNING` (degraded, still `200`); `503` is reserved for a critical condition
+  such as battery overvoltage. `ok` is `true` for any non-`ERROR` state.
+
+The `checks` object reports per-device status (`ok` | `offline` | `error`) with
+the error detail, so a consumer sees *which* device is degraded, not just the
+overall verdict.
+
+Example (one controller offline — degraded, HTTP `200`):
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "ok": true,
-  "status": "OK",
+  "status": "WARNING",
   "captured_at": "2026-06-05T20:55:00+00:00",
   "age_seconds": 2,
-  "errors": []
+  "errors": ["EPEver read failed: Modbus timeout"],
+  "conditions": [],
+  "checks": {
+    "classic": {"status": "ok", "detail": null},
+    "epever": {"status": "error", "detail": "EPEver read failed: Modbus timeout"},
+    "battery": {"status": "ok", "detail": null},
+    "magnum": {"status": "offline", "detail": null},
+    "ambient": {"status": "ok", "detail": null}
+  }
 }
 ```
 

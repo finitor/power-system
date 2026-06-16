@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
-from .supervisor import Supervisor, SupervisorSnapshot
+from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot
 from .terminal_display import format_cell_location_for_display, format_time
 from .weather import WeatherReport, weather_api_payload
 
@@ -341,9 +341,13 @@ def route_display_request(
     if parsed_path not in {"/", "/kindle", "/display", "/weather", "/healthz"}:
         return DisplayResponse(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"not found\n")
     if parsed_path == "/healthz":
-        status = HTTPStatus.OK if snapshot.ok else HTTPStatus.SERVICE_UNAVAILABLE
-        body = b"ok\n" if snapshot.ok else b"error\n"
-        return DisplayResponse(status, "text/plain; charset=utf-8", body)
+        # Liveness probe: reaching here means the supervisor produced a snapshot,
+        # so the process and its poll loop are alive. Offline devices are a
+        # degraded condition surfaced by /api/v1/health, not a liveness failure —
+        # restarting the supervisor would not bring an offline device back. The
+        # "cannot produce a snapshot at all" case is handled upstream in the
+        # server, which returns 503 before routing reaches here.
+        return DisplayResponse(HTTPStatus.OK, "text/plain; charset=utf-8", b"ok\n")
     if parsed_path == "/weather":
         html = render_kindle_weather(weather_api_payload(weather_report))
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
@@ -363,7 +367,10 @@ def route_api_request(
 ) -> DisplayResponse:
     if path == "/api/v1/health":
         payload = health_api_payload(snapshot, now=now)
-        status = HTTPStatus.OK if snapshot.ok else HTTPStatus.SERVICE_UNAVAILABLE
+        # Only a critical ERROR fails the check (503). A degraded WARNING — an
+        # offline device or a non-critical condition — stays 200 so monitors
+        # don't treat "one controller offline" the same as "supervisor down".
+        status = HTTPStatus.SERVICE_UNAVAILABLE if snapshot.status_text == STATUS_ERROR else HTTPStatus.OK
         return _json_response(status, payload)
     if path == "/api/v1/snapshot":
         return _json_response(HTTPStatus.OK, snapshot_api_payload(snapshot, load_summary=load_summary, now=now))
@@ -564,14 +571,47 @@ def _short_day(value: object) -> str:
     return parsed.strftime("%a %m/%d")
 
 
+# Per-device components reported in /api/v1/health "checks". Each entry maps a
+# device's telemetry on the snapshot to its read-error prefix so a consumer can
+# see *which* device is degraded, not just the overall verdict. Ambient has no
+# error prefix — a failed probe simply means "no reading".
+_HEALTH_COMPONENTS: tuple[tuple[str, str | None, Callable[[SupervisorSnapshot], object]], ...] = (
+    ("classic", "Classic read failed", lambda s: s.classic),
+    ("epever", "EPEver read failed", lambda s: s.epever),
+    ("battery", "Battery CAN read failed", lambda s: s.battery),
+    ("magnum", "Magnum read failed", lambda s: s.magnum),
+    ("ambient", None, lambda s: s.ambient),
+)
+
+
+def _health_checks(snapshot: SupervisorSnapshot) -> dict:
+    checks: dict = {}
+    for name, error_prefix, getter in _HEALTH_COMPONENTS:
+        detail = None
+        if error_prefix is not None:
+            detail = next((msg for msg in snapshot.errors if msg.startswith(error_prefix)), None)
+        if detail is not None:
+            status = "error"
+        elif getter(snapshot) is None:
+            status = "offline"
+        else:
+            status = "ok"
+        checks[name] = {"status": status, "detail": detail}
+    return checks
+
+
 def health_api_payload(snapshot: SupervisorSnapshot, now: datetime | None = None) -> dict:
+    # schema_version 2: "status" now distinguishes WARNING (degraded, HTTP 200)
+    # from ERROR (HTTP 503), and per-device "checks" + "conditions" are added.
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "ok": snapshot.ok,
         "status": snapshot.status_text,
         "captured_at": snapshot.captured_at.isoformat(),
         "age_seconds": _age_seconds(snapshot.captured_at, now=now),
         "errors": list(snapshot.errors),
+        "conditions": list(snapshot.status_conditions),
+        "checks": _health_checks(snapshot),
     }
 
 

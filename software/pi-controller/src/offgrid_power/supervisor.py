@@ -48,14 +48,24 @@ class SupervisorSnapshot:
             object.__setattr__(self, "status_severity", STATUS_WARNING)
 
     @property
-    def ok(self) -> bool:
-        return not self.errors and self.status_severity != STATUS_ERROR
+    def status_text(self) -> str:
+        # A device read failure means that one device is offline. As long as the
+        # supervisor is still assembling snapshots, that is a degraded (WARNING)
+        # state, not a supervisor-level ERROR — restarting the supervisor would
+        # not bring the device back. ERROR is reserved for critical analyzed
+        # conditions (e.g. battery overvoltage) raised via status_severity.
+        if self.status_severity == STATUS_ERROR:
+            return STATUS_ERROR
+        if self.errors or self.status_severity == STATUS_WARNING:
+            return STATUS_WARNING
+        return STATUS_OK
 
     @property
-    def status_text(self) -> str:
-        if self.errors:
-            return STATUS_ERROR
-        return self.status_severity
+    def ok(self) -> bool:
+        # "ok" means not in a hard-error (down) state. A degraded WARNING — an
+        # offline device or a non-critical condition — is still ok; only a
+        # critical ERROR is not.
+        return self.status_text != STATUS_ERROR
 
 
 @dataclass(frozen=True)

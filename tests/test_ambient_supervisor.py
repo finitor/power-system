@@ -196,7 +196,9 @@ class SupervisorSemanticsTest(unittest.TestCase):
             ambient=FakeDisconnectedAmbientClient(),
         ).read_snapshot()
 
-        self.assertFalse(snapshot.ok)
+        # The classic error is still surfaced (degraded WARNING), not hidden by
+        # the ambient probe being disconnected.
+        self.assertEqual(snapshot.status_text, "WARNING")
         self.assertIsNone(snapshot.ambient)
         self.assertEqual(len(snapshot.errors), 1)
         self.assertIn("Classic read failed", snapshot.errors[0])
@@ -373,7 +375,9 @@ class TerminalDisplayTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("Status:  ERROR", rendered)
+        # A wedged CAN adapter means the battery is offline — degraded (WARNING),
+        # not a supervisor-level ERROR; the actionable detail still renders.
+        self.assertIn("Status:  WARNING", rendered)
         self.assertIn("CAN adapter: DFU/bootloader mode", rendered)
         self.assertIn("DFU in FS Mode serial 208634B94B45", rendered)
         self.assertIn("replug USB-CAN adapter", rendered)
