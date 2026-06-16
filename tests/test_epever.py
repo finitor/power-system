@@ -150,6 +150,20 @@ class EpeverWriteTest(unittest.TestCase):
         self.assertEqual(fake.regs[0x900B], 5760)  # boost untouched
         self.assertEqual(fake.regs[0x900A], 5830)  # equalize untouched
 
+    def test_write_charge_voltages_rejects_boost_above_equalize(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            with self.assertRaisesRegex(ValueError, "boost voltage cannot exceed equalize"):
+                EpeverClient().write_charge_voltages(boost_v=58.4)
+        self.assertEqual(fake.writes, [])
+
+    def test_write_charge_voltages_rejects_targets_above_charging_limit(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            with self.assertRaisesRegex(ValueError, "charging-limit voltage"):
+                EpeverClient().write_charge_voltages(equalize_v=60.1, boost_v=60.1)
+        self.assertEqual(fake.writes, [])
+
 
 class EpeverDecodeTest(unittest.TestCase):
     def test_decodes_live_probe_registers(self) -> None:

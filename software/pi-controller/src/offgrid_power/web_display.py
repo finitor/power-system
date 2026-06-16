@@ -377,6 +377,185 @@ def route_api_request(
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
 
+def route_control_request(supervisor: Supervisor, path: str, payload: dict) -> DisplayResponse:
+    if path == "/api/v1/control/epever/charge-settings":
+        return _control_epever_charge_settings(supervisor, payload)
+    if path == "/api/v1/control/epever/sync-from-classic":
+        return _control_epever_sync_from_classic(supervisor, payload)
+    if path == "/api/v1/control/epever/charging":
+        return _control_epever_charging(supervisor, payload)
+    if path == "/api/v1/control/magnum/charge-settings":
+        return _control_magnum_charge_settings(supervisor, payload)
+    return _json_response(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
+
+
+def _control_epever_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:
+    try:
+        voltage_kwargs = {
+            "boost_v": _optional_number(payload, "boost_voltage_v"),
+            "float_v": _optional_number(payload, "float_voltage_v"),
+            "equalize_v": _optional_number(payload, "equalize_voltage_v"),
+        }
+        voltage_kwargs = {key: value for key, value in voltage_kwargs.items() if value is not None}
+        current_a = _optional_number(payload, "max_charging_current_a")
+        if not voltage_kwargs and current_a is None:
+            return _json_response(
+                HTTPStatus.BAD_REQUEST,
+                {"ok": False, "error": "no EPEver charge settings supplied"},
+            )
+        settings = None
+        if voltage_kwargs:
+            snapshot = supervisor.read_snapshot()
+            if snapshot.epever_settings is None:
+                raise RuntimeError("EPEver settings unavailable; cannot guard voltage write")
+            final_voltages = {
+                "boost_voltage_v": voltage_kwargs.get("boost_v", snapshot.epever_settings.boost_voltage_v),
+                "float_voltage_v": voltage_kwargs.get("float_v", snapshot.epever_settings.float_voltage_v),
+                "equalize_voltage_v": voltage_kwargs.get("equalize_v", snapshot.epever_settings.equalize_voltage_v),
+            }
+            _guard_voltage_targets_against_bms(snapshot, final_voltages)
+            settings = supervisor.write_epever_charge_voltages(**voltage_kwargs)
+        if current_a is not None:
+            settings = supervisor.write_epever_max_charging_current(current_a)
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
+    return _json_response(
+        HTTPStatus.OK,
+        {"ok": True, "device": "epever", "settings": _epever_settings_api_payload(settings)},
+    )
+
+
+def _control_epever_sync_from_classic(supervisor: Supervisor, payload: dict) -> DisplayResponse:
+    try:
+        voltage_offset_v = _optional_number(payload, "voltage_offset_v") or 0.0
+        no_current = bool(payload.get("no_current", False))
+        snapshot = supervisor.read_snapshot()
+        if snapshot.classic_settings is None:
+            raise RuntimeError("Classic settings unavailable")
+        if snapshot.epever_settings is None:
+            raise RuntimeError("EPEver settings unavailable")
+
+        classic = snapshot.classic_settings
+        target_boost = round(classic.absorb_voltage_v + voltage_offset_v, 2)
+        target_float = round(classic.float_voltage_v + voltage_offset_v, 2)
+        target_equalize = round(max(classic.equalize_voltage_v + voltage_offset_v, target_boost), 2)
+        final_voltages = {
+            "boost_voltage_v": target_boost,
+            "float_voltage_v": target_float,
+            "equalize_voltage_v": target_equalize,
+        }
+        _guard_voltage_targets_against_bms(snapshot, final_voltages)
+
+        voltage_kwargs = {
+            "boost_v": target_boost,
+            "float_v": target_float,
+            "equalize_v": target_equalize,
+        }
+        settings = supervisor.write_epever_charge_voltages(**voltage_kwargs)
+        if not no_current:
+            settings = supervisor.write_epever_max_charging_current(classic.battery_current_limit_a)
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "device": "epever", "error": str(exc)})
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "device": "epever", "error": str(exc)})
+    return _json_response(
+        HTTPStatus.OK,
+        {
+            "ok": True,
+            "device": "epever",
+            "voltage_offset_v": voltage_offset_v,
+            "planned": final_voltages,
+            "settings": _epever_settings_api_payload(settings),
+        },
+    )
+
+
+def _control_epever_charging(supervisor: Supervisor, payload: dict) -> DisplayResponse:
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        return _json_response(
+            HTTPStatus.BAD_REQUEST,
+            {"ok": False, "error": "enabled must be true or false"},
+        )
+    try:
+        state = supervisor.set_epever_charging(enabled)
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
+    return _json_response(HTTPStatus.OK, {"ok": True, "device": "epever", "enabled": state})
+
+
+def _control_magnum_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:
+    try:
+        voltage_targets = {
+            "absorb_voltage_v": _optional_number(payload, "absorb_voltage_v"),
+            "float_voltage_v": _optional_number(payload, "float_voltage_v"),
+        }
+        voltage_targets = {key: value for key, value in voltage_targets.items() if value is not None}
+        if voltage_targets:
+            _guard_voltage_targets_against_bms(supervisor.read_snapshot(), voltage_targets)
+        supervisor.write_magnum_charge_settings(
+            absorb_voltage_v=voltage_targets.get("absorb_voltage_v"),
+            float_voltage_v=voltage_targets.get("float_voltage_v"),
+            absorb_time_hr=_optional_number(payload, "absorb_time_hr"),
+            charger_amps_pct=_optional_int(payload, "charger_amps_pct"),
+            shore_amps=_optional_int(payload, "shore_amps"),
+        )
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "device": "magnum", "error": str(exc)})
+    except NotImplementedError as exc:
+        return _json_response(
+            HTTPStatus.NOT_IMPLEMENTED,
+            {"ok": False, "device": "magnum", "error": str(exc), "reason": "not_implemented"},
+        )
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "device": "magnum", "error": str(exc)})
+    return _json_response(HTTPStatus.OK, {"ok": True, "device": "magnum"})
+
+
+def _guard_voltage_targets_against_bms(snapshot: SupervisorSnapshot, targets: dict[str, float]) -> None:
+    if not targets:
+        return
+    if snapshot.battery is None or snapshot.battery.charge_limits is None:
+        raise RuntimeError("BMS charge-voltage limit unavailable; refusing voltage write")
+    limit = snapshot.battery.charge_limits.charge_voltage_limit_v
+    exceeded = [f"{label} {value:.2f}V" for label, value in targets.items() if value > limit]
+    if exceeded:
+        raise ValueError(f"requested charge voltage exceeds BMS CVL: {', '.join(exceeded)} > {limit:.2f}V")
+
+
+def _optional_number(payload: dict, key: str) -> float | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{key} must be a number")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{key} must be a number") from exc
+
+
+def _optional_int(payload: dict, key: str) -> int | None:
+    value = _optional_number(payload, key)
+    return None if value is None else int(value)
+
+
+def _epever_settings_api_payload(settings) -> dict | None:
+    if settings is None:
+        return None
+    return {
+        "battery_type": settings.battery_type,
+        "battery_type_code": settings.battery_type_code,
+        "charging_limit_voltage_v": settings.charging_limit_voltage_v,
+        "equalize_voltage_v": settings.equalize_voltage_v,
+        "boost_voltage_v": settings.boost_voltage_v,
+        "float_voltage_v": settings.float_voltage_v,
+        "max_charging_current_a": settings.max_charging_current_a,
+    }
+
+
 def _hourly_weather_section(hourly: list) -> list[str]:
     if not hourly:
         return []
@@ -950,6 +1129,36 @@ def run_display_server(
                 refresh_hook=refresh,
                 weather_refresh_hook=weather_refresh,
             )
+            self.send_response(response.status.value)
+            self.send_header("Content-Type", response.content_type)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(response.body)))
+            self.end_headers()
+            self.wfile.write(response.body)
+
+        def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
+            parsed_path = urlparse(self.path).path
+            if not parsed_path.startswith("/api/v1/control/"):
+                response = _json_response(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
+                self._send_display_response(response)
+                return
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                content_length = 0
+            try:
+                body = self.rfile.read(content_length) if content_length > 0 else b"{}"
+                payload = json.loads(body.decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise ValueError("JSON body must be an object")
+            except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as exc:
+                response = _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+                self._send_display_response(response)
+                return
+            response = route_control_request(supervisor, parsed_path, payload)
+            self._send_display_response(response)
+
+        def _send_display_response(self, response: DisplayResponse) -> None:
             self.send_response(response.status.value)
             self.send_header("Content-Type", response.content_type)
             self.send_header("Cache-Control", "no-store")

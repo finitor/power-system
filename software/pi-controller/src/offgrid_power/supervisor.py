@@ -192,18 +192,53 @@ class Supervisor:
             return
         write()
 
-    def write_epever_max_charging_current(self, current_a: float) -> None:
+    def write_epever_charge_voltages(self, **kwargs) -> EpeverChargeSettings:
+        """Write EPEver charge voltages via the device actor thread."""
+        if self.epever is None:
+            raise RuntimeError("no EPEver adapter configured")
+
+        def write() -> EpeverChargeSettings:
+            return self.epever.write_charge_voltages(**kwargs)
+
+        if self._readers is not None and "epever" in self._readers:
+            return self._readers["epever"].submit(write)  # type: ignore[no-any-return]
+        return write()
+
+    def write_epever_max_charging_current(self, current_a: float) -> EpeverChargeSettings:
         """Write EPEver BAT Max Charging Current via the device actor thread."""
         if self.epever is None:
             raise RuntimeError("no EPEver adapter configured")
 
-        def write() -> None:
-            self.epever.write_max_charging_current(current_a)
+        def write() -> EpeverChargeSettings:
+            return self.epever.write_max_charging_current(current_a)
 
         if self._readers is not None and "epever" in self._readers:
-            self._readers["epever"].submit(write)
-            return
-        write()
+            return self._readers["epever"].submit(write)  # type: ignore[no-any-return]
+        return write()
+
+    def set_epever_charging(self, enabled: bool) -> bool:
+        """Write EPEver charge-enable coil via the device actor thread."""
+        if self.epever is None:
+            raise RuntimeError("no EPEver adapter configured")
+
+        def write() -> bool:
+            return self.epever.set_charging(enabled)
+
+        if self._readers is not None and "epever" in self._readers:
+            return self._readers["epever"].submit(write)  # type: ignore[no-any-return]
+        return write()
+
+    def write_magnum_charge_settings(self, **kwargs) -> None:
+        """Placeholder for future Magnum charge-setting writes.
+
+        The Magnum telemetry tap is TX-capable at the library level, but this
+        codebase does not yet have a verified, read-modify-write charge-setting
+        primitive that preserves the active remote packet. Keep the supervisor
+        API stable while refusing the unsafe operation explicitly.
+        """
+        if self.magnum is None:
+            raise RuntimeError("no Magnum adapter configured")
+        raise NotImplementedError("Magnum charge-setting writes are not implemented")
 
     def read_snapshot(self) -> SupervisorSnapshot:
         if self._readers is not None:

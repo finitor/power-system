@@ -1,6 +1,9 @@
 # Supervisor API
 
-The off-grid supervisor exposes read-only HTTP endpoints for display clients and future apps. One process owns hardware polling, local persistence, and the latest snapshot cache. Display clients consume this API and must not poll hardware or write metrics.
+The off-grid supervisor exposes HTTP endpoints for display clients, operator
+control scripts, and future apps. One process owns hardware polling, local
+persistence, the latest snapshot cache, and device writes. Display clients
+consume this API and must not poll hardware or write metrics.
 
 ## Process Boundary
 
@@ -17,6 +20,10 @@ Display clients are read-only:
 - Kindle/browser clients render from `/`, `/kindle`, or `/display`.
 - Future iOS clients can read `/api/v1/snapshot` for live state and object storage for history.
 
+Control scripts use `POST /api/v1/control/...` instead of opening RS485
+adapters directly. The supervisor queues writes on the same per-device actor
+thread that performs polling, so reads and writes to a device cannot race.
+
 ## Endpoints
 
 | Method | Path | Purpose |
@@ -24,10 +31,15 @@ Display clients are read-only:
 | `GET` | `/healthz` | Liveness probe (process up and producing snapshots) |
 | `GET` | `/api/v1/health` | Machine-readable health: degraded vs down, with per-device checks |
 | `GET` | `/api/v1/snapshot` | Complete latest display snapshot |
+| `POST` | `/api/v1/control/epever/charge-settings` | Write EPEver boost/float/equalize voltage and/or max charge current |
+| `POST` | `/api/v1/control/epever/sync-from-classic` | Copy Classic charge targets to EPEver, with optional voltage offset |
+| `POST` | `/api/v1/control/epever/charging` | Enable/disable EPEver charging coil `0x0000` |
+| `POST` | `/api/v1/control/magnum/charge-settings` | Reserved Magnum charge-setting surface; currently returns `501 not_implemented` |
 | `GET` | `/api/v1/status` | Future supervisor/export/storage status |
 | `GET` | `/api/v1/metrics/latest` | Future normalized latest metric sample list |
 
-Only `/api/v1/health` and `/api/v1/snapshot` are part of the first implementation slice.
+Only the endpoints listed above are implemented today; `/api/v1/status` and
+`/api/v1/metrics/latest` are placeholders.
 
 ## HTTP Behavior
 
@@ -38,6 +50,94 @@ Only `/api/v1/health` and `/api/v1/snapshot` are part of the first implementatio
 - Clients must ignore unknown fields.
 - New fields may be added without changing `schema_version`.
 - Existing fields should not be renamed or removed without a new schema version.
+
+## Control
+
+Control endpoints accept JSON objects and return JSON. They are intended for
+local operator scripts on the Pi or a trusted management network; they are not
+an unauthenticated public Internet API.
+
+Successful EPEver charge-setting writes return the controller readback:
+
+```json
+{
+  "ok": true,
+  "device": "epever",
+  "settings": {
+    "battery_type": "User",
+    "battery_type_code": 0,
+    "charging_limit_voltage_v": 60.0,
+    "equalize_voltage_v": 55.6,
+    "boost_voltage_v": 55.6,
+    "float_voltage_v": 54.7,
+    "max_charging_current_a": 80.0
+  }
+}
+```
+
+`POST /api/v1/control/epever/charge-settings` accepts any subset of:
+
+```json
+{
+  "boost_voltage_v": 55.6,
+  "equalize_voltage_v": 55.6,
+  "float_voltage_v": 54.7,
+  "max_charging_current_a": 80.0
+}
+```
+
+The supervisor-side EPEver writer preserves the rest of the `0x9007..0x9012`
+voltage block and refuses unsafe or unsupported requests, including non-User
+battery type, boost above equalize, charge voltages above the EPEver
+charging-limit ceiling, and any requested charge-voltage setpoint above the
+BMS-published charge-voltage limit (CVL). If BMS CVL is unavailable, voltage
+writes are refused rather than guessed.
+
+`POST /api/v1/control/epever/sync-from-classic` reads the supervisor's current
+Classic settings and writes the corresponding EPEver settings. It accepts:
+
+```json
+{
+  "voltage_offset_v": 0.3,
+  "no_current": false
+}
+```
+
+`voltage_offset_v` defaults to `0.0` and is added to the Classic absorb,
+float, and equalize setpoints before writing EPEver boost, float, and equalize.
+The EPEver equalize target is also raised to at least the target boost voltage,
+because the controller rejects boost above equalize. The same BMS CVL guard is
+applied before writing.
+
+`POST /api/v1/control/epever/charging` accepts:
+
+```json
+{ "enabled": false }
+```
+
+and returns:
+
+```json
+{ "ok": true, "device": "epever", "enabled": false }
+```
+
+`POST /api/v1/control/magnum/charge-settings` accepts the planned shape:
+
+```json
+{
+  "absorb_voltage_v": 54.4,
+  "float_voltage_v": 54.4,
+  "absorb_time_hr": 1.0,
+  "charger_amps_pct": 80,
+  "shore_amps": 30
+}
+```
+
+but currently returns HTTP `501` with `reason: "not_implemented"`. The Magnum
+library can send remote packets, but this system has not yet verified a safe
+read-modify-write primitive that preserves the active remote configuration.
+Voltage targets sent to this endpoint are still checked against BMS CVL before
+the backend returns `501`.
 
 ## Health
 

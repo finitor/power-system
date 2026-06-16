@@ -22,6 +22,7 @@ from offgrid_power.web_display import (
     render_kindle_snapshot,
     render_kindle_weather,
     render_snapshot_unavailable,
+    route_control_request,
     route_display_request,
     snapshot_api_payload,
     wants_source_refresh,
@@ -29,6 +30,66 @@ from offgrid_power.web_display import (
 )
 from offgrid_power.weather import WeatherReport, weather_api_payload
 from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_magnum_snapshot, make_snapshot
+
+
+class FakeControlSupervisor:
+    def __init__(self, snapshot=None) -> None:
+        self.snapshot = snapshot or make_snapshot(
+            classic_settings=make_classic_settings(),
+            epever_settings=make_epever_settings(charging_limit_voltage_v=60.0),
+            battery=make_battery_with_cvl(58.4),
+        )
+        self.voltage_calls = []
+        self.current_calls = []
+        self.charge_calls = []
+
+    def read_snapshot(self):
+        return self.snapshot
+
+    def write_epever_charge_voltages(self, **kwargs):
+        self.voltage_calls.append(kwargs)
+        return make_epever_settings(boost_voltage_v=kwargs.get("boost_v", 54.7))
+
+    def write_epever_max_charging_current(self, current_a):
+        self.current_calls.append(current_a)
+        return make_epever_settings(max_charging_current_a=current_a)
+
+    def set_epever_charging(self, enabled):
+        self.charge_calls.append(enabled)
+        return enabled
+
+    def write_magnum_charge_settings(self, **kwargs):
+        raise NotImplementedError("Magnum charge-setting writes are not implemented")
+
+
+def make_classic_settings(**overrides) -> ClassicChargeSettings:
+    fields = {
+        "captured_at": datetime(2026, 6, 16, 12, 0, tzinfo=timezone.utc),
+        "battery_current_limit_a": 80.0,
+        "absorb_voltage_v": 55.2,
+        "float_voltage_v": 54.0,
+        "equalize_voltage_v": 55.2,
+        "sliding_current_limit_a": 800,
+        "absorb_time_s": 300,
+        "max_temp_comp_voltage_v": 55.2,
+        "min_temp_comp_voltage_v": 52.8,
+        "temp_comp_mv_per_c_cell": -5.0,
+        "mppt_mode_raw": 0,
+        "aux_function_word": 0,
+    }
+    fields.update(overrides)
+    return ClassicChargeSettings(**fields)
+
+
+def make_battery_with_cvl(cvl: float):
+    raw_cvl = round(cvl * 10)
+    return decode_pylon_snapshot(
+        [
+            CanFrame(0x351, bytes([raw_cvl & 0xFF, raw_cvl >> 8, 0xD0, 0x07, 0xD0, 0x07, 0xC0, 0x01])),
+            CanFrame(0x355, bytes.fromhex("5C00640000000000")),
+            CanFrame(0x356, bytes.fromhex("B814D8FFA4000000")),
+        ]
+    )
 
 
 class WebDisplayTest(unittest.TestCase):
@@ -457,6 +518,114 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["status"]["conditions"], ["Battery cell delta high"])
         self.assertIsNone(payload["battery"])
         self.assertEqual(payload["solar"], [])
+
+    def test_control_api_routes_epever_charge_settings(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/epever/charge-settings",
+            {"boost_voltage_v": 55.6, "equalize_voltage_v": 55.6, "max_charging_current_a": 80},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(supervisor.voltage_calls, [{"boost_v": 55.6, "equalize_v": 55.6}])
+        self.assertEqual(supervisor.current_calls, [80.0])
+        self.assertEqual(payload["settings"]["max_charging_current_a"], 80.0)
+
+    def test_control_api_syncs_epever_from_classic_with_voltage_offset(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/epever/sync-from-classic",
+            {"voltage_offset_v": 0.3},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(supervisor.voltage_calls, [{"boost_v": 55.5, "float_v": 54.3, "equalize_v": 55.5}])
+        self.assertEqual(supervisor.current_calls, [80.0])
+        self.assertEqual(payload["planned"]["boost_voltage_v"], 55.5)
+        self.assertEqual(payload["voltage_offset_v"], 0.3)
+
+    def test_control_api_rejects_epever_voltage_above_bms_cvl(self) -> None:
+        supervisor = FakeControlSupervisor(snapshot=make_snapshot(
+            epever_settings=make_epever_settings(charging_limit_voltage_v=60.0),
+            battery=make_battery_with_cvl(55.8),
+        ))
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/epever/charge-settings",
+            {"boost_voltage_v": 55.9, "equalize_voltage_v": 55.9},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("exceeds BMS CVL", payload["error"])
+        self.assertEqual(supervisor.voltage_calls, [])
+
+    def test_control_api_rejects_sync_offset_above_bms_cvl(self) -> None:
+        supervisor = FakeControlSupervisor(snapshot=make_snapshot(
+            classic_settings=make_classic_settings(absorb_voltage_v=55.6, equalize_voltage_v=55.6),
+            epever_settings=make_epever_settings(charging_limit_voltage_v=60.0),
+            battery=make_battery_with_cvl(55.8),
+        ))
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/epever/sync-from-classic",
+            {"voltage_offset_v": 0.3},
+        )
+
+        self.assertEqual(response.status.value, 400)
+        self.assertEqual(supervisor.voltage_calls, [])
+
+    def test_control_api_routes_epever_charging(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor, "/api/v1/control/epever/charging", {"enabled": False}
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertFalse(payload["enabled"])
+        self.assertEqual(supervisor.charge_calls, [False])
+
+    def test_control_api_rejects_bad_epever_payload(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(), "/api/v1/control/epever/charge-settings", {}
+        )
+
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("no EPEver charge settings", json.loads(response.body)["error"])
+
+    def test_control_api_exposes_magnum_as_not_implemented(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/magnum/charge-settings",
+            {"absorb_voltage_v": 54.4},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 501)
+        self.assertEqual(payload["reason"], "not_implemented")
+        self.assertEqual(payload["device"], "magnum")
+
+    def test_control_api_rejects_magnum_voltage_above_bms_cvl_before_backend(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(snapshot=make_snapshot(battery=make_battery_with_cvl(55.8))),
+            "/api/v1/control/magnum/charge-settings",
+            {"absorb_voltage_v": 55.9},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("exceeds BMS CVL", payload["error"])
 
     def test_snapshot_api_payload_includes_cell_locations(self) -> None:
         snapshot = make_snapshot(

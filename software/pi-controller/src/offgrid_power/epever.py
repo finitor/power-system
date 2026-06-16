@@ -305,6 +305,21 @@ class EpeverClient:
             for address, value in targets.items():
                 if value is not None:
                     block[address - 0x9007] = round(value * 100)
+            charging_limit = block[0x9008 - 0x9007]
+            equalize = block[0x900A - 0x9007]
+            boost = block[0x900B - 0x9007]
+            float_ = block[0x900C - 0x9007]
+            if boost > equalize:
+                raise ValueError(
+                    "EPEver boost voltage cannot exceed equalize voltage: "
+                    f"boost {boost / 100:.2f} V, equalize {equalize / 100:.2f} V"
+                )
+            for label, raw in (("equalize", equalize), ("boost", boost), ("float", float_)):
+                if raw > charging_limit:
+                    raise ValueError(
+                        "EPEver charge voltage cannot exceed charging-limit voltage: "
+                        f"{label} {raw / 100:.2f} V, limit {charging_limit / 100:.2f} V"
+                    )
             response = client.write_registers(address=0x9007, values=block, device_id=self.unit)
             if response.isError():
                 raise RuntimeError(f"EPEver voltage-block write failed: {response}")
