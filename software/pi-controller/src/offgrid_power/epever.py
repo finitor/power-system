@@ -60,6 +60,7 @@ class EpeverTelemetry:
     rated_charging_current_a: float
     rated_pv_voltage_v: float
     generated_today_kwh: float | None = None
+    generated_total_kwh: float | None = None
 
     @property
     def canonical_stage(self) -> ChargeStage:
@@ -131,10 +132,11 @@ class EpeverClient:
             # has the real status word. Confirmed live 2026-06-16: charging at
             # ~3.4 A read 0x3202=0x0009 (running + Boost) while 0x3201=0x0000.
             status = read_input_registers(client, 0x3200, 3, self.unit)
-            # Energy-statistics block; we want generated-energy-today at
-            # 0x330C/0x330D. The TEP stores these big-endian by word (opposite
-            # the live registers), so decode high-word-first; see decode_telemetry.
-            energy = read_input_registers(client, 0x3300, 14, self.unit)
+            # Energy-statistics block; we want generated-energy-today
+            # (0x330C/0x330D) and the monotonic lifetime total (0x3310/0x3311).
+            # The TEP stores these big-endian by word (opposite the live
+            # registers), so decode high-word-first; see decode_telemetry.
+            energy = read_input_registers(client, 0x3300, 18, self.unit)
             settings = read_holding_registers(client, 0x9000, 20, self.unit)
             return (
                 decode_telemetry(rated, live, temperatures, soc, status, energy, captured_at),
@@ -239,9 +241,13 @@ class EpeverClient:
     def clear_generation_statistics(self) -> None:
         """Pulse the clear-generation-statistics coil (0x000E).
 
-        DESTRUCTIVE and irreversible: zeroes the controller's accumulated
-        generation/energy counters. Distinct from coil 0x000D (restore factory
-        defaults), which we never write.
+        NOTE: observed to be a NO-OP on the TEP10425 (2026-06-16) -- the write
+        succeeds but the energy block is byte-identical before and after, so the
+        panel's "Clear Accumulated Energy" maps to some other coil here. Kept for
+        other EPEver models and because the value-anchored windowed-consumption
+        design needs no clear. On models where it works it is DESTRUCTIVE and
+        irreversible. Distinct from coil 0x000D (restore factory defaults),
+        which we never write.
         """
         client = self._open_client()
         try:
@@ -342,6 +348,14 @@ def decode_telemetry(
     generated_today_kwh = None
     if len(energy) >= 14:
         generated_today_kwh = ((energy[12] << 16) + energy[13]) / 100
+    # Lifetime generated-energy total, 0x3310/0x3311 (indices 16/17). Identified
+    # empirically: it survived the RTC date jump that reset today/month and keeps
+    # climbing with charging, so it's the monotonic accumulator the windowed
+    # consumption calc differences. Provisional scaling (/100 = kWh); confirm by
+    # monotonic growth in the logged series and a panel cross-check.
+    generated_total_kwh = None
+    if len(energy) >= 18:
+        generated_total_kwh = ((energy[16] << 16) + energy[17]) / 100
     return EpeverTelemetry(
         captured_at=captured_at or datetime.now(timezone.utc),
         pv_voltage_v=live[0] / 100,
@@ -359,6 +373,7 @@ def decode_telemetry(
         rated_charging_current_a=rated[3] / 100,
         rated_pv_voltage_v=rated[2] / 100,
         generated_today_kwh=generated_today_kwh,
+        generated_total_kwh=generated_total_kwh,
     )
 
 
