@@ -157,6 +157,23 @@ class ConfigFromEnvTest(unittest.TestCase):
         self.assertEqual(config.top_voltage_v, 54.8)  # falls back to default
 
 
+class PvSmoothingTest(unittest.TestCase):
+    def test_pv_power_is_ema_smoothed_across_calls(self) -> None:
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), pv_smooth_alpha=0.5)
+        c = _charger("epever", actual=0.0, limit=10.0, max_=100.0)
+        c = type(c)(**{**c.__dict__, "pv_power_w": 100.0})
+        first = logger._smoothed(c)
+        self.assertEqual(first.pv_power_w, 100.0)  # seeds on first sample
+        c2 = type(c)(**{**c.__dict__, "pv_power_w": 0.0})
+        second = logger._smoothed(c2)
+        self.assertEqual(second.pv_power_w, 50.0)  # 0.5*0 + 0.5*100, a dip is damped
+
+    def test_smoothing_skips_none_pv(self) -> None:
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator())
+        c = _charger("classic", actual=5.0, limit=80.0, max_=100.0)  # pv_power_w None
+        self.assertIs(logger._smoothed(c), c)
+
+
 class _FakeMidnightRecorder:
     def __init__(self, value):
         self.value = value

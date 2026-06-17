@@ -314,6 +314,30 @@ Phases:
    `charge_ceiling.py` (top-knee taper + high-cell stop + cell-delta stop +
    full-charge latch), combined with the BMS CCL by `min()`. Thresholds are
    inherited from the taper and still need re-tuning (Phase 2).
+### Field findings (2026-06-17)
+
+- **Disable-on-lost-split bug (fixed).** The allocator was switching a charger's
+  coil OFF when it lost the apportionment split: a producing, eligible EPEver
+  whose PV-power weight dipped below the Classic won a sub-1 A share, which
+  mapped to `disable`. With the Classic dominating morning production this
+  flapped the EPEver coil on/off and showed it "Resting" at 79–80% SOC while it
+  had PV. Fix: `disable` now only fires for genuine stops (charge-disabled,
+  CCL/ceiling ≤ 0, latch, cell safety); a sub-`min_current` share in
+  apportionment floors at `min_current` instead. Strictly fewer coil-offs.
+- **Apportionment cycling (Phase 2, in progress).** Per-cycle PV-power weights
+  swing with cloud/MPPT noise, so the split — and thus the written limits —
+  cycled wildly and looked unbalanced near full. Added an **EMA on each
+  charger's PV power** in the allocation logger (`CHARGE_ALLOC_PV_SMOOTH_ALPHA`,
+  default 0.25) so momentary swings don't whipsaw the split. The total budget is
+  unchanged, so this is split-stability only.
+- **Still conservative near full / over-rationing.** The remaining structural
+  issue: the "unconstrained" short-circuit keys on combined *nameplate* max
+  (≈ CCL) rather than actual headroom, so it rations whenever the maxes sum near
+  CCL even though real output is a fraction of it. The ceiling SOC ramp may also
+  be tunable upward at high SOC (the bank took up to ~13 A at 90–95% in the
+  traces, vs the ~9 A ceiling). Next: drive "unconstrained" off measured
+  output/headroom, and re-tune the SOC ramp from data.
+
 2. **Validate / re-tune.** ⏳ In progress. First re-tune applied 2026-06-17 from
    one charge cycle of live traces (journal failure analysis + stored SOC/V/I):
    the bank charges **53–56.5 V (median 55.1)**, so the old voltage thresholds

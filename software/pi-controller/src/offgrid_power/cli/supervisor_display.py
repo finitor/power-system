@@ -307,6 +307,7 @@ def main() -> int:
             live=args.charge_allocation,
             ceiling_config=_config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_"),
             heartbeat_s=_env_float("CHARGE_ALLOC_HEARTBEAT_S", 300.0),
+            pv_smooth_alpha=_env_float("CHARGE_ALLOC_PV_SMOOTH_ALPHA", 0.25),
         )
         if args.charge_allocation or args.charge_allocation_dry_run
         else None
@@ -561,6 +562,7 @@ class ChargeAllocationLogger:
         supervisor: Supervisor | None = None,
         live: bool = False,
         ceiling_config: ChargeCeilingConfig | None = None,
+        pv_smooth_alpha: float = 0.25,
     ) -> None:
         self.allocator = allocator
         self.heartbeat_s = heartbeat_s
@@ -568,13 +570,30 @@ class ChargeAllocationLogger:
         self.live = live
         # Stateful (full-charge latch); evaluated once per cycle here.
         self.ceiling = ChargeCeiling(ceiling_config)
+        # EMA of each charger's PV power, to keep momentary PV swings from
+        # whipsawing the apportionment split (which set the limits cycling near
+        # full). 0 < alpha <= 1; smaller = smoother/slower.
+        self.pv_smooth_alpha = pv_smooth_alpha
+        self._pv_ema: dict[str, float] = {}
         self._last_signature: tuple | None = None
         self._last_logged_monotonic: float | None = None
         self._epever_charging_state: bool | None = None
 
+    def _smoothed(self, charger: ChargerAllocationInput) -> ChargerAllocationInput:
+        if charger.pv_power_w is None:
+            return charger
+        prev = self._pv_ema.get(charger.name)
+        ema = (
+            charger.pv_power_w
+            if prev is None
+            else self.pv_smooth_alpha * charger.pv_power_w + (1 - self.pv_smooth_alpha) * prev
+        )
+        self._pv_ema[charger.name] = ema
+        return dataclasses.replace(charger, pv_power_w=round(ema, 1))
+
     def record(self, snapshot, recorder: MetricRecorder | None):
         try:
-            chargers = _allocation_inputs(snapshot)
+            chargers = [self._smoothed(c) for c in _allocation_inputs(snapshot)]
             if not chargers:
                 return None
             battery = snapshot.battery
