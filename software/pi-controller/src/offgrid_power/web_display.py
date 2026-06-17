@@ -35,12 +35,19 @@ class SnapshotCache:
     def __init__(self) -> None:
         self._snapshot: SupervisorSnapshot | None = None
         self._load_summary: LoadSummary | None = None
+        self._allocation: dict | None = None
         self._lock = Lock()
 
-    def set(self, snapshot: SupervisorSnapshot, load_summary: LoadSummary | None = None) -> None:
+    def set(
+        self,
+        snapshot: SupervisorSnapshot,
+        load_summary: LoadSummary | None = None,
+        allocation: dict | None = None,
+    ) -> None:
         with self._lock:
             self._snapshot = snapshot
             self._load_summary = load_summary
+            self._allocation = allocation
 
     def get(self) -> SupervisorSnapshot:
         with self._lock:
@@ -51,6 +58,10 @@ class SnapshotCache:
     def get_load_summary(self) -> LoadSummary | None:
         with self._lock:
             return self._load_summary
+
+    def get_allocation(self) -> dict | None:
+        with self._lock:
+            return self._allocation
 
 
 def is_kindle_user_agent(user_agent: str) -> bool:
@@ -326,6 +337,7 @@ def route_display_request(
     weather_report: WeatherReport | None = None,
     refresh_hook: Callable[[], None] | None = None,
     weather_refresh_hook: Callable[[], None] | None = None,
+    allocation: dict | None = None,
 ) -> DisplayResponse:
     # Both hooks only queue work for next time; this response still carries the
     # current snapshot/cached forecast, so a slow source never delays the reply.
@@ -335,7 +347,7 @@ def route_display_request(
         weather_refresh_hook()
     parsed_path = urlparse(path).path
     if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
-        return route_api_request(snapshot, parsed_path, load_summary=load_summary)
+        return route_api_request(snapshot, parsed_path, load_summary=load_summary, allocation=allocation)
     if parsed_path == "/api/v1/weather":
         return _json_response(HTTPStatus.OK, weather_api_payload(weather_report))
     if parsed_path not in {"/", "/kindle", "/display", "/weather", "/healthz"}:
@@ -364,6 +376,7 @@ def route_api_request(
     path: str,
     load_summary: LoadSummary | None = None,
     now: datetime | None = None,
+    allocation: dict | None = None,
 ) -> DisplayResponse:
     if path == "/api/v1/health":
         payload = health_api_payload(snapshot, now=now)
@@ -373,7 +386,10 @@ def route_api_request(
         status = HTTPStatus.SERVICE_UNAVAILABLE if snapshot.status_text == STATUS_ERROR else HTTPStatus.OK
         return _json_response(status, payload)
     if path == "/api/v1/snapshot":
-        return _json_response(HTTPStatus.OK, snapshot_api_payload(snapshot, load_summary=load_summary, now=now))
+        return _json_response(
+            HTTPStatus.OK,
+            snapshot_api_payload(snapshot, load_summary=load_summary, now=now, allocation=allocation),
+        )
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
 
@@ -897,6 +913,7 @@ def snapshot_api_payload(
     load_summary: LoadSummary | None = None,
     now: datetime | None = None,
     site_id: str = "cabin",
+    allocation: dict | None = None,
 ) -> dict:
     return {
         "schema_version": 1,
@@ -913,6 +930,7 @@ def snapshot_api_payload(
         "solar": _solar_api_payload(snapshot),
         "inverter": _inverter_api_payload(snapshot),
         "load": _load_api_payload(load_summary),
+        "allocation": allocation,
         "ambient": _ambient_api_payload(snapshot),
     }
 
@@ -1157,6 +1175,7 @@ def run_display_server(
     weather_provider: Callable[[], WeatherReport | None] | None = None,
     refresh_hook: Callable[[], None] | None = None,
     weather_refresh_hook: Callable[[], None] | None = None,
+    allocation_provider: Callable[[], dict | None] | None = None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
     refresh = refresh_hook or supervisor.request_refresh
@@ -1205,6 +1224,11 @@ def run_display_server(
             else:
                 load_summary = load_tracker.update(snapshot)
                 weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in {"/weather", "/api/v1/weather"} else None
+            allocation = (
+                allocation_provider()
+                if allocation_provider is not None and urlparse(self.path).path == "/api/v1/snapshot"
+                else None
+            )
             response = route_display_request(
                 snapshot,
                 self.path,
@@ -1213,6 +1237,7 @@ def run_display_server(
                 weather_report=weather_report,
                 refresh_hook=refresh,
                 weather_refresh_hook=weather_refresh,
+                allocation=allocation,
             )
             self.send_response(response.status.value)
             self.send_header("Content-Type", response.content_type)

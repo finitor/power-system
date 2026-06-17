@@ -19,6 +19,7 @@ from offgrid_power.canbus import (
 from offgrid_power.charge_allocator import (
     ChargeCurrentAllocator,
     ChargerAllocationInput,
+    allocation_detail,
     charge_allocation_event,
 )
 from offgrid_power.charge_ceiling import ChargeCeiling
@@ -136,6 +137,13 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Evaluate the system-level CCL charge-current allocator each cycle and log the "
         "decision as a telemetry event, without writing any charger limits",
+    )
+    parser.add_argument(
+        "--charge-allocation",
+        action="store_true",
+        help="LIVE: evaluate the CCL allocator and WRITE per-controller current limits "
+        "(Classic limit, EPEver max-current register + charge coil). Sole current writer; "
+        "cannot run with the live charger taper.",
     )
     parser.add_argument("--once", action="store_true", help="Render one snapshot and exit")
     return parser.parse_args()
@@ -284,9 +292,17 @@ def main() -> int:
         if charger_current_taper_enabled or charger_current_taper_dry_run
         else None
     )
+    if args.charge_allocation and charger_current_taper_enabled:
+        parser.error(
+            "--charge-allocation (live) cannot run with the live charger taper "
+            "(--charger-current-taper / CHARGER_CURRENT_TAPER). The allocator is the "
+            "sole current-limit writer; disable the taper first."
+        )
     charge_allocation_logger = (
-        ChargeAllocationLogger(ChargeCurrentAllocator())
-        if args.charge_allocation_dry_run
+        ChargeAllocationLogger(
+            ChargeCurrentAllocator(), supervisor=supervisor, live=args.charge_allocation
+        )
+        if args.charge_allocation or args.charge_allocation_dry_run
         else None
     )
     if args.web_display:
@@ -315,11 +331,16 @@ def main() -> int:
                 target=args.charger_current_taper_target,
                 recorder=metric_recorder,
             )
+            allocation_detail_payload = None
             if charge_allocation_logger is not None:
-                charge_allocation_logger.record(snapshot, metric_recorder)
+                allocation_decision = charge_allocation_logger.record(snapshot, metric_recorder)
+                if allocation_decision is not None:
+                    allocation_detail_payload = allocation_detail(
+                        allocation_decision, dry_run=not charge_allocation_logger.live
+                    )
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
-            snapshot_cache.set(snapshot, load_summary)
+            snapshot_cache.set(snapshot, load_summary, allocation=allocation_detail_payload)
             record_metrics(metric_recorder, snapshot, load_summary)
             record_weather_metrics(metric_recorder, weather_service)
             record_inverter_event(metric_recorder, inverter_event_tracker, snapshot)
@@ -371,6 +392,7 @@ def start_web_display(
             "port": args.web_port,
             "snapshot_provider": snapshot_cache.get,
             "load_summary_provider": snapshot_cache.get_load_summary,
+            "allocation_provider": snapshot_cache.get_allocation,
             "weather_provider": None if weather_service is None else weather_service.get,
             "weather_refresh_hook": None if weather_service is None else weather_service.request_refresh,
         },
@@ -503,34 +525,52 @@ _PV_PRESENT_MARGIN_V = 2.0
 
 
 class ChargeAllocationLogger:
-    """Dry-run only: evaluate the CCL allocator each tick and log the decision.
+    """Evaluate the CCL allocator each tick, log the decision, and -- when live --
+    write the per-controller current limits.
 
-    Records on a *material change* (reason, budget, or any per-charger target /
+    Logs on a *material change* (reason, budget, or any per-charger target /
     disable) plus a periodic heartbeat, so the event store captures every
-    transition and a steady-state pulse without a row every poll. Never writes
-    charger settings; best-effort so it can never kill telemetry.
+    transition and a steady-state pulse without a row every poll. Best-effort:
+    a write or eval failure prints and is swallowed, never killing telemetry.
+
+    When ``live``, the allocator is the sole current-limit writer (the legacy
+    taper must not also be live -- enforced at startup). Limit writes are gated
+    by the allocator's deadband; the EPEver charge coil is reconciled to the
+    disable intent (toggled only on change). No limit-write rate-limiting: the
+    limit is a ceiling, so a jump does not surge current (controllers ramp via
+    their own CV/soft-start), and the budget-level feedback clamp already gives
+    immediate-down behavior.
     """
 
     def __init__(
-        self, allocator: ChargeCurrentAllocator, *, heartbeat_s: float = 300.0
+        self,
+        allocator: ChargeCurrentAllocator,
+        *,
+        heartbeat_s: float = 300.0,
+        supervisor: Supervisor | None = None,
+        live: bool = False,
     ) -> None:
         self.allocator = allocator
         self.heartbeat_s = heartbeat_s
+        self.supervisor = supervisor
+        self.live = live
         # Stateful (full-charge latch); evaluated once per cycle here.
         self.ceiling = ChargeCeiling()
         self._last_signature: tuple | None = None
         self._last_logged_monotonic: float | None = None
+        self._epever_charging_state: bool | None = None
 
-    def record(self, snapshot, recorder: MetricRecorder | None) -> None:
-        if recorder is None:
-            return
+    def record(self, snapshot, recorder: MetricRecorder | None):
         try:
             chargers = _allocation_inputs(snapshot)
             if not chargers:
-                return
+                return None
             battery = snapshot.battery
             bms_ccl_a = battery_current_a = None
-            charge_enabled = True  # dry-run: assume enabled unless the BMS says otherwise
+            # Live writes must fail conservative: if the BMS charge-enable flag is
+            # unreadable, treat as disabled (stop). Dry-run can assume enabled to
+            # produce a useful trace.
+            charge_enabled = not self.live
             if battery is not None:
                 if battery.charge_limits is not None:
                     bms_ccl_a = battery.charge_limits.charge_current_limit_a
@@ -548,12 +588,50 @@ class ChargeAllocationLogger:
                 charge_ceiling_a=ceiling.ceiling_a,
                 charge_ceiling_reason=ceiling.reason,
             )
-            if self._should_log(decision):
+            if recorder is not None and self._should_log(decision):
                 recorder.record_event(
-                    charge_allocation_event(decision, dry_run=True, captured_at=snapshot.captured_at)
+                    charge_allocation_event(
+                        decision, dry_run=not self.live, captured_at=snapshot.captured_at
+                    )
                 )
-        except Exception as exc:  # noqa: BLE001 - allocation eval must never kill telemetry.
-            print(f"Charge allocation eval failed: {exc}", file=sys.stderr)
+            if self.live and self.supervisor is not None:
+                self._apply(decision, {c.name: c.current_limit_a for c in chargers})
+            return decision
+        except Exception as exc:  # noqa: BLE001 - allocation must never kill telemetry.
+            print(f"Charge allocation failed: {exc}", file=sys.stderr)
+            return None
+
+    def _apply(self, decision, current_limits: dict) -> None:
+        targets = decision.targets
+        # Reconcile the EPEver charge coil to the disable intent, toggling only on
+        # change (the limit register can't reach 0, so off/on is the coil's job).
+        epever = targets.get("epever")
+        if epever is not None and epever.should_write:
+            want_on = not epever.disable
+            if want_on != self._epever_charging_state:
+                try:
+                    self.supervisor.set_epever_charging(want_on)
+                    self._epever_charging_state = want_on
+                except Exception as exc:  # noqa: BLE001
+                    print(f"Charge allocation: epever coil -> {want_on} failed: {exc}", file=sys.stderr)
+        for name, target in targets.items():
+            if not target.should_write or target.target_current_a is None:
+                continue
+            try:
+                if target.disable:
+                    if name == "classic":
+                        self.supervisor.write_classic_charge_settings(
+                            battery_current_limit_a=0.0, persist=False
+                        )
+                    # epever disable is the coil, handled above
+                elif name == "epever":
+                    self.supervisor.write_epever_max_charging_current(max(1.0, target.target_current_a))
+                elif name == "classic":
+                    self.supervisor.write_classic_charge_settings(
+                        battery_current_limit_a=target.target_current_a, persist=False
+                    )
+            except Exception as exc:  # noqa: BLE001
+                print(f"Charge allocation: {name} write failed: {exc}", file=sys.stderr)
 
     def _should_log(self, decision) -> bool:
         signature = (

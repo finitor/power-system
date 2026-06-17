@@ -11,6 +11,7 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.api_terminal_display import (
+    _allocation_lines,
     render_api_snapshot,
     render_api_unavailable,
     render_api_weather,
@@ -148,6 +149,54 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("INV FET               30C", rendered)
         self.assertIn("Sensor 0 ambient temp 18.2C", rendered)
         self.assertNotIn("Press Ctrl-C", rendered)
+
+    def test_renders_charge_allocation_section(self) -> None:
+        lines = _allocation_lines(
+            {
+                "mode": "live",
+                "reason": "top-knee taper",
+                "bms_ccl_a": 100.0,
+                "charge_ceiling_a": 21.0,
+                "budget_a": 22.0,
+                "battery_charge_a": 5.0,
+                "load_allowance_a": 6.0,
+                "weight_basis": "pv_power",
+                "targets": {
+                    "classic": {"target_a": 11.0, "disable": False, "should_write": True},
+                    "epever": {"target_a": 0.0, "disable": True, "should_write": True},
+                },
+            }
+        )
+        rendered = "\n".join(lines)
+
+        self.assertIn("Charge Allocation", rendered)
+        self.assertIn("Mode                  live  top-knee taper", rendered)
+        self.assertIn("Limits                CCL 100A  ceiling 21A", rendered)
+        self.assertIn("split by pv_power", rendered)
+        self.assertIn("Classic               11.0A  *", rendered)
+        self.assertIn("Epever                off  *", rendered)
+
+    def test_allocation_section_precedes_temperatures_when_present(self) -> None:
+        payload = {
+            "captured_at": "2026-06-05T12:00:00+00:00",
+            "status": {"ok": True, "severity": "OK", "errors": [], "conditions": []},
+            "battery": {"soc_percent": 90, "voltage_v": 53.0, "current_a": 1.0},
+            "allocation": {
+                "mode": "live",
+                "reason": "normal_load_allowance",
+                "bms_ccl_a": 100.0,
+                "charge_ceiling_a": None,
+                "budget_a": 50.0,
+                "battery_charge_a": 1.0,
+                "load_allowance_a": 4.0,
+                "weight_basis": "pv_power",
+                "targets": {"classic": {"target_a": 25.0, "disable": False, "should_write": False}},
+            },
+            "ambient": {"temperature_c": 18.2},
+        }
+        rendered = render_api_snapshot(payload, now=datetime(2026, 6, 5, 12, 0, 2, tzinfo=timezone.utc))
+        self.assertIn("Charge Allocation", rendered)
+        self.assertLess(rendered.index("Charge Allocation"), rendered.index("Temperatures"))
 
     def test_render_api_unavailable(self) -> None:
         rendered = render_api_unavailable("connection refused")

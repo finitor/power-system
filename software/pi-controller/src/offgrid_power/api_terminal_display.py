@@ -49,6 +49,10 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
     lines.append("")
     lines.extend(_inverter_charger_lines(payload.get("inverter")))
 
+    if payload.get("allocation") is not None:
+        lines.append("")
+        lines.extend(_allocation_lines(payload["allocation"]))
+
     lines.append("")
     lines.extend(_temperature_lines(payload))
 
@@ -437,6 +441,32 @@ def _inverter_charger_lines(inverter: dict | None) -> list[str]:
     if settings_parts:
         lines.append(_row("Charge Settings", "  ".join(settings_parts)))
 
+    return lines
+
+
+def _allocation_lines(allocation: dict) -> list[str]:
+    lines = ["Charge Allocation"]
+    lines.append(_row("Mode", f"{allocation.get('mode') or '?'}  {allocation.get('reason') or '?'}"))
+    ceiling = allocation.get("charge_ceiling_a")
+    ceiling_text = "--" if ceiling is None else f"{_fmt(ceiling, 0)}A"
+    lines.append(_row("Limits", f"CCL {_fmt(allocation.get('bms_ccl_a'), 0)}A  ceiling {ceiling_text}"))
+    basis = allocation.get("weight_basis")
+    basis_text = f"  split by {basis}" if basis else ""
+    lines.append(
+        _row(
+            "Budget",
+            f"{_fmt(allocation.get('budget_a'), 0)}A  "
+            f"(charge {_fmt(allocation.get('battery_charge_a'), 0)}A, "
+            f"load {_fmt(allocation.get('load_allowance_a'), 0)}A){basis_text}",
+        )
+    )
+    targets = allocation.get("targets") or {}
+    for name in sorted(targets):
+        target = targets[name]
+        value = "off" if target.get("disable") else f"{_fmt(target.get('target_a'), 1)}A"
+        if target.get("should_write"):
+            value += "  *"  # a write is pending/applied this cycle
+        lines.append(_row(name.capitalize(), value))
     return lines
 
 

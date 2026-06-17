@@ -275,6 +275,30 @@ class ChargeCurrentAllocator:
         )
 
 
+def allocation_detail(decision: ChargeAllocationDecision, *, dry_run: bool) -> dict:
+    """Compact, serializable view of a decision -- shared by the telemetry event
+    and the snapshot API/display so they never drift."""
+    return {
+        "mode": "dry-run" if dry_run else "live",
+        "reason": decision.reason,
+        "bms_ccl_a": decision.bms_ccl_a,
+        "charge_ceiling_a": decision.charge_ceiling_a,
+        "budget_a": decision.budget_a,
+        "load_allowance_a": decision.load_allowance_a,
+        "battery_charge_a": decision.battery_charge_a,
+        "weight_basis": decision.weight_basis,
+        "targets": {
+            name: {
+                "target_a": target.target_current_a,
+                "disable": target.disable,
+                "should_write": target.should_write,
+                "reason": target.reason,
+            }
+            for name, target in decision.targets.items()
+        },
+    }
+
+
 def charge_allocation_event(
     decision: ChargeAllocationDecision,
     *,
@@ -290,25 +314,7 @@ def charge_allocation_event(
         captured_at=captured_at or datetime.now(timezone.utc),
         source="charge_allocator",
         event="allocation_decision",
-        detail={
-            "mode": "dry-run" if dry_run else "live",
-            "reason": decision.reason,
-            "bms_ccl_a": decision.bms_ccl_a,
-            "charge_ceiling_a": decision.charge_ceiling_a,
-            "budget_a": decision.budget_a,
-            "load_allowance_a": decision.load_allowance_a,
-            "battery_charge_a": decision.battery_charge_a,
-            "weight_basis": decision.weight_basis,
-            "targets": {
-                name: {
-                    "target_a": target.target_current_a,
-                    "disable": target.disable,
-                    "should_write": target.should_write,
-                    "reason": target.reason,
-                }
-                for name, target in decision.targets.items()
-            },
-        },
+        detail=allocation_detail(decision, dry_run=dry_run),
     )
 
 

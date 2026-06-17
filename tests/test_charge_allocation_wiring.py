@@ -17,7 +17,17 @@ from offgrid_power.cli.supervisor_display import (  # noqa: E402
     _can_charge,
     _pv_power_w,
 )
-from offgrid_power.charge_allocator import ChargeCurrentAllocator  # noqa: E402
+from offgrid_power.charge_allocator import ChargeCurrentAllocator, ChargerAllocationInput  # noqa: E402
+
+
+def _charger(name, *, actual, limit, max_, min_current_a=0.0):
+    return ChargerAllocationInput(
+        name=name,
+        actual_current_a=actual,
+        current_limit_a=limit,
+        max_current_a=max_,
+        min_current_a=min_current_a,
+    )
 from offgrid_power.canbus import CanFrame, decode_pylon_snapshot  # noqa: E402
 from snapshot_helpers import (  # noqa: E402
     make_battery_snapshot,
@@ -52,6 +62,68 @@ class _FakeRecorder:
 
     def record_event(self, event) -> None:
         self.events.append(event)
+
+
+class _FakeSupervisor:
+    def __init__(self) -> None:
+        self.classic_writes: list = []
+        self.epever_currents: list = []
+        self.coil: list = []
+
+    def write_classic_charge_settings(self, **kwargs):
+        self.classic_writes.append(kwargs)
+
+    def write_epever_max_charging_current(self, current_a):
+        self.epever_currents.append(current_a)
+
+    def set_epever_charging(self, enabled):
+        self.coil.append(enabled)
+
+
+class LiveApplyTest(unittest.TestCase):
+    def test_writes_limits_and_turns_the_coil_on_once(self) -> None:
+        sup = _FakeSupervisor()
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), supervisor=sup, live=True)
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=0.0,
+            chargers=[
+                _charger("classic", actual=10.0, limit=10.0, max_=80.0),
+                _charger("epever", actual=10.0, limit=10.0, max_=100.0),
+            ],
+        )
+
+        logger._apply(decision, {"classic": 10.0, "epever": 10.0})
+        logger._apply(decision, {"classic": 10.0, "epever": 10.0})
+
+        # Classic limit written volatile; EPEver current written; coil toggled
+        # on exactly once despite two cycles.
+        self.assertTrue(sup.classic_writes)
+        self.assertFalse(sup.classic_writes[0]["persist"])
+        self.assertTrue(sup.epever_currents)
+        self.assertEqual(sup.coil, [True])
+
+    def test_disable_uses_coil_off_for_epever_and_zero_limit_for_classic(self) -> None:
+        sup = _FakeSupervisor()
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), supervisor=sup, live=True)
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=False,  # BMS disabled -> stop everything
+            battery_current_a=0.0,
+            load_current_a=0.0,
+            chargers=[
+                _charger("classic", actual=0.0, limit=80.0, max_=80.0),
+                _charger("epever", actual=0.0, limit=80.0, max_=100.0, min_current_a=1.0),
+            ],
+        )
+
+        logger._apply(decision, {"classic": 80.0, "epever": 80.0})
+
+        self.assertEqual(sup.coil, [False])  # EPEver off via coil
+        self.assertIn({"battery_current_limit_a": 0.0, "persist": False}, sup.classic_writes)
+        self.assertEqual(sup.epever_currents, [])  # no current write while disabled
 
 
 class EligibilityTest(unittest.TestCase):
