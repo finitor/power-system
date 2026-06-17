@@ -186,7 +186,35 @@ won't survive a reboot and it blocks the service from owning the adapters.
 
 ---
 
-## 7. Where it serves, and how to look
+## 7. Changing charge parameters (operator shortcuts)
+
+Convenience wrappers in `scripts/`, run on the Pi from `~/power-system`. The
+first two go through the supervisor's control API (no restart, no adapter
+contention); the emergency pair stops the supervisor on purpose. Underneath they
+use the same `POST /api/v1/control/...` endpoints documented in
+[supervisor-api.md](../telemetry/supervisor-api.md) and the
+`classic-charge-settings.py` / `epever-coil.py` tools.
+
+| Script | What it does |
+|---|---|
+| `scripts/charge-classic-absorb.sh 55.0` | Set the Classic absorb voltage. **EQ auto-clamps up to absorb** (the controller enforces EQ ≥ absorb); **float is independent and untouched** — keep it below absorb yourself (`classic-charge-settings.py --float-voltage`). Guarded against the BMS CVL. |
+| `scripts/charge-sync-epever.sh [offset]` | Copy the Classic's charge voltages to the EPEver (+optional volts offset). Classic absorb→EPEver boost, float→float, equalize→equalize; equalize is auto-clamped ≥ boost. CVL-guarded. |
+| `scripts/charge-disable.sh` | **Emergency stop all charging.** Stops the supervisor (so the live allocator can't re-enable), then EPEver coil OFF (reliable) + Classic limit 0 A (best-effort). Telemetry is **off** while disabled. |
+| `scripts/charge-enable.sh` | Resume: EPEver coil on + baseline Classic limit, then restart the supervisor (the allocator takes over if live). |
+
+Why the emergency pair stops the supervisor: with `--charge-allocation` live, the
+allocator reconciles the EPEver coil and rewrites the controller limits every
+cycle, so a plain coil-off would be undone within seconds. Stopping the
+supervisor freezes it. The BMS hard limits remain the real protection in any
+case; for a guaranteed Classic stop, pull its PV breaker.
+
+For anything beyond these (per-field voltages, current limits, charge timers),
+use `scripts/classic-charge-settings.py --help`, `scripts/epever-coil.py`, and
+the `CHARGE_ALLOC_*` / `CHARGE_CEILING_*` env knobs (see
+[charge-current-allocation.md](../charge-current-allocation.md) "Operator
+controls").
+
+## 8. Where it serves, and how to look
 
 - JSON API + display on `127.0.0.1:8081`; nginx fronts ports 80 and 8080 (the
   Kindle wall display is bookmarked to `:8080`).
