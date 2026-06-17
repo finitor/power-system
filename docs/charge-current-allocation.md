@@ -340,7 +340,21 @@ Phases:
   load went partly unfed (battery discharged). Fix: when *measured* total charger
   output is at/below the budget, don't apportion — pin both to max so neither
   leaves the load underfed; only split once production genuinely exceeds the
-  budget. The ceiling SOC ramp may also
+  budget.
+- **Constrained-case policy: per-controller priority, not proportional split**
+  (operator design input 2026-06-17). When the budget *is* genuinely scarce
+  (deep in the knee), don't split proportionally by PV power — allocate in a
+  **priority order**: fill the highest-priority controller to its available
+  output first, give the next its share of what remains, and only trim the
+  *lowest*-priority controller. **Array 1 (EPEver) is the high-priority array:**
+  it was added specifically to lift *cloudy-day* production, and a lightly-shaded
+  array is barely penalized under diffuse light, so it has a comparative
+  advantage in poor conditions. So the EPEver should run with few constraints
+  until we are deep into the knee; the Classic (array 0) carries the constraint
+  first. This also fixes the "EPEver stuck at 1 A" behavior — under priority it
+  runs free (its small output is innocuous to the budget) instead of getting the
+  short end of a proportional split. Implies a per-controller priority input
+  (operator-configurable, EPEver > Classic by default). The ceiling SOC ramp may also
   be tunable upward at high SOC (the bank took up to ~13 A at 90–95% in the
   traces, vs the ~9 A ceiling). Next: drive "unconstrained" off measured
   output/headroom, and re-tune the SOC ramp from data.
