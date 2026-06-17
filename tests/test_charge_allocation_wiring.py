@@ -18,12 +18,30 @@ from offgrid_power.cli.supervisor_display import (  # noqa: E402
     _pv_power_w,
 )
 from offgrid_power.charge_allocator import ChargeCurrentAllocator  # noqa: E402
+from offgrid_power.canbus import CanFrame, decode_pylon_snapshot  # noqa: E402
 from snapshot_helpers import (  # noqa: E402
     make_battery_snapshot,
     make_classic_telemetry,
     make_epever_telemetry,
     make_snapshot,
 )
+
+
+def _battery_with_limits(*, ccl_a: float, charge_enable: bool, current_a: float = 10.0):
+    """Battery snapshot carrying a CCL (0x351), pack current (0x356), and the
+    charge-enable request flag (0x35C) -- exercises the request_flags path."""
+    ccl_raw = int(round(ccl_a * 10)) & 0xFFFF
+    cur_raw = int(round(current_a * 10)) & 0xFFFF
+    return decode_pylon_snapshot(
+        [
+            CanFrame(0x351, bytes([0x48, 0x02, ccl_raw & 0xFF, ccl_raw >> 8, 0, 0, 0, 0])),
+            CanFrame(0x356, bytes([0x1C, 0x02, cur_raw & 0xFF, cur_raw >> 8, 0, 0, 0, 0])),
+            CanFrame(0x35C, bytes([0x80 if charge_enable else 0x00, 0, 0, 0, 0, 0, 0, 0])),
+            # Populate status too, so reusing the wrong attribute (status vs
+            # request_flags) for charge-enable would throw and fail the test.
+            CanFrame(0x359, bytes(8)),
+        ]
+    )
 
 
 class _FakeRecorder:
@@ -111,6 +129,28 @@ class DryRunRecordingTest(unittest.TestCase):
         for _ in range(3):
             beat.record(snapshot, recorder2)
         self.assertEqual(len(recorder2.events), 3)
+
+    def test_logs_real_allocation_with_ccl_and_request_flags(self) -> None:
+        # Full happy path: CCL present, charge enabled via request_flags (the
+        # field the live PylonStatus bug got wrong), both arrays producing.
+        snapshot = make_snapshot(
+            battery=_battery_with_limits(ccl_a=40.0, charge_enable=True, current_a=10.0),
+            classic=make_classic_telemetry(
+                pv_voltage_v=120.0, pv_current_a=6.0, battery_voltage_v=54.0, battery_current_a=20.0
+            ),
+            epever=make_epever_telemetry(
+                pv_voltage_v=160.0, pv_current_a=3.0, battery_voltage_v=54.0, battery_current_a=12.0
+            ),
+        )
+        recorder = _FakeRecorder()
+
+        ChargeAllocationLogger(ChargeCurrentAllocator()).record(snapshot, recorder)
+
+        self.assertEqual(len(recorder.events), 1)
+        detail = recorder.events[0].detail or {}
+        self.assertEqual(detail["reason"], "normal_load_allowance")
+        self.assertEqual(detail["bms_ccl_a"], 40.0)
+        self.assertEqual(set(detail["targets"]), {"classic", "epever"})
 
     def test_no_logger_is_a_noop(self) -> None:
         recorder = _FakeRecorder()

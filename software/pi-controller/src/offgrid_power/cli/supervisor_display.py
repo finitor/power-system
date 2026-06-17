@@ -533,8 +533,8 @@ class ChargeAllocationLogger:
                     bms_ccl_a = battery.charge_limits.charge_current_limit_a
                 if battery.measurements is not None:
                     battery_current_a = battery.measurements.current_a
-                if battery.status is not None:
-                    charge_enabled = battery.status.charge_enable
+                if battery.request_flags is not None:
+                    charge_enabled = battery.request_flags.charge_enable
             decision = self.allocator.decide(
                 bms_ccl_a=bms_ccl_a,
                 charge_enabled=charge_enabled,
