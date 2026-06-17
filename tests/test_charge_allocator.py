@@ -67,6 +67,58 @@ class ChargeAllocatorTest(unittest.TestCase):
         self.assertEqual(decision.targets["classic"].target_current_a, 20.0)
         self.assertEqual(decision.targets["epever"].target_current_a, 30.0)
 
+    def test_charge_ceiling_below_ccl_caps_the_budget(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=5.0,
+            chargers=[
+                _charger("classic", actual=10.0, limit=80.0, max_=80.0),
+                _charger("epever", actual=10.0, limit=100.0, max_=100.0),
+            ],
+            charge_ceiling_a=20.0,
+            charge_ceiling_reason="top-knee taper",
+        )
+
+        # effective CCL = min(40, 20) = 20 -> budget 20 + 5 - 5 reserve.
+        self.assertEqual(decision.budget_a, 20.0)
+        self.assertEqual(decision.reason, "top-knee taper")
+        self.assertEqual(decision.charge_ceiling_a, 20.0)
+
+    def test_charge_ceiling_zero_stops_all_chargers(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=0.0,
+            load_current_a=5.0,
+            chargers=[_charger("classic", actual=0.0, limit=80.0, max_=80.0)],
+            charge_ceiling_a=0.0,
+            charge_ceiling_reason="full-charge latch",
+        )
+
+        self.assertEqual(decision.budget_a, 0.0)
+        self.assertEqual(decision.reason, "full-charge latch")
+        self.assertEqual(decision.targets["classic"].target_current_a, 0.0)
+        self.assertTrue(decision.targets["classic"].disable)
+
+    def test_charge_ceiling_above_ccl_is_ignored(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=12.0,
+            chargers=[
+                _charger("classic", actual=20.0, limit=80.0, max_=80.0),
+                _charger("epever", actual=20.0, limit=100.0, max_=100.0),
+            ],
+            charge_ceiling_a=60.0,
+        )
+
+        self.assertEqual(decision.reason, "normal_load_allowance")
+        self.assertEqual(decision.budget_a, 47.0)  # CCL governs, ceiling moot
+        self.assertEqual(decision.charge_ceiling_a, 60.0)
+
     def test_feedback_clamps_budget_when_net_battery_charge_exceeds_ccl(self) -> None:
         decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=40.0,

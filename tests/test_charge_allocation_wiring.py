@@ -35,7 +35,9 @@ def _battery_with_limits(*, ccl_a: float, charge_enable: bool, current_a: float 
     return decode_pylon_snapshot(
         [
             CanFrame(0x351, bytes([0x48, 0x02, ccl_raw & 0xFF, ccl_raw >> 8, 0, 0, 0, 0])),
-            CanFrame(0x356, bytes([0x1C, 0x02, cur_raw & 0xFF, cur_raw >> 8, 0, 0, 0, 0])),
+            # 52.0 V: below the top-knee, so the charge ceiling doesn't bind and
+            # this test stays focused on the CCL / charge-enable path.
+            CanFrame(0x356, bytes([0x08, 0x02, cur_raw & 0xFF, cur_raw >> 8, 0, 0, 0, 0])),
             CanFrame(0x35C, bytes([0x80 if charge_enable else 0x00, 0, 0, 0, 0, 0, 0, 0])),
             # Populate status too, so reusing the wrong attribute (status vs
             # request_flags) for charge-enable would throw and fail the test.

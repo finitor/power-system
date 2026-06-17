@@ -21,6 +21,7 @@ from offgrid_power.charge_allocator import (
     ChargerAllocationInput,
     charge_allocation_event,
 )
+from offgrid_power.charge_ceiling import ChargeCeiling
 from offgrid_power.charger_taper import (
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
@@ -515,6 +516,8 @@ class ChargeAllocationLogger:
     ) -> None:
         self.allocator = allocator
         self.heartbeat_s = heartbeat_s
+        # Stateful (full-charge latch); evaluated once per cycle here.
+        self.ceiling = ChargeCeiling()
         self._last_signature: tuple | None = None
         self._last_logged_monotonic: float | None = None
 
@@ -535,12 +538,15 @@ class ChargeAllocationLogger:
                     battery_current_a = battery.measurements.current_a
                 if battery.request_flags is not None:
                     charge_enabled = battery.request_flags.charge_enable
+            ceiling = self.ceiling.evaluate(battery)
             decision = self.allocator.decide(
                 bms_ccl_a=bms_ccl_a,
                 charge_enabled=charge_enabled,
                 battery_current_a=battery_current_a,
                 load_current_a=estimate_load_current_a(snapshot),
                 chargers=chargers,
+                charge_ceiling_a=ceiling.ceiling_a,
+                charge_ceiling_reason=ceiling.reason,
             )
             if self._should_log(decision):
                 recorder.record_event(
@@ -554,6 +560,7 @@ class ChargeAllocationLogger:
             decision.reason,
             decision.weight_basis,
             decision.budget_a,
+            decision.charge_ceiling_a,
             tuple(
                 sorted(
                     (name, target.target_current_a, target.disable)

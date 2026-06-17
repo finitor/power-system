@@ -66,6 +66,9 @@ class ChargeAllocationDecision:
     # "pv_power" or "actual_current": which signal drove the apportionment split,
     # for trace analysis. None when no budget was apportioned.
     weight_basis: str | None = None
+    # Battery-state ceiling on net charge current (top-knee taper / cell safety);
+    # combined with bms_ccl_a via min(). None = no such constraint this cycle.
+    charge_ceiling_a: float | None = None
 
 
 class ChargeCurrentAllocator:
@@ -80,6 +83,8 @@ class ChargeCurrentAllocator:
         battery_current_a: float | None,
         load_current_a: float | None,
         chargers: list[ChargerAllocationInput],
+        charge_ceiling_a: float | None = None,
+        charge_ceiling_reason: str | None = None,
     ) -> ChargeAllocationDecision:
         if bms_ccl_a is None:
             return self._no_targets("missing BMS CCL", bms_ccl_a, battery_current_a, chargers)
@@ -93,6 +98,7 @@ class ChargeCurrentAllocator:
                 battery_current_a,
                 max(load_current_a or 0.0, 0.0),
                 chargers,
+                charge_ceiling_a=charge_ceiling_a,
             )
         if bms_ccl_a <= 0:
             return self._zero_targets(
@@ -101,14 +107,31 @@ class ChargeCurrentAllocator:
                 battery_current_a,
                 max(load_current_a or 0.0, 0.0),
                 chargers,
+                charge_ceiling_a=charge_ceiling_a,
             )
 
-        load_allowance_a = max(load_current_a or 0.0, 0.0)
-        budget_a = max(0.0, bms_ccl_a + load_allowance_a - self.config.reserve_a)
+        # The battery-state ceiling (top-knee taper / cell safety) is a second
+        # limit on net battery charge current; the binding one wins.
+        effective_ccl_a = bms_ccl_a
         reason = "normal_load_allowance"
+        if charge_ceiling_a is not None and charge_ceiling_a < bms_ccl_a:
+            effective_ccl_a = max(0.0, charge_ceiling_a)
+            reason = charge_ceiling_reason or "charge_ceiling"
+            if effective_ccl_a <= 0.0:
+                return self._zero_targets(
+                    reason,
+                    bms_ccl_a,
+                    battery_current_a,
+                    max(load_current_a or 0.0, 0.0),
+                    chargers,
+                    charge_ceiling_a=charge_ceiling_a,
+                )
 
-        if battery_current_a > bms_ccl_a + self.config.feedback_tolerance_a:
-            excess_a = battery_current_a - bms_ccl_a
+        load_allowance_a = max(load_current_a or 0.0, 0.0)
+        budget_a = max(0.0, effective_ccl_a + load_allowance_a - self.config.reserve_a)
+
+        if battery_current_a > effective_ccl_a + self.config.feedback_tolerance_a:
+            excess_a = battery_current_a - effective_ccl_a
             budget_a = max(0.0, budget_a - excess_a)
             reason = "feedback_clamp"
 
@@ -121,6 +144,7 @@ class ChargeCurrentAllocator:
             reason=reason,
             targets=targets,
             weight_basis=weight_basis,
+            charge_ceiling_a=charge_ceiling_a,
         )
 
     def _allocate_budget(
@@ -217,6 +241,7 @@ class ChargeCurrentAllocator:
         battery_current_a: float | None,
         load_allowance_a: float,
         chargers: list[ChargerAllocationInput],
+        charge_ceiling_a: float | None = None,
     ) -> ChargeAllocationDecision:
         return ChargeAllocationDecision(
             budget_a=0.0,
@@ -230,6 +255,7 @@ class ChargeCurrentAllocator:
                 else ChargerAllocationTarget(None, False, "charger offline")
                 for charger in chargers
             },
+            charge_ceiling_a=charge_ceiling_a,
         )
 
     def _no_targets(
@@ -268,6 +294,7 @@ def charge_allocation_event(
             "mode": "dry-run" if dry_run else "live",
             "reason": decision.reason,
             "bms_ccl_a": decision.bms_ccl_a,
+            "charge_ceiling_a": decision.charge_ceiling_a,
             "budget_a": decision.budget_a,
             "load_allowance_a": decision.load_allowance_a,
             "battery_charge_a": decision.battery_charge_a,
