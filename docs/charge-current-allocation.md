@@ -451,6 +451,21 @@ fix it.
 > leadership is the separate priority lever. **Current rig is experimental:**
 > Classic parked at 54.0/53.5, EPEver at +0.2 V boost & 54.5 V reconnect — restore
 > the Classic (56.2/54.7) to resume normal dual-charger operation.
+>
+> **Resolution (2026-06-17 ~17:50) — provisional new operating config.** Watching
+> the display, the EPEver never re-entered *boost* — it stayed in **Float** and
+> merely float-charged at 54.9 (the bus settled in the 54.5–54.9 band, above
+> reconnect, so the boost cycle never re-armed). Since we roll our own taper we
+> never want the controller's low-float regulation, only "absorb or rest." Fix:
+> **collapse the float stage by setting EPEver absorb = float = EQ = 56.4 V**
+> (allowed — our writer enforces only reconnect < float and boost ≤ EQ, not
+> float < boost; firmware accepted it), and **raise recovery to 55.4 V** (close
+> under absorb) so any dip re-boosts and it stays engaged. Net: the EPEver always
+> targets 56.4, the allocator governs current, "rest" = we cut it. Classic
+> restored to **absorb 56.2 / float 54.7** (EQ 56.2 untouched), so the EPEver
+> leads by 0.2 V. Both now charge (EPEver 2.4 A, Classic 5.0 A). **Caveat:** these
+> are live device-register settings, not in version-controlled config — a
+> factory-reset/replacement EPEver would lose them; worth codifying if kept.
 
 - The EPEver has **no battery comms** — it knows only the voltage at its own
   terminals, and its charge stages (Bulk/Boost/Float/**Resting**) are driven
