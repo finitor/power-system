@@ -431,7 +431,7 @@ def _control_classic_charge_settings(supervisor: Supervisor, payload: dict) -> D
 def _control_epever_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:
     try:
         voltage_kwargs = {
-            "boost_v": _optional_number(payload, "boost_voltage_v"),
+            "boost_v": _first_optional_number(payload, "absorb_voltage_v", "boost_voltage_v"),
             "float_v": _optional_number(payload, "float_voltage_v"),
             "equalize_v": _optional_number(payload, "equalize_voltage_v"),
             "boost_reconnect_v": _first_optional_number(
@@ -623,6 +623,7 @@ def _epever_settings_api_payload(settings) -> dict | None:
         "battery_type_code": settings.battery_type_code,
         "charging_limit_voltage_v": settings.charging_limit_voltage_v,
         "equalize_voltage_v": settings.equalize_voltage_v,
+        "absorb_voltage_v": settings.boost_voltage_v,
         "boost_voltage_v": settings.boost_voltage_v,
         "float_voltage_v": settings.float_voltage_v,
         "boost_reconnect_voltage_v": settings.boost_reconnect_voltage_v,
@@ -1065,12 +1066,14 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                     "battery_capacity_ah": settings.battery_capacity_ah,
                     "charging_limit_voltage_v": settings.charging_limit_voltage_v,
                     "boost_voltage_v": settings.boost_voltage_v,
+                    "absorb_voltage_v": settings.boost_voltage_v,
                     "float_voltage_v": settings.float_voltage_v,
                     "equalize_voltage_v": settings.equalize_voltage_v,
                     "boost_reconnect_voltage_v": settings.boost_reconnect_voltage_v,
                     "bulk_recovery_voltage_v": settings.boost_reconnect_voltage_v,
                     "absorb_time_minutes": settings.boost_time_minutes,
                     "equalize_time_minutes": settings.equalize_time_minutes,
+                    "max_charging_current_a": settings.max_charging_current_a,
                     "low_voltage_disconnect_v": settings.low_voltage_disconnect_v,
                     "discharging_limit_voltage_v": settings.discharging_limit_voltage_v,
                 },
@@ -1324,10 +1327,10 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
             )
         else:
             value = (
-                f"Type {settings.get('battery_type') or 'unknown'}  "
-                f"Boost {_meas(settings.get('boost_voltage_v'), 'V', 1)} t={_minutes_text(settings.get('absorb_time_minutes'))}  "
+                f"Limit {_meas(settings.get('max_charging_current_a'), 'A', 1)}  "
+                f"Absorb {_meas(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 'V', 1)} t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                 f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)}  "
-                f"LVD {_meas(settings.get('low_voltage_disconnect_v'), 'V', 1)}"
+                f"EQ {_meas(settings.get('equalize_voltage_v'), 'V', 1)}"
             )
         lines.append(_row("Charge Settings", value))
 
@@ -1338,6 +1341,13 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
 def _meas(value: object, suffix: str, decimals: int = 1) -> str:
     text = _format_number(value, suffix, decimals)
     return text if text is not None else "--"
+
+
+def _first_present(mapping: dict, *keys: str):
+    for key in keys:
+        if mapping.get(key) is not None:
+            return mapping.get(key)
+    return None
 
 
 def _minutes_text(minutes: object) -> str:

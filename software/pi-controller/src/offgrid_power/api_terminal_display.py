@@ -369,10 +369,10 @@ def _solar_lines(solar: list[dict]) -> list[str]:
                 )
             else:
                 value = (
-                    f"Type {settings.get('battery_type') or 'unknown'}  "
-                    f"Boost {_fmt(settings.get('boost_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
+                    f"Limit {_measure(settings.get('max_charging_current_a'), 'A', 1) or '--A'}  "
+                    f"Absorb {_fmt(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                     f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
-                    f"LVD {_fmt(settings.get('low_voltage_disconnect_v'), 1)}V"
+                    f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V"
                 )
             lines.append(_row("Charge Settings", value))
     return lines
@@ -479,6 +479,13 @@ def _minutes_text(minutes) -> str:
         return f"{float(minutes):g}m"
     except (TypeError, ValueError):
         return "--"
+
+
+def _first_present(mapping: dict, *keys: str):
+    for key in keys:
+        if mapping.get(key) is not None:
+            return mapping.get(key)
+    return None
 
 
 def _row(label: str, value: str) -> str:

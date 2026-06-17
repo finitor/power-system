@@ -279,11 +279,17 @@ def _charge_settings_line(settings: ClassicChargeSettings) -> str:
 def _epever_charge_settings_line(settings: EpeverChargeSettings) -> str:
     return _row(
         "Charge Settings",
-        f"Type {settings.battery_type}  "
-        f"Boost {settings.boost_voltage_v:.1f}V t={_minutes_text(settings.boost_time_minutes)}  "
+        f"Limit {_current_text(settings.max_charging_current_a)}  "
+        f"Absorb {settings.boost_voltage_v:.1f}V t={_minutes_text(settings.boost_time_minutes)}  "
         f"Float {settings.float_voltage_v:.1f}V  "
-        f"LVD {settings.low_voltage_disconnect_v:.1f}V",
+        f"EQ {settings.equalize_voltage_v:.1f}V",
     )
+
+
+def _current_text(current_a: int | float | None) -> str:
+    if current_a is None:
+        return "--A"
+    return f"{current_a:.1f}A"
 
 
 def _minutes_text(minutes: int | float | None) -> str:

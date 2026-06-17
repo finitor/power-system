@@ -85,7 +85,9 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                         "battery_type": "User",
                         "boost_voltage_v": 54.7,
                         "absorb_time_minutes": 120,
+                        "equalize_voltage_v": 54.7,
                         "float_voltage_v": 53.6,
+                        "max_charging_current_a": 80.0,
                         "low_voltage_disconnect_v": 49.7,
                     },
                 },
@@ -132,7 +134,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         # EPEver), and no static "Rated" line.
         self.assertIn("Production Today      0.1kWh", rendered)
         self.assertNotIn("Rated", rendered)
-        self.assertIn("Charge Settings       Type User  Boost 54.7V t=120m  Float 53.6V  LVD 49.7V", rendered)
+        self.assertIn("Charge Settings       Limit 80.0A  Absorb 54.7V t=120m  Float 53.6V  EQ 54.7V", rendered)
         self.assertIn("\n\nInverter/Charger\n", rendered)
         self.assertIn("DC                    53.2V  4A  213W", rendered)
         self.assertIn("AC Output             120V  1A  60.0Hz", rendered)

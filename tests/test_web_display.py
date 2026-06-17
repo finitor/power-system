@@ -45,6 +45,7 @@ class FakeControlSupervisor:
         self.time_calls = []
         self.charge_calls = []
         self.last_boost_reconnect_v = 53.6
+        self.last_boost_v = 54.7
         self.last_current_a = None
 
     def read_snapshot(self):
@@ -65,8 +66,9 @@ class FakeControlSupervisor:
     def write_epever_charge_voltages(self, **kwargs):
         self.voltage_calls.append(kwargs)
         self.last_boost_reconnect_v = kwargs.get("boost_reconnect_v", self.last_boost_reconnect_v)
+        self.last_boost_v = kwargs.get("boost_v", self.last_boost_v)
         return make_epever_settings(
-            boost_voltage_v=kwargs.get("boost_v", 54.7),
+            boost_voltage_v=self.last_boost_v,
             boost_reconnect_voltage_v=self.last_boost_reconnect_v,
         )
 
@@ -74,6 +76,7 @@ class FakeControlSupervisor:
         self.current_calls.append(current_a)
         self.last_current_a = current_a
         return make_epever_settings(
+            boost_voltage_v=self.last_boost_v,
             boost_reconnect_voltage_v=self.last_boost_reconnect_v,
             max_charging_current_a=current_a,
         )
@@ -81,6 +84,7 @@ class FakeControlSupervisor:
     def write_epever_charge_times(self, **kwargs):
         self.time_calls.append(kwargs)
         return make_epever_settings(
+            boost_voltage_v=self.last_boost_v,
             boost_reconnect_voltage_v=self.last_boost_reconnect_v,
             max_charging_current_a=self.last_current_a,
             boost_time_minutes=kwargs.get("boost_time_minutes", 120),
@@ -284,7 +288,10 @@ class WebDisplayTest(unittest.TestCase):
     def test_renders_epever_charge_controller_group(self) -> None:
         snapshot = make_snapshot(
             epever=make_epever_telemetry(generated_today_kwh=0.12),
-            epever_settings=make_epever_settings(),
+            epever_settings=make_epever_settings(
+                equalize_voltage_v=54.7,
+                charging_limit_voltage_v=60.0,
+            ),
         )
 
         html = render_kindle_snapshot(snapshot)
@@ -295,7 +302,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("53.1V  0.0A  0W", html)
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
         self.assertIn("Stage: Resting (No charging)", html)
-        self.assertIn("Type User  Boost 54.7V t=120m  Float 53.6V  LVD 49.7V", html)
+        self.assertIn("Limit 80.0A  Absorb 54.7V t=120m  Float 53.6V  EQ 54.7V", html)
         # cc group mirrors the Classic: daily generation as "Production Today",
         # and no static "Rated" line.
         self.assertIn("Production Today", html)
@@ -605,7 +612,7 @@ class WebDisplayTest(unittest.TestCase):
             supervisor,
             "/api/v1/control/epever/charge-settings",
             {
-                "boost_voltage_v": 55.6,
+                "absorb_voltage_v": 55.6,
                 "equalize_voltage_v": 55.6,
                 "bulk_recovery_voltage_v": 54.9,
                 "absorb_time_minutes": 90,
@@ -623,6 +630,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(supervisor.current_calls, [80.0])
         self.assertEqual(supervisor.time_calls, [{"boost_time_minutes": 90}])
         self.assertEqual(payload["settings"]["bulk_recovery_voltage_v"], 54.9)
+        self.assertEqual(payload["settings"]["absorb_voltage_v"], 55.6)
         self.assertEqual(payload["settings"]["absorb_time_minutes"], 90)
         self.assertEqual(payload["settings"]["max_charging_current_a"], 80.0)
 
