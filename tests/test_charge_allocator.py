@@ -67,6 +67,42 @@ class ChargeAllocatorTest(unittest.TestCase):
         self.assertEqual(decision.targets["classic"].target_current_a, 20.0)
         self.assertEqual(decision.targets["epever"].target_current_a, 30.0)
 
+    def test_unconstrained_when_combined_max_within_ccl_pins_to_max(self) -> None:
+        # Σ(max) = 200 <= CCL 200: the chargers can't collectively reach the
+        # battery limit, so impose nothing -- each pinned to its own max, no
+        # reserve, no apportionment.
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=200.0,
+            charge_enabled=True,
+            battery_current_a=5.0,
+            load_current_a=4.0,
+            chargers=[
+                _charger("classic", actual=2.0, limit=80.0, max_=100.0),
+                _charger("epever", actual=1.0, limit=99.0, max_=100.0),
+            ],
+        )
+
+        self.assertEqual(decision.reason, "unconstrained")
+        self.assertEqual(decision.targets["classic"].target_current_a, 100.0)
+        self.assertEqual(decision.targets["epever"].target_current_a, 100.0)
+
+    def test_constrained_once_ccl_drops_below_combined_max(self) -> None:
+        # CCL 150 < Σ(max) 200: now it must apportion the headroom.
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=150.0,
+            charge_enabled=True,
+            battery_current_a=5.0,
+            load_current_a=0.0,
+            chargers=[
+                _charger("classic", actual=50.0, limit=100.0, max_=100.0),
+                _charger("epever", actual=50.0, limit=100.0, max_=100.0),
+            ],
+        )
+
+        self.assertEqual(decision.reason, "normal_load_allowance")
+        self.assertEqual(decision.budget_a, 145.0)  # 150 - 5 reserve
+        self.assertLess(decision.targets["classic"].target_current_a, 100.0)
+
     def test_charge_ceiling_below_ccl_caps_the_budget(self) -> None:
         decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=40.0,

@@ -142,7 +142,9 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Status                Inverting", rendered)
         self.assertIn("Charge Settings       Absorb 54.4V 3.0h  Float 54.4V  Shore 30A", rendered)
         self.assertNotIn("Temps", rendered)
-        self.assertIn("Battery terminal      17.0C", rendered)
+        # "Battery terminal" and "INV battery" are suppressed (2026-06-17).
+        self.assertNotIn("Battery terminal", rendered)
+        self.assertNotIn("INV battery", rendered)
         self.assertIn("CC0 FET               31.0C", rendered)
         self.assertNotIn("CC1 battery", rendered)
         self.assertNotIn("CC1 device", rendered)

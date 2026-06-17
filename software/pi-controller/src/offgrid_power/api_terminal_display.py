@@ -480,17 +480,17 @@ def _temperature_lines(payload: dict) -> list[str]:
     cell_max = battery.get("cell_temperature_max_c")
     if cell_min is not None and cell_max is not None:
         lines.append(_row("Battery cells", f"{_fmt(cell_min, 1)}-{_fmt(cell_max, 1)}C"))
+    # Suppressed temperature rows (hidden from the display by request 2026-06-17;
+    # the data is still in the snapshot, so restore by re-adding these:)
+    #   - "Battery terminal"  <- solar[0].temperatures_c["battery"]  (CC0 battery sensor)
+    #   - "INV battery"        <- inverter["battery_temp_c"]
     for index, controller in enumerate(solar):
         temps = controller.get("temperatures_c") or {}
         prefix = f"CC{index}"
-        if index == 0 and temps.get("battery") is not None:
-            lines.append(_row("Battery terminal", f"{_fmt(temps.get('battery'), 1)}C"))
         if temps.get("fet") is not None:
             lines.append(_row(f"{prefix} FET", f"{_fmt(temps.get('fet'), 1)}C"))
         if temps.get("pcb") is not None:
             lines.append(_row(f"{prefix} PCB", f"{_fmt(temps.get('pcb'), 1)}C"))
-    if inverter.get("battery_temp_c") is not None:
-        lines.append(_row("INV battery", f"{_fmt(inverter.get('battery_temp_c'), 0)}C"))
     if inverter.get("transformer_temp_c") is not None:
         lines.append(_row("INV transformer", f"{_fmt(inverter.get('transformer_temp_c'), 0)}C"))
     if inverter.get("fet_temp_c") is not None:

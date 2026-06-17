@@ -127,6 +127,29 @@ class ChargeCurrentAllocator:
                     charge_ceiling_a=charge_ceiling_a,
                 )
 
+        # If every eligible charger at full output still couldn't reach the
+        # battery limit, the allocator is not the binding constraint (sunlight
+        # is). Impose nothing: pin each to its own max, don't apportion, don't
+        # subtract reserve. This avoids needlessly throttling -- and needlessly
+        # writing -- through the abundant-headroom part of the day.
+        eligible_max_a = sum(
+            charger.max_current_a
+            for charger in chargers
+            if charger.online and charger.enabled and charger.active and charger.max_current_a > 0
+        )
+        if eligible_max_a <= effective_ccl_a:
+            targets, weight_basis = self._allocate_budget(chargers, eligible_max_a, "unconstrained")
+            return ChargeAllocationDecision(
+                budget_a=round(eligible_max_a, 1),
+                bms_ccl_a=bms_ccl_a,
+                load_allowance_a=round(max(load_current_a or 0.0, 0.0), 1),
+                battery_charge_a=max(battery_current_a, 0.0),
+                reason="unconstrained",
+                targets=targets,
+                weight_basis=weight_basis,
+                charge_ceiling_a=charge_ceiling_a,
+            )
+
         load_allowance_a = max(load_current_a or 0.0, 0.0)
         budget_a = max(0.0, effective_ccl_a + load_allowance_a - self.config.reserve_a)
 
