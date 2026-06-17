@@ -17,7 +17,14 @@ the generic EPEver/Tracer map. Confirmed live during the array-1 dry-run:
   `status[2]`. This is why the EPEver showed a phantom "Resting" indefinitely.
 - **Energy block is big-endian by word** (opposite the live `0x3100` registers),
   so decode generation counters **high-word-first**:
-  - `0x330C/0x330D` = **generated today** (RTC-day-anchored, resets at device midnight).
+  - `0x330C/0x330D` = **generated today** — but **does NOT reset at local midnight**
+    on this unit. Logged across 2026-06-17 00:00 with the RTC verified correct, it
+    held flat (0.29) and climbed monotonically 0.21→0.86 over 24 h with no nightly
+    reset. A large RTC *date jump* did reset it (see RTC note), but an ordinary
+    midnight rollover does not — so it's not a usable daily bucket (hence the
+    lifetime-counter derivation). Conversely, since it never resets on normal
+    midnights, **any downward step in this counter is anomalous** and a likely
+    dead-backup power-cycle signature — usable as a passive reboot tripwire.
   - `0x3310/0x3311` = **lifetime generated total** (monotonic — survived the RTC
     date jump that reset today/month, and keeps climbing). This is the counter the
     windowed-consumption / autonomy calc differences.

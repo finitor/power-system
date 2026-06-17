@@ -417,8 +417,11 @@ def decode_telemetry(
     charging_code = (status_raw >> 2) & 0x03
     # Generated energy today: 0x330C/0x330D (indices 12/13 from 0x3300), decoded
     # high-word-first (TEP word order is opposite the live registers). Provisional
-    # scaling (/100 = kWh); validate against the local-midnight rollover now that
-    # the device RTC is set. The reset *event* is observable regardless of scale.
+    # scaling (/100 = kWh). NB: empirically this does NOT reset at local midnight
+    # even with the RTC correct (logged monotonic across 2026-06-17 00:00), so it
+    # is not a reliable daily bucket -- daily production is derived from the
+    # lifetime total instead. A downward step here is anomalous (likely a
+    # dead-backup date revert on power loss).
     generated_today_kwh = None
     if len(energy) >= 14:
         generated_today_kwh = ((energy[12] << 16) + energy[13]) / 100
