@@ -375,6 +375,44 @@ the ceiling-vs-BMS gap (engages where the BMS does, not 4× sooner), and the
 priority allocation ensures whatever current the ceiling *does* allow flows to
 the shade-advantaged array first rather than flooring it.
 
+### North star — a self-calibrating taper (aspirational, 2026-06-17)
+
+Hand-set thresholds go stale: as cells age and balance/capacity/season drift,
+today's good constants drift out of tune. The long-term aim is a taper that
+**tunes its own thresholds from observed behavior** (cell voltages, SOC, BMS
+clamping) across many days, optimizing to *reliably reach and hold full charge*
+(CV-termination) under diverse irradiance, **without ever stressing cells**
+(hard constraint, never a soft trade for harvest). Most of this needs no ML:
+
+- **The BMS is already the calibrated teacher.** Its CCL walk-down is a
+  cell-aware self-calibrating taper — the ground truth to approximate. The
+  highest-leverage adaptive move is to *shadow* it with a small smooth lead, not
+  learn a taper from scratch.
+- **Fast inner loop — track, don't lead.** Online-estimate the cell voltage at
+  which the BMS begins walking CCL down; set the taper onset just below it; drive
+  the ceiling-vs-BMS gap to a small target. ~1 learned parameter, interpretable,
+  safe — captures most of the win.
+- **Slow outer loop — daily completion ratchet.** Per day, record whether
+  CV-termination was reached and whether current was *ceiling*-limited while
+  cells were below the knee. Non-completing + ceiling-limited → loosen onset a
+  notch; any cell neared the stop → tighten. Bounded steps, hard cell-safety
+  clamp. Learns over days with a simple integral controller, no ML.
+- **Data-driven delta response.** Learn the delta beyond which a cell actually
+  runs toward the stop; set the ease threshold from that (the 50/100 mV operator
+  intuition becomes a measured number).
+- **Full optimization (far end).** Treat the threshold vector as params, daily
+  reward = reached-full + harvest − cell-stress penalty, optimize over many days.
+  Hard parts to respect: **non-stationarity** (aging/season → continual, not
+  one-shot); **safe exploration** (can't try aggressive settings on a real pack →
+  ratchet only in the safe direction, or learn a cell model and explore offline
+  in sim); **confounded sparse signal** (one day = one weather-confounded sample
+  → slow convergence, hard credit assignment).
+- **Substrate already exists.** The SQLite telemetry already logs per-cycle cell
+  voltages, SOC, BMS CCL, and allocator decisions — that is the training corpus.
+  Pragmatic order: ship the cell-voltage taper → add the track-the-BMS inner loop
+  → run the daily ratchet → keep logging until the corpus supports an offline
+  cell model to optimize against.
+
 ### Field findings (2026-06-17)
 
 - **Disable-on-lost-split bug (fixed).** The allocator was switching a charger's
