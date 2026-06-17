@@ -237,9 +237,10 @@ class ChargeAllocatorTest(unittest.TestCase):
         self.assertAlmostEqual(decision.targets["classic"].target_current_a or 0.0, 30.0)
         self.assertAlmostEqual(decision.targets["epever"].target_current_a or 0.0, 10.0)
 
-    def test_sub_floor_target_disables_instead_of_unachievable_limit(self) -> None:
-        # epever's PV share rounds below its 1 A register floor: command off, not
-        # a limit it cannot hold. classic keeps the budget.
+    def test_sub_floor_apportionment_share_floors_to_min_current_not_disable(self) -> None:
+        # epever's PV share rounds below its 1 A register floor. It is eligible
+        # and producing, so it must keep charging at min_current, NOT be switched
+        # off -- disabling on a lost split flaps the coil (the 2026-06-17 bug).
         decision = ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)).decide(
             bms_ccl_a=20.0,
             charge_enabled=True,
@@ -252,10 +253,20 @@ class ChargeAllocatorTest(unittest.TestCase):
         )
 
         epever = decision.targets["epever"]
-        self.assertTrue(epever.disable)
-        self.assertEqual(epever.target_current_a, 0.0)
-        self.assertTrue(epever.should_write)  # was at 10 A, must be taken off
-        self.assertGreater(decision.targets["classic"].target_current_a or 0.0, 19.0)
+        self.assertFalse(epever.disable)
+        self.assertEqual(epever.target_current_a, 1.0)  # floored to min_current
+
+    def test_disable_still_fires_on_a_genuine_stop(self) -> None:
+        # charge disabled -> zero_targets -> the coil is commanded off (the
+        # apportionment relaxation must not defeat real stops).
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=False,
+            battery_current_a=0.0,
+            load_current_a=0.0,
+            chargers=[_charger("epever", actual=0.0, limit=80.0, max_=100.0, min_current_a=1.0)],
+        )
+        self.assertTrue(decision.targets["epever"].disable)
 
     def test_offline_charger_gets_no_target(self) -> None:
         decision = ChargeCurrentAllocator().decide(

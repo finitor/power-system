@@ -204,7 +204,11 @@ class ChargeCurrentAllocator:
             if charger.name not in eligible_names:
                 targets[charger.name] = self._target(charger, 0.0, "charger unavailable")
                 continue
-            targets[charger.name] = self._target(charger, allocations.get(charger.name, 0.0), reason)
+            # Eligible apportionment: never disable here -- a producing charger
+            # that wins only a sub-floor share keeps charging at min_current.
+            targets[charger.name] = self._target(
+                charger, allocations.get(charger.name, 0.0), reason, allow_disable=False
+            )
         return targets, weight_basis
 
     def _weights(
@@ -240,22 +244,27 @@ class ChargeCurrentAllocator:
         charger: ChargerAllocationInput,
         target_current_a: float,
         reason: str,
+        *,
+        allow_disable: bool = True,
     ) -> ChargerAllocationTarget:
         target = round(max(0.0, min(target_current_a, charger.max_current_a)), 1)
-        # A target below the charger's representable floor (or zero) can't be a
-        # limit write -- command off instead, and let the actuator translate.
-        disable = target <= 0.0 or target < charger.min_current_a
-        if disable:
-            target = 0.0
-            # When we intend off, write if the charger might still be on (or its
-            # state is unknown); the actuator is idempotent if already off.
+        # Only a genuine stop (charge disabled, CCL/ceiling <= 0, latch, safety --
+        # the callers that pass allow_disable) commands the charger OFF. During
+        # apportionment an eligible, producing charger that merely loses the split
+        # keeps charging at its floor instead of being switched off -- otherwise a
+        # controller whose PV-power weight dips gets its coil flapped on/off.
+        if allow_disable and (target <= 0.0 or target < charger.min_current_a):
+            # write off if the charger might still be on (or its state is unknown);
+            # the actuator is idempotent if already off.
             should_write = charger.current_limit_a is None or charger.current_limit_a > 0.0
-        else:
-            should_write = (
-                charger.current_limit_a is not None
-                and abs(charger.current_limit_a - target) >= self.config.min_write_delta_a
-            )
-        return ChargerAllocationTarget(target, should_write, reason, disable)
+            return ChargerAllocationTarget(0.0, should_write, reason, True)
+        if target < charger.min_current_a:
+            target = charger.min_current_a
+        should_write = (
+            charger.current_limit_a is not None
+            and abs(charger.current_limit_a - target) >= self.config.min_write_delta_a
+        )
+        return ChargerAllocationTarget(target, should_write, reason, False)
 
     def _zero_targets(
         self,
