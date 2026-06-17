@@ -348,6 +348,33 @@ risk is *cell overvoltage*, so taper on the signals that measure it directly.
   CCL down off its own cell monitoring, so this layers a finer/earlier
   cell-voltage taper on top, with SOC out of the loop.
 
+**Validation & how to observe (decided 2026-06-17 — leave conservative, watch first).**
+Rather than loosen the ceiling pre-emptively, observe the live knee dynamics and
+let them drive the re-tune. Use the **BMS-CCL-vs-ceiling gap** as the headline
+diagnostic — it directly measures how much the ceiling is leading (over-tapering
+relative to) the BMS's own cell-aware walk-down:
+
+- **Both delta climbing toward ~50 mV *and* the BMS CCL walking down off 200 A**
+  → the ceiling is landing near the genuine knee; it's "not insanely wasteful,"
+  just possibly engaging too early / too steeply and misbalancing across arrays
+  (the issue is *degree*, not *kind*). Observed 2026-06-17: the BMS walked to
+  **40 A** while the ceiling held ~9 A — a ~4× spread, consistent with
+  "too early/too steep," and confirming the bank really is in the knee (not a
+  phantom SOC/pack-voltage trip).
+- **Delta staying flat in the 20s mV *and* the BMS CCL never leaving 200 A** →
+  the ceiling is tapering on phantom (SOC/pack-voltage) risk and leaving harvest
+  on the table — the clear case for the cell-voltage re-tune.
+
+Caveat when interpreting the observation: at the throttled current the ceiling
+imposes (~9 A), there is little IR push, so the cells can creep up slowly and
+**plateau below where the BMS would clamp** — i.e., the conservative ceiling can
+partly *suppress* the very dynamics being observed. (Less of a concern once the
+BMS has already walked down, as on 2026-06-17, which shows the bank reached the
+knee anyway.) So the two refined targets stand: the cell-voltage re-tune closes
+the ceiling-vs-BMS gap (engages where the BMS does, not 4× sooner), and the
+priority allocation ensures whatever current the ceiling *does* allow flows to
+the shade-advantaged array first rather than flooring it.
+
 ### Field findings (2026-06-17)
 
 - **Disable-on-lost-split bug (fixed).** The allocator was switching a charger's
