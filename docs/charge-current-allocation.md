@@ -420,6 +420,16 @@ controller works or *rests* is decided one layer up, in the **voltage** layer,
 which the allocator does not touch — which is why current-priority alone can't
 fix it.
 
+> **Live experiment in progress (2026-06-17 17:16):** EPEver setpoints bumped to
+> **Classic + 0.2 V** (boost/equalize 56.4, float 54.9) via
+> `sync-from-classic` to test whether a setpoint *lead* wakes it. Couldn't be
+> evaluated same-day — applied too late, the shaded array was already at 0 W
+> (bus 55.73 < boost 56.4, coil on, allocator allowing 1 A, but no PV to harvest;
+> bank effectively full at max cell 3.501 V / 94% SOC). Setpoints persist and are
+> safe to leave (3.525 V/cell < 3.55 stop, BMS guards). **To validate:** next
+> productive window with bus < 56.4 — does the EPEver carry current while the
+> *Classic* eases to rest? Revert with `charge-sync-epever.sh 0`.
+
 - The EPEver has **no battery comms** — it knows only the voltage at its own
   terminals, and its charge stages (Bulk/Boost/Float/**Resting**) are driven
   purely by that voltage vs its internal setpoints. "Battery looks full" *means*
