@@ -413,6 +413,36 @@ clamping) across many days, optimizing to *reliably reach and hold full charge*
   → run the daily ratchet → keep logging until the corpus supports an offline
   cell model to optimize against.
 
+### The voltage race — why the EPEver rests while the Classic works (2026-06-17)
+
+The allocator controls the **current** layer (per-charger limits). Whether a
+controller works or *rests* is decided one layer up, in the **voltage** layer,
+which the allocator does not touch — which is why current-priority alone can't
+fix it.
+
+- The EPEver has **no battery comms** — it knows only the voltage at its own
+  terminals, and its charge stages (Bulk/Boost/Float/**Resting**) are driven
+  purely by that voltage vs its internal setpoints. "Battery looks full" *means*
+  "terminal voltage reached my boost/float target" — it has no SOC.
+- Two voltage-source chargers on one bus is a **race the higher setpoint wins**:
+  whichever controller has the higher absorb/boost target pushes the bus up to
+  *its* target; the lower-target controller sees its own target already met and
+  drops to float/rest. So if the Classic's absorb ≥ the EPEver's boost, the
+  Classic holds the bus and the **EPEver rests** — not because it's full or
+  faulty, but because its setpoint isn't the one in charge of the bus. (This is
+  why *tapering the Classic made the EPEver take over* — proof of the mechanism.)
+- "**Eagerly**": the EPEver senses at its own terminals, so the Classic's current
+  adds an IR rise across the shared wiring → the EPEver reads *higher* than true
+  battery voltage and rests even sooner than setpoints alone predict.
+- The allocator then **compounds** it: a resting/idle EPEver gets floored to ~1 A,
+  so even setting the voltage layer aside it's capped out of contributing.
+- **Design implication for the EPEver-priority work:** current-limit priority
+  *alone won't* make the shade-advantaged array do the work — its voltage setpoint
+  keeps sending it to rest regardless of current headroom. Privileging it needs
+  **both** levers: raise the EPEver boost/absorb setpoint *above* the Classic's
+  (`charge-sync-epever.sh`, positive offset) so it leads the bus, **and** give it
+  allocator current-priority. The voltage offset is the more fundamental of the two.
+
 ### Field findings (2026-06-17)
 
 - **Disable-on-lost-split bug (fixed).** The allocator was switching a charger's
