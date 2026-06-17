@@ -420,15 +420,24 @@ controller works or *rests* is decided one layer up, in the **voltage** layer,
 which the allocator does not touch — which is why current-priority alone can't
 fix it.
 
-> **Live experiment in progress (2026-06-17 17:16):** EPEver setpoints bumped to
-> **Classic + 0.2 V** (boost/equalize 56.4, float 54.9) via
-> `sync-from-classic` to test whether a setpoint *lead* wakes it. Couldn't be
-> evaluated same-day — applied too late, the shaded array was already at 0 W
-> (bus 55.73 < boost 56.4, coil on, allocator allowing 1 A, but no PV to harvest;
-> bank effectively full at max cell 3.501 V / 94% SOC). Setpoints persist and are
-> safe to leave (3.525 V/cell < 3.55 stop, BMS guards). **To validate:** next
-> productive window with bus < 56.4 — does the EPEver carry current while the
-> *Classic* eases to rest? Revert with `charge-sync-epever.sh 0`.
+> **Live experiment (2026-06-17 17:16) — corrected the model.** EPEver setpoints
+> bumped to **Classic + 0.2 V** (boost/equalize 56.4, float 54.9) via
+> `sync-from-classic` to test whether a setpoint *lead* wakes it. **Result: the
+> write immediately sent the EPEver to Float** — revealing that boost voltage is
+> the *wrong* lever. The Float→Boost re-entry is gated by the **boost-reconnect /
+> bulk-recovery voltage** (`52.8 V`, ≈3.30 V/cell), not the boost target: with the
+> bus at 55.73 V (≫ 52.8) the EPEver re-evaluated to "full → maintain." This is
+> why it not only rests *eagerly* but **stays rested** — at 94% SOC the bus never
+> dips to 52.8 V in daily cycling, so nothing re-triggers a boost cycle for days.
+> (Also re-explains the earlier "taper the Classic → EPEver takes over": tapering
+> dropped the bus toward the reconnect threshold, which is what woke it.) The
+> 0.2 V boost lead is still useful (defines the target *when* it charges) but
+> insufficient. **Correct lever: raise the boost-reconnect/bulk-recovery voltage**
+> to just under the daily operating bus voltage so it re-bulks daily — with care
+> (set too tight → boost/float chatter at the threshold). `sync-from-classic`
+> only maps absorb/float/equalize, so reconnect is a separate write to add.
+> 56.4 V boost is safe to leave (3.525 V/cell < 3.55 stop, BMS guards); revert
+> with `charge-sync-epever.sh 0`.
 
 - The EPEver has **no battery comms** — it knows only the voltage at its own
   terminals, and its charge stages (Bulk/Boost/Float/**Resting**) are driven
@@ -449,9 +458,12 @@ fix it.
 - **Design implication for the EPEver-priority work:** current-limit priority
   *alone won't* make the shade-advantaged array do the work — its voltage setpoint
   keeps sending it to rest regardless of current headroom. Privileging it needs
-  **both** levers: raise the EPEver boost/absorb setpoint *above* the Classic's
-  (`charge-sync-epever.sh`, positive offset) so it leads the bus, **and** give it
-  allocator current-priority. The voltage offset is the more fundamental of the two.
+  **both** levers: get the EPEver to *lead the bus* **and** give it allocator
+  current-priority. For the voltage lead, the operative knob is the
+  **boost-reconnect/bulk-recovery voltage** (so it re-enters a boost cycle in
+  daily operation — see the experiment note above), with the boost-target offset
+  (`charge-sync-epever.sh`) secondary. The voltage lever is the more fundamental
+  of the two.
 
 ### Field findings (2026-06-17)
 
