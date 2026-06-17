@@ -172,7 +172,13 @@ class MagnumClient:
     Uses asyncio.run() internally; safe to call from synchronous code.
     """
 
-    def __init__(self, device: str, max_cycles: int = 10) -> None:
+    # 20 cycles (was 10): tolerate more missed reads before logging a failure.
+    # Magnum read failures rose sharply once the EPEver PV was connected (a
+    # physical/RS485 issue, not charging-current-correlated -- see
+    # engineering-plan item 12); this just quiets the warnings until the wiring
+    # is investigated. A failing read can now take up to ~max_cycles*0.5 s, but
+    # it runs on the Magnum actor thread so it never stalls the main poll tick.
+    def __init__(self, device: str, max_cycles: int = 20) -> None:
         self._device = device
         self._max_cycles = max_cycles
 

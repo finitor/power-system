@@ -160,6 +160,31 @@ may not be feasible without a different Magnum data source (BMK/ME-RC).
 Low priority: generator charging is human-attended and infrequent, so the Load
 figures are only wrong during those windows. Raised 2026-06-17.
 
+## 12. Magnum RS485 read failures since EPEver PV connection — OPEN (physical)
+
+Magnum "no valid inverter packet seen" read failures rose sharply starting
+**exactly when the EPEver array was connected to PV** (2026-06-16), and have
+persisted since. The supervisor serves last-good telemetry through them, so it's
+WARNING-flapping and gappy reads, not lost state — but it's real and new.
+
+Ruled out — **not** correlated with EPEver *charging output*. A full day of data
+(journal failure timestamps vs stored EPEver current/PV power, by hour):
+failures are present around the clock and are actually **highest overnight when
+the EPEver is fully idle (0 W)** and not elevated during peak charging
+(217 W → 44/hr vs 0 W overnight → 50-67/hr). 85% of failures occur with the
+EPEver at <=1 A. So it is **not** charging-current/switching noise.
+
+But the onset is tied to the *physical* PV attachment, so the likely cause is
+electrical/coupling from the array wiring or grounding regardless of current
+(the strings/feeders as an antenna or a shared-ground path), or simply that
+recabling for the EPEver disturbed the Magnum RS485 run/adapter. Avenues to try
+(operator, on site): reroute/separate the Magnum RS485 cabling from the PV
+runs, check grounding, and/or swap the Magnum USB-RS485 adapter (the SH-U11H).
+
+Mitigation already in place: `MagnumClient.max_cycles` raised 10 -> 20 so a read
+tolerates more missed cycles before warning (quiets the noise; not a fix).
+Raised 2026-06-17.
+
 ## Done
 
 - Item 1 (deploy.sh, watcher retired): e4444fc, a6f506f — verified with a
