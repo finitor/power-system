@@ -438,6 +438,19 @@ fix it.
 > only maps absorb/float/equalize, so reconnect is a separate write to add.
 > 56.4 V boost is safe to leave (3.525 V/cell < 3.55 stop, BMS guards); revert
 > with `charge-sync-epever.sh 0`.
+>
+> **VALIDATED (2026-06-17 ~17:30).** Raised the reconnect to **54.5 V** (just
+> under float 54.9) via `/api/v1/control/epever/charge-settings`
+> (`bulk_recovery_voltage_v`), then released the bus by lowering the Classic to
+> absorb 54.0 / float 53.5. As the bus relaxed past 54.5 (55.80→55.33→54.96) the
+> EPEver re-entered boost and began harvesting — **0 → 1.4 → 2.3 A, PV 0 → 126 W**
+> — proving (a) the reconnect voltage is the wake lever and (b) the array had sun
+> all along (idle only because latched in Float). EPEver now leads, Classic at
+> 0 A; state survives a supervisor restart (setpoints live in the controller
+> registers). The allocator still caps the EPEver near its floor — full-current
+> leadership is the separate priority lever. **Current rig is experimental:**
+> Classic parked at 54.0/53.5, EPEver at +0.2 V boost & 54.5 V reconnect — restore
+> the Classic (56.2/54.7) to resume normal dual-charger operation.
 
 - The EPEver has **no battery comms** — it knows only the voltage at its own
   terminals, and its charge stages (Bulk/Boost/Float/**Resting**) are driven
