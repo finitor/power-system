@@ -314,6 +314,29 @@ Phases:
    `charge_ceiling.py` (top-knee taper + high-cell stop + cell-delta stop +
    full-charge latch), combined with the BMS CCL by `min()`. Thresholds are
    inherited from the taper and still need re-tuning (Phase 2).
+### Ceiling signal redesign — taper on cells, not SOC (design direction 2026-06-17)
+
+The ceiling today tapers on an SOC ramp + a pack-voltage ramp. Reconsider: the
+risk is *cell overvoltage*, so taper on the signals that measure it directly.
+
+- **Drop the SOC ramp.** SOC is a coulomb-counted/voltage-corrected estimate and
+  this pack has never been cycled to the rails, so its capacity self-assessment
+  is a guess — the weakest input for deciding when to back off.
+- **Demote pack voltage too** — it's balance-blind (`N × avg cell`), so it
+  under-reports the lead cell under imbalance. The Cubix gives max cell directly.
+- **Taper on max cell voltage, pulled earlier by max–min delta.** This is the
+  actual risk, measured, and is a sharp/live signal in the knee (where we taper)
+  even though LFP voltage is flat mid-range (where we don't). Wide delta = lead
+  cell running away → back off sooner and give the balancer time.
+- **Replace the SOC≥100 full-charge latch with CV-termination**: max cell at the
+  CV target *and* charge current tapered below a small fraction — more robust and
+  the textbook "full" definition.
+- Tune thresholds to *under-charge* (IR-inflated) cell voltage, not rested OCV;
+  keep a conservative fallback when per-cell readings are missing; smooth the
+  cell-voltage input (twitchy under fluctuating current). The BMS already walks
+  CCL down off its own cell monitoring, so this layers a finer/earlier
+  cell-voltage taper on top, with SOC out of the loop.
+
 ### Field findings (2026-06-17)
 
 - **Disable-on-lost-split bug (fixed).** The allocator was switching a charger's
