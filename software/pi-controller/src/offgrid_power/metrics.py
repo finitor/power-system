@@ -195,6 +195,36 @@ class MetricRecorder:
 
         return self._read(query, None)
 
+    def midnight_metric_value(self, source: str, metric: str, day: date) -> float | None:
+        """First value of source/metric recorded within 5 minutes of local
+        midnight on ``day`` -- used to difference a monotonic lifetime counter
+        into a since-midnight delta."""
+        store = self._active_path()
+        if store is None or not store.exists():
+            return None
+
+        def query(connection: sqlite3.Connection) -> float | None:
+            rows = connection.execute(
+                """
+                SELECT captured_at, value
+                FROM samples
+                WHERE source = ?
+                  AND metric = ?
+                  AND value IS NOT NULL
+                  AND captured_at LIKE ?
+                ORDER BY captured_at
+                LIMIT 20
+                """,
+                (source, metric, f"{day.isoformat()}T00:0%"),
+            ).fetchall()
+            for captured_at_text, value in rows:
+                captured_at = datetime.fromisoformat(captured_at_text)
+                if captured_at.minute * 60 + captured_at.second <= 300:
+                    return value
+            return None
+
+        return self._read(query, None)
+
     def _should_record_snapshot(self, captured_at: datetime) -> bool:
         if self._last_snapshot_recorded_at is None:
             return True

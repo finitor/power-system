@@ -346,8 +346,13 @@ def main() -> int:
                     )
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
-            snapshot_cache.set(snapshot, load_summary, allocation=allocation_detail_payload)
+            # Record the raw device telemetry first (keeps the raw EPEver
+            # generated_today register in the store for diagnosis), then cache a
+            # display copy whose EPEver "today" is derived from the monotonic
+            # lifetime total -- the device's own daily field doesn't reset.
             record_metrics(metric_recorder, snapshot, load_summary)
+            display_snapshot = _with_derived_epever_today(snapshot, metric_recorder)
+            snapshot_cache.set(display_snapshot, load_summary, allocation=allocation_detail_payload)
             record_weather_metrics(metric_recorder, weather_service)
             record_inverter_event(metric_recorder, inverter_event_tracker, snapshot)
             next_read = time.monotonic() + args.interval
@@ -702,6 +707,25 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
             )
         )
     return chargers
+
+
+def _with_derived_epever_today(snapshot, recorder: MetricRecorder | None):
+    """Return a display copy of the snapshot whose EPEver generated-today is
+    derived from its monotonic lifetime total minus the total at local midnight.
+
+    The EPEver's own daily register does not reset reliably (RTC didn't stick),
+    so the field is replaced for display/API while the raw register is still
+    recorded. Returns the snapshot unchanged when the lifetime total or the
+    midnight baseline is unavailable (e.g. supervisor down over midnight)."""
+    epever = snapshot.epever
+    if epever is None or epever.generated_total_kwh is None or recorder is None:
+        return snapshot
+    day = snapshot.captured_at.astimezone().date()
+    midnight_total = recorder.midnight_metric_value("epever.1", "generated_total", day)
+    if midnight_total is None:
+        return snapshot
+    derived = round(max(0.0, epever.generated_total_kwh - midnight_total), 2)
+    return dataclasses.replace(snapshot, epever=dataclasses.replace(epever, generated_today_kwh=derived))
 
 
 def _can_charge(pv_voltage_v: float | None, bus_voltage_v: float | None) -> bool:

@@ -17,6 +17,7 @@ from offgrid_power.cli.supervisor_display import (  # noqa: E402
     _can_charge,
     _config_from_env,
     _pv_power_w,
+    _with_derived_epever_today,
 )
 from offgrid_power.charge_ceiling import ChargeCeilingConfig  # noqa: E402
 from offgrid_power.charge_allocator import ChargeCurrentAllocator, ChargerAllocationInput  # noqa: E402
@@ -154,6 +155,33 @@ class ConfigFromEnvTest(unittest.TestCase):
         finally:
             del os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"]
         self.assertEqual(config.top_voltage_v, 54.8)  # falls back to default
+
+
+class _FakeMidnightRecorder:
+    def __init__(self, value):
+        self.value = value
+
+    def midnight_metric_value(self, source, metric, day):
+        return self.value
+
+
+class DerivedEpeverTodayTest(unittest.TestCase):
+    def test_derives_today_from_lifetime_total_minus_midnight(self) -> None:
+        snap = make_snapshot(epever=make_epever_telemetry(generated_total_kwh=3.52))
+        out = _with_derived_epever_today(snap, _FakeMidnightRecorder(3.51))
+        self.assertAlmostEqual(out.epever.generated_today_kwh, 0.01)
+
+    def test_unchanged_without_midnight_baseline(self) -> None:
+        snap = make_snapshot(
+            epever=make_epever_telemetry(generated_total_kwh=3.52, generated_today_kwh=9.9)
+        )
+        out = _with_derived_epever_today(snap, _FakeMidnightRecorder(None))
+        self.assertIs(out, snap)
+
+    def test_unchanged_without_lifetime_total(self) -> None:
+        snap = make_snapshot(epever=make_epever_telemetry(generated_total_kwh=None))
+        out = _with_derived_epever_today(snap, _FakeMidnightRecorder(3.0))
+        self.assertIs(out, snap)
 
 
 class EligibilityTest(unittest.TestCase):
