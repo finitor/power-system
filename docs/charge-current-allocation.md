@@ -314,9 +314,20 @@ Phases:
    `charge_ceiling.py` (top-knee taper + high-cell stop + cell-delta stop +
    full-charge latch), combined with the BMS CCL by `min()`. Thresholds are
    inherited from the taper and still need re-tuning (Phase 2).
-2. **Validate / re-tune.** ⏳ In progress — collect a full charge cycle of live
-   traces and re-tune the `CHARGE_CEILING_*` thresholds for the 55–56 V operating
-   point (they currently over-clamp near full).
+2. **Validate / re-tune.** ⏳ In progress. First re-tune applied 2026-06-17 from
+   one charge cycle of live traces (journal failure analysis + stored SOC/V/I):
+   the bank charges **53–56.5 V (median 55.1)**, so the old voltage thresholds
+   (53.6/54.4/54.8) sat *below* the operating point and pinned the ceiling to
+   4 A through most of absorption — **18% of charging samples were over-clamped**,
+   throttling a bank taking up to ~13 A at 88–95% SOC down to ~4 A. The SOC ramp
+   was fine; only the voltage ramp was wrong. Shifted via env (no deploy) to
+   bracket the real absorb range:
+   `CHARGE_CEILING_BULK_VOLTAGE_V=55.0`, `RAMP2_VOLTAGE_V=55.8`,
+   `TOP_VOLTAGE_V=56.4`, `FULL_RESET_VOLTAGE_V=54.5`. These live in
+   `/etc/offgrid-power.env` (not git); **promote to the `ChargeCeilingConfig`
+   code defaults once validated over more cycles.** Still to watch: a full
+   charge to the 55–56 V absorb plateau under the new thresholds (the re-tune
+   day started at 77% SOC / 53 V, below the knee).
 3. **Make the allocator the sole live current writer.** ✅ Done — `--charge-allocation`
    live path writes the Classic limit and the EPEver register/coil; the supervisor
    refuses to start with both it and the live taper (mutual exclusion).
