@@ -9,7 +9,11 @@ from dataclasses import dataclass
 class ChargeAllocatorConfig:
     reserve_a: float = 5.0
     feedback_tolerance_a: float = 1.0
+    # Sunrise floors so a not-yet-producing charger keeps a share of budget. One
+    # floor per weight basis (watts for PV-power weighting, amps for the output
+    # fallback) -- see ChargeCurrentAllocator._weights.
     min_active_weight_a: float = 1.0
+    min_active_weight_w: float = 10.0
     min_write_delta_a: float = 2.0
 
 
@@ -19,8 +23,21 @@ class ChargerAllocationInput:
     actual_current_a: float
     current_limit_a: float | None
     max_current_a: float
+    # PV input power is the preferred apportionment weight: it reflects how much
+    # the array *could* deliver, independent of the limit we last wrote. Weighting
+    # by throttled output latches an allocation (throttle -> low output -> low
+    # weight -> stays throttled). None falls back to actual output.
+    pv_power_w: float | None = None
+    # Smallest current the charger can actually hold. The EPEver register floors
+    # at 1 A, so a sub-floor target maps to charge-disable rather than a limit
+    # write; the Classic can sit at a true 0 A, so its floor is 0.
+    min_current_a: float = 0.0
     online: bool = True
     enabled: bool = True
+    # "active" means the charger is *able* to charge (PV present, not faulted) --
+    # NOT "is currently sourcing current". The supervisor must not derive this
+    # from present output, or throttling a charger to ~0 would make it ineligible
+    # and it could never be handed budget back.
     active: bool = True
 
 
@@ -29,6 +46,10 @@ class ChargerAllocationTarget:
     target_current_a: float | None
     should_write: bool
     reason: str
+    # True when the charger should be turned off (target below its representable
+    # floor, or zero) rather than current-limited. The actuator layer maps this
+    # to the EPEver charge coil off / a 0 A Classic limit.
+    disable: bool = False
 
 
 @dataclass(frozen=True)
@@ -39,6 +60,9 @@ class ChargeAllocationDecision:
     battery_charge_a: float | None
     reason: str
     targets: dict[str, ChargerAllocationTarget]
+    # "pv_power" or "actual_current": which signal drove the apportionment split,
+    # for trace analysis. None when no budget was apportioned.
+    weight_basis: str | None = None
 
 
 class ChargeCurrentAllocator:
@@ -85,7 +109,7 @@ class ChargeCurrentAllocator:
             budget_a = max(0.0, budget_a - excess_a)
             reason = "feedback_clamp"
 
-        targets = self._allocate_budget(chargers, budget_a, reason)
+        targets, weight_basis = self._allocate_budget(chargers, budget_a, reason)
         return ChargeAllocationDecision(
             budget_a=round(budget_a, 1),
             bms_ccl_a=bms_ccl_a,
@@ -93,6 +117,7 @@ class ChargeCurrentAllocator:
             battery_charge_a=max(battery_current_a, 0.0),
             reason=reason,
             targets=targets,
+            weight_basis=weight_basis,
         )
 
     def _allocate_budget(
@@ -100,7 +125,7 @@ class ChargeCurrentAllocator:
         chargers: list[ChargerAllocationInput],
         budget_a: float,
         reason: str,
-    ) -> dict[str, ChargerAllocationTarget]:
+    ) -> tuple[dict[str, ChargerAllocationTarget], str | None]:
         targets: dict[str, ChargerAllocationTarget] = {}
         eligible = [
             charger
@@ -109,12 +134,10 @@ class ChargeCurrentAllocator:
         ]
         eligible_names = {charger.name for charger in eligible}
 
+        weights, weight_basis = self._weights(eligible)
         allocations = _waterfill_allocate(
             budget_a,
-            {
-                charger.name: max(charger.actual_current_a, self.config.min_active_weight_a)
-                for charger in eligible
-            },
+            weights,
             {charger.name: charger.max_current_a for charger in eligible},
         )
 
@@ -132,7 +155,35 @@ class ChargeCurrentAllocator:
                 targets[charger.name] = self._target(charger, 0.0, "charger unavailable")
                 continue
             targets[charger.name] = self._target(charger, allocations.get(charger.name, 0.0), reason)
-        return targets
+        return targets, weight_basis
+
+    def _weights(
+        self, eligible: list[ChargerAllocationInput]
+    ) -> tuple[dict[str, float], str | None]:
+        """Apportionment weights and the basis used.
+
+        Prefer PV input power for *every* eligible charger -- a resource signal
+        independent of the limit we wrote. If any eligible charger lacks it, fall
+        back to actual output for all of them so the basis stays consistent;
+        mixing watts and amps would corrupt the proportional ratios.
+        """
+        if not eligible:
+            return {}, None
+        if all(charger.pv_power_w is not None for charger in eligible):
+            return (
+                {
+                    charger.name: max(charger.pv_power_w, self.config.min_active_weight_w)
+                    for charger in eligible
+                },
+                "pv_power",
+            )
+        return (
+            {
+                charger.name: max(charger.actual_current_a, self.config.min_active_weight_a)
+                for charger in eligible
+            },
+            "actual_current",
+        )
 
     def _target(
         self,
@@ -141,11 +192,20 @@ class ChargeCurrentAllocator:
         reason: str,
     ) -> ChargerAllocationTarget:
         target = round(max(0.0, min(target_current_a, charger.max_current_a)), 1)
-        should_write = (
-            charger.current_limit_a is not None
-            and abs(charger.current_limit_a - target) >= self.config.min_write_delta_a
-        )
-        return ChargerAllocationTarget(target, should_write, reason)
+        # A target below the charger's representable floor (or zero) can't be a
+        # limit write -- command off instead, and let the actuator translate.
+        disable = target <= 0.0 or target < charger.min_current_a
+        if disable:
+            target = 0.0
+            # When we intend off, write if the charger might still be on (or its
+            # state is unknown); the actuator is idempotent if already off.
+            should_write = charger.current_limit_a is None or charger.current_limit_a > 0.0
+        else:
+            should_write = (
+                charger.current_limit_a is not None
+                and abs(charger.current_limit_a - target) >= self.config.min_write_delta_a
+            )
+        return ChargerAllocationTarget(target, should_write, reason, disable)
 
     def _zero_targets(
         self,
