@@ -31,8 +31,12 @@ the generic EPEver/Tracer map. Confirmed live during the array-1 dry-run:
   Found mis-set to **2024-10-06** (~20 months + ~12 h off) — the crystal keeps
   good time but the value was wrong (likely a dead RTC backup defaulting on power
   loss). Set to local time 2026-06-16; the date jump immediately reset the
-  today/month buckets, confirming they're RTC-driven. **Open: does the set survive
-  a power-cycle?** If not, daily counters can't be trusted — which is why the
+  today/month buckets, confirming they're RTC-driven. **Verified 2026-06-17
+  ~18:04:** read back `2026-06-17 18:04:45` vs Pi `18:04:41` — correct and keeping
+  good time ~1 day after the set, so it did *not* revert in the interim. **Still
+  open: does it survive a true power-cycle?** (the verification doesn't prove the
+  backup unless the controller actually lost power since the 16th — definitive
+  test is pull power, restore, re-read before any app connects). Either way the
   autonomy design differences the monotonic *total* and never relies on the clock.
 
 ## Battery profiles (3.3.5)
