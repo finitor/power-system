@@ -130,6 +130,36 @@ Not urgent: only the Classic is a live charging source / taper authority
 today, and the EPEver is in burn-in. This becomes real the moment both arrays
 charge in parallel. Raised 2026-06-11.
 
+## 11. Load accounting: incorporate the Magnum charger — DEFERRED
+
+The Load group's instantaneous and cumulative figures balance the DC bus over
+the two solar producers (Classic + EPEver) plus the BMS net current. The
+Magnum is the third energy port and is **not** in that balance:
+
+- **Instantaneous** (`estimate_load_current_a`): while the Magnum is
+  *inverting*, its DC draw is already captured implicitly by the BMS net
+  current, so it correctly cancels. The gap is only when the **generator runs
+  and the Magnum charges** — then it is a source that should be added to
+  charge-in, or load reads low.
+- **Cumulative** (`estimate_load_today_kwh`): should add the Magnum's daily
+  **charger** energy to the producer sum, the same way Classic/EPEver daily
+  kWh are summed.
+
+The blocker is **measurement access**, and we are unsure we have it: we read a
+passive tap of the inverter packet (`MagnumSnapshot`), which gives instantaneous
+`dc_amps`/`dc_power_w` but **no cumulative energy counter**, and its DC-amp sign
+under charge is **unverified** (it reads positive while inverting; the
+charge-direction sign has never been observed). So before this can land we need
+to, on a *running generator*: (a) confirm the `dc_amps` sign while charging,
+(b) isolate the pure charger contribution from inverter draw (the
+`charger_on` flag helps), and (c) since there is no energy register, integrate
+the charger power ourselves into a daily total (anchored to local midnight, like
+the EPEver derivation). If the tap can't cleanly separate charger output, this
+may not be feasible without a different Magnum data source (BMK/ME-RC).
+
+Low priority: generator charging is human-attended and infrequent, so the Load
+figures are only wrong during those windows. Raised 2026-06-17.
+
 ## Done
 
 - Item 1 (deploy.sh, watcher retired): e4444fc, a6f506f — verified with a

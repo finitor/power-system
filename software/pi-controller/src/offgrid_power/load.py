@@ -312,6 +312,11 @@ def estimate_load_today_kwh(
         if snapshot.epever.generated_today_kwh is None:
             return None  # EPEver daily not yet derivable -> don't undercount
         charge_in_kwh += snapshot.epever.generated_today_kwh
+    # The Magnum charger is a third charge-in term when the generator runs, but
+    # we don't yet have its pure daily charger energy (passive inverter-packet
+    # tap, no energy counter, charge-direction sign unverified). Deferred -- see
+    # docs/engineering-plan.md item 11. Low impact: generator charging is rare
+    # and attended, so this only undercounts during those windows.
     current_soc_percent = snapshot.battery.state_of_charge.soc_percent
     battery_gain_kwh = (
         (current_soc_percent - midnight_soc_percent) / 100 * bank_capacity * nominal_voltage_v / 1000
