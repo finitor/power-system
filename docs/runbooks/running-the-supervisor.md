@@ -1,0 +1,200 @@
+# Running the Supervisor
+
+How the Raspberry Pi supervisor is launched — from "it normally runs itself" to
+"rebuild it from scratch in a cold cabin." Written for someone who has not
+touched the project in a while (or ever).
+
+Throughout: the Pi is `blueberry.local`, you log in as **`tvetter`**, the repo
+lives at **`~/power-system`**, and the service itself runs as the **`offgrid`**
+system user. Adjust if your install differs.
+
+---
+
+## 1. The short version (it runs itself)
+
+The supervisor is a **systemd service** named `offgrid-supervisor`. It starts on
+boot, restarts on failure, and you almost never launch it by hand. Day-to-day:
+
+```sh
+ssh tvetter@blueberry.local
+
+systemctl status offgrid-supervisor        # is it running?
+journalctl -u offgrid-supervisor -f        # live logs (Ctrl-C to stop watching)
+sudo systemctl restart offgrid-supervisor  # restart (e.g. after editing the env file)
+sudo systemctl stop offgrid-supervisor     # stop (frees the RS485 adapters)
+sudo systemctl start offgrid-supervisor
+
+power-system/scripts/diag.sh               # one-call health digest
+```
+
+To ship a code or config change, **do not hand-edit anything on the Pi** — work
+on the Mac, commit + push, then on the Pi:
+
+```sh
+cd power-system && bash scripts/deploy.sh
+```
+
+`deploy.sh` pulls git to truth, renders the config templates into their system
+locations (including the systemd unit), reinstalls the package if dependencies
+changed, restarts the services, and health-checks. It refuses to run with a
+dirty Pi working tree.
+
+---
+
+## 2. First-time setup on a fresh Pi
+
+Starting from a clean Raspberry Pi OS Lite 64-bit install with network access,
+logged in as your normal user (not root):
+
+```sh
+git clone <repo-url> ~/power-system
+cd ~/power-system
+bash scripts/install-pi.sh
+```
+
+`install-pi.sh` does the whole bootstrap (it `sudo`s where needed — run it as
+the normal user, it refuses to run as root):
+
+- installs OS packages: `can-utils`, `nginx`, `sqlite3`, `tmux`, `python3-venv`,
+  `build-essential`, `usbutils`, etc.;
+- (optionally) installs Tailscale for remote access;
+- creates `/srv/telemetry` + `/var/lib/offgrid` and the `offgrid` group;
+- **builds the Python venv and installs the package** (see §3);
+- runs `deploy.sh` to render configs and start services.
+
+Then create the environment file (§4) and restart:
+
+```sh
+sudo cp ~/power-system/.env.example /etc/offgrid-power.env
+sudo nano /etc/offgrid-power.env        # fill in the values you need
+sudo chmod 600 /etc/offgrid-power.env
+sudo systemctl restart offgrid-supervisor
+```
+
+---
+
+## 3. The Python virtual environment
+
+A **venv** is a self-contained Python environment so the project's pinned
+dependencies don't collide with the system Python. This project's venv lives at
+`~/power-system/.venv`.
+
+`install-pi.sh` creates it; if you ever need to build it by hand:
+
+```sh
+cd ~/power-system
+python3 -m venv .venv                                  # create it
+.venv/bin/pip install --upgrade pip setuptools wheel
+.venv/bin/pip install -e .                             # install the project (editable)
+.venv/bin/pip install -e ".[sensors]"                  # optional: DHT22/DS18B20 libs
+```
+
+- **Editable install** (`-e`) means the installed package points at the source
+  tree, so a `git pull` of `.py` changes takes effect on the next restart
+  without reinstalling. `deploy.sh` only reinstalls when `pyproject.toml` changed.
+- Run anything with the venv's interpreter: `.venv/bin/python ...`, or use the
+  installed console scripts directly: `.venv/bin/offgrid-supervisor`,
+  `.venv/bin/offgrid-terminal-display`, `.venv/bin/offgrid-r2-export`, etc.
+- The Mac dev venv is the same idea (Python 3.12 there) and runs the full test
+  suite: `.venv/bin/python -m pytest`.
+
+---
+
+## 4. The environment file: `/etc/offgrid-power.env`
+
+The service loads this file (`EnvironmentFile=`). It holds site configuration
+and secrets (B2 keys), which is why it lives outside git — `/.env.example` in
+the repo is the template. Keep it root-owned and `600`. After editing, restart
+the service for changes to take effect.
+
+Common elements (see `.env.example` for the full list):
+
+| Variable | What it is |
+|---|---|
+| `CLASSIC_HOST` / `CLASSIC_PORT` / `CLASSIC_DEVICE_ID` | MidNite Classic Modbus TCP target (default `192.168.0.10:502`, id 10) |
+| `BATTERY_CAPACITY_AH` | Bank capacity for load/autonomy math (`200`) |
+| `BATTERY_CAN_PROTOCOL` | BMS CAN dialect (`pylon`) |
+| `MAGNUM_DEVICE` | Magnum RS485 serial device, e.g. `/dev/magnum-rs485`; **empty disables** the Magnum tap |
+| `AMBIENT_SENSOR_ENABLED` / `AMBIENT_SENSOR_KIND` / `AMBIENT_DS18B20_DEVICE_ID` | Ambient temp sensor on GPIO |
+| `WEATHER_ENABLED` / `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` / `WEATHER_LABEL` | Open-Meteo weather panel (lat/lon are required if enabled) |
+| `METRICS_DB_PATH` | SQLite telemetry store (`/srv/telemetry/data/metrics.sqlite`) |
+| `B2_*` | Backblaze B2 store-and-forward export (bucket, keys, endpoint) |
+| `CHARGE_ALLOC_*` / `CHARGE_CEILING_*` | Charge-allocator tuning (optional). See [charge-current-allocation.md](../charge-current-allocation.md) "Operator controls". **The allocator on/off toggle is the `--charge-allocation` flag in the systemd unit, NOT an env var — by design.** |
+
+Note: several command-line arguments (below) default from these env vars, so the
+systemd unit only needs to pass the ones it wants to set explicitly.
+
+---
+
+## 5. Command-line arguments
+
+The service runs the `offgrid-supervisor` entry point through the thin wrapper
+`scripts/supervisor-display.py`. The **canonical production invocation** is the
+`ExecStart` in `config/systemd/offgrid-supervisor.service` (rendered onto the Pi
+by `deploy.sh`):
+
+```sh
+.venv/bin/python scripts/supervisor-display.py \
+  --classic-host ${CLASSIC_HOST} --epever-device /dev/epever-rs485 \
+  --web-display --web-host 127.0.0.1 --web-port 8081 \
+  --weather --weather-cache-path /srv/telemetry/data/weather-cache.json \
+  --interval 5 --no-terminal-display \
+  --metrics-db-path /srv/telemetry/data/metrics.sqlite \
+  --metrics-db-mountpoint /srv/telemetry \
+  --metrics-fallback-db-path /var/lib/offgrid/metrics-fallback.sqlite \
+  --metrics-snapshot-interval 60 --charge-allocation
+```
+
+The arguments you'll touch most:
+
+| Argument | Purpose |
+|---|---|
+| `--classic-host HOST` | MidNite Classic IP (defaults to `CLASSIC_HOST`) |
+| `--epever-device PATH` | EPEver RS485 serial node (`/dev/epever-rs485`) |
+| `--interval N` | Seconds between poll cycles (`5`) |
+| `--web-display` / `--web-host` / `--web-port` | Serve the JSON API + Kindle/web display (nginx fronts it) |
+| `--weather` (+ `--weather-cache-path`) | Enable the weather panel |
+| `--no-terminal-display` | Don't render the live TUI in this process (the service uses this; the wall console is a separate viewer) |
+| `--metrics-db-path` / `--metrics-db-mountpoint` / `--metrics-fallback-db-path` / `--metrics-snapshot-interval` | Telemetry store + removable-SSD guard + SD fallback |
+| `--charge-allocation` | **Live** charge-current allocation (writes controller limits). `--charge-allocation-dry-run` logs decisions only. Cannot run with the live charger taper. |
+| `--once` | Single poll then exit (handy for a quick probe) |
+
+Full list: `.venv/bin/offgrid-supervisor --help`.
+
+---
+
+## 6. Running it by hand (bench / debugging)
+
+Only one process can own the RS485 adapters, so **stop the service first**:
+
+```sh
+sudo systemctl stop offgrid-supervisor
+
+# Live terminal panel (omit --no-terminal-display to render the TUI):
+.venv/bin/offgrid-supervisor \
+  --classic-host 192.168.0.10 --epever-device /dev/epever-rs485 --interval 5
+
+# Or a single one-shot read:
+.venv/bin/offgrid-supervisor --classic-host 192.168.0.10 --epever-device /dev/epever-rs485 --once
+
+# When done, hand control back to the service:
+sudo systemctl start offgrid-supervisor
+```
+
+`Ctrl-C` quits the manual run. Don't leave a hand-run supervisor going — it
+won't survive a reboot and it blocks the service from owning the adapters.
+
+---
+
+## 7. Where it serves, and how to look
+
+- JSON API + display on `127.0.0.1:8081`; nginx fronts ports 80 and 8080 (the
+  Kindle wall display is bookmarked to `:8080`).
+- Quick check from the Pi: `curl -s localhost:8081/api/v1/snapshot | python3 -m json.tool`.
+- The physical wall console is a separate tty1 tmux viewer; mirror it over ssh
+  with `tmux -L offgrid-tty attach -t wall`.
+- Health endpoint for monitors: `curl -s localhost:8081/api/v1/health`.
+
+See also: [maintenance.md](../maintenance.md) (backup/restore),
+[troubleshooting.md](../troubleshooting.md) (symptoms → checks), and
+[commissioning.md](../commissioning.md) (first power-up).

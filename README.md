@@ -39,7 +39,7 @@ supervisory control of the Magnum charger — see
 - [hardware/inventory.csv](hardware/inventory.csv): single source of truth for components; [docs/hardware-inventory.md](docs/hardware-inventory.md) explains the format and views.
 - [docs/wiring.md](docs/wiring.md): wiring notes, pinouts, fuse ratings, cable gauges, and labels.
 - [docs/commissioning.md](docs/commissioning.md): first power-up and acceptance checklist.
-- [docs/runbooks/](docs/runbooks/): action-oriented procedures for installation, changeovers, maintenance, and recovery.
+- [docs/runbooks/](docs/runbooks/): action-oriented procedures for installation, changeovers, maintenance, and recovery — including [running-the-supervisor.md](docs/runbooks/running-the-supervisor.md) (how to launch it).
 - [docs/maintenance.md](docs/maintenance.md): backup, restore, inspection, and recovery routines.
 - [docs/troubleshooting.md](docs/troubleshooting.md): symptoms, likely causes, and checks.
 - [docs/safety.md](docs/safety.md): electrical and operational safety notes.
@@ -60,6 +60,12 @@ supervisory control of the Magnum charger — see
 - Subsystem docs are the source of truth for what should be measured, what may be controlled, and what still needs research.
 
 ## Quick Start
+
+**Running the Pi supervisor** (launch, venv setup, env file, command-line
+arguments, manual/bench runs): see
+**[docs/runbooks/running-the-supervisor.md](docs/runbooks/running-the-supervisor.md)**.
+In short, it runs as the `offgrid-supervisor` systemd service; deploy changes
+with `bash scripts/deploy.sh` on the Pi.
 
 This local directory has already been initialized as a Git repo and the scaffold has been committed.
 
