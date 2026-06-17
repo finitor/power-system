@@ -25,6 +25,20 @@ the generic EPEver/Tracer map. Confirmed live during the array-1 dry-run:
     lifetime-counter derivation). Conversely, since it never resets on normal
     midnights, **any downward step in this counter is anomalous** and a likely
     dead-backup power-cycle signature — usable as a passive reboot tripwire.
+    - *It measures the right thing, just resets on the wrong trigger:* over the
+      same 09:45→18:04 window its delta (+0.18) matched `generated_total` (+0.19),
+      so it's a real generated-energy accumulator with correct units — the open
+      question is purely **what resets it**, not what it counts.
+    - *Leading hypothesis:* reset is **charge-cycle-anchored** (fires on a fresh
+      bulk/boost entry), not clock-midnight — fits the EPEver having been
+      chronically float-latched and thus rarely starting a new bulk cycle (so the
+      counter rarely resets and looks multi-day; the lone reset we saw rode the
+      RTC date-jump re-init). Freshly testable now that float=boost + recovery
+      55.4 should make it enter boost far more often.
+    - *To decode (raw series is logged, do retrospectively):* correlate downward
+      steps in `generated_today` against charge-stage / PV-onset transitions —
+      drops at boost re-entries ⇒ cycle-anchored; at dawn ⇒ first-light "today";
+      only with a wrong RTC ⇒ the date-revert tripwire.
   - `0x3310/0x3311` = **lifetime generated total** (monotonic — survived the RTC
     date jump that reset today/month, and keeps climbing). This is the counter the
     windowed-consumption / autonomy calc differences.
