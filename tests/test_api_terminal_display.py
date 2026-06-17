@@ -62,7 +62,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     "settings": {
                         "current_limit_a": 80.0,
                         "absorb_voltage_v": 55.6,
-                        "absorb_time_s": 1950,
+                        "absorb_time_minutes": 32.5,
                         "float_voltage_v": 55.0,
                         "equalize_voltage_v": 55.6,
                     },
@@ -84,6 +84,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     "settings": {
                         "battery_type": "User",
                         "boost_voltage_v": 54.7,
+                        "absorb_time_minutes": 120,
                         "float_voltage_v": 53.6,
                         "low_voltage_disconnect_v": 49.7,
                     },
@@ -124,14 +125,14 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Charge Status         Stage: Float  State: MPPT or regulating voltage", rendered)
         # EPEver block: canonical first, vendor word in parens, no vendor knowledge in renderer.
         self.assertIn("Charge Status         Stage: Resting (No charging)", rendered)
-        self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V 0.5h  Float 55.0V  EQ 55.6V", rendered)
+        self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V t=32.5m  Float 55.0V  EQ 55.6V", rendered)
         self.assertIn("Charge Controller 0 (MidNite Classic 200)\n", rendered)
         self.assertIn("\n\nCharge Controller 1 (EPEver TEP10425)\n", rendered)
         # cc1 mirrors cc0: a "Production Today" line (kWh only, no Ah from the
         # EPEver), and no static "Rated" line.
         self.assertIn("Production Today      0.1kWh", rendered)
         self.assertNotIn("Rated", rendered)
-        self.assertIn("Charge Settings       Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", rendered)
+        self.assertIn("Charge Settings       Type User  Boost 54.7V t=120m  Float 53.6V  LVD 49.7V", rendered)
         self.assertIn("\n\nInverter/Charger\n", rendered)
         self.assertIn("DC                    53.2V  4A  213W", rendered)
         self.assertIn("AC Output             120V  1A  60.0Hz", rendered)

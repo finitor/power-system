@@ -363,14 +363,14 @@ def _solar_lines(solar: list[dict]) -> list[str]:
             if "current_limit_a" in settings:
                 value = (
                     f"Limit {_fmt(settings.get('current_limit_a'), 1)}A  "
-                    f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V {_fmt(_hours(settings.get('absorb_time_s')), 1)}h  "
+                    f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                     f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
                     f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V"
                 )
             else:
                 value = (
                     f"Type {settings.get('battery_type') or 'unknown'}  "
-                    f"Boost {_fmt(settings.get('boost_voltage_v'), 1)}V  "
+                    f"Boost {_fmt(settings.get('boost_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                     f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
                     f"LVD {_fmt(settings.get('low_voltage_disconnect_v'), 1)}V"
                 )
@@ -474,11 +474,11 @@ def _temperature_lines(payload: dict) -> list[str]:
     return lines
 
 
-def _hours(seconds) -> float | None:
+def _minutes_text(minutes) -> str:
     try:
-        return float(seconds) / 3600
+        return f"{float(minutes):g}m"
     except (TypeError, ValueError):
-        return None
+        return "--"
 
 
 def _row(label: str, value: str) -> str:

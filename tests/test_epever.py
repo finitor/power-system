@@ -56,6 +56,8 @@ class FakeModbusClient:
         0x9011: 4440,  # LVD
         0x9012: 4240,  # discharge limit
         0x9013: 8000,  # max charging current
+        0x9014: 120,   # boost charging time, minutes
+        0x9015: 10,    # equalize charging time, minutes
     }
 
     def __init__(self, **_):
@@ -180,6 +182,22 @@ class EpeverWriteTest(unittest.TestCase):
                 EpeverClient().write_charge_voltages(equalize_v=60.1, boost_v=60.1)
         self.assertEqual(fake.writes, [])
 
+    def test_write_charge_times_updates_boost_and_equalize_timers(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            settings = EpeverClient().write_charge_times(boost_time_minutes=90, equalize_time_minutes=0)
+        self.assertEqual(fake.regs[0x9014], 90)
+        self.assertEqual(fake.regs[0x9015], 0)
+        self.assertEqual(settings.boost_time_minutes, 90)
+        self.assertEqual(settings.equalize_time_minutes, 0)
+
+    def test_write_charge_times_rejects_out_of_range_timer(self) -> None:
+        fake = FakeModbusClient()
+        with mock.patch("offgrid_power.epever.ModbusSerialClient", return_value=fake):
+            with self.assertRaisesRegex(ValueError, "boost time out of range"):
+                EpeverClient().write_charge_times(boost_time_minutes=601)
+        self.assertEqual(fake.writes, [])
+
 
 class EpeverDecodeTest(unittest.TestCase):
     def test_decodes_live_probe_registers(self) -> None:
@@ -256,6 +274,7 @@ class EpeverDecodeTest(unittest.TestCase):
         self.assertEqual(settings.float_voltage_v, 53.6)
         self.assertEqual(settings.low_voltage_disconnect_v, 49.7)
         self.assertIsNone(settings.max_charging_current_a)
+        self.assertIsNone(settings.boost_time_minutes)
 
     def test_decodes_max_charging_current_when_present(self) -> None:
         settings = decode_settings(
@@ -280,6 +299,8 @@ class EpeverDecodeTest(unittest.TestCase):
                 4440,
                 4240,
                 10000,
+                120,
+                10,
             ],
             captured_at=CAPTURED_AT,
         )
@@ -287,6 +308,8 @@ class EpeverDecodeTest(unittest.TestCase):
         self.assertEqual(settings.battery_type, "User")
         self.assertEqual(settings.equalize_voltage_v, 58.3)
         self.assertEqual(settings.max_charging_current_a, 100.0)
+        self.assertEqual(settings.boost_time_minutes, 120)
+        self.assertEqual(settings.equalize_time_minutes, 10)
 
 
 if __name__ == "__main__":

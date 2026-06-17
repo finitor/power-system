@@ -378,6 +378,8 @@ def route_api_request(
 
 
 def route_control_request(supervisor: Supervisor, path: str, payload: dict) -> DisplayResponse:
+    if path == "/api/v1/control/classic/charge-settings":
+        return _control_classic_charge_settings(supervisor, payload)
     if path == "/api/v1/control/epever/charge-settings":
         return _control_epever_charge_settings(supervisor, payload)
     if path == "/api/v1/control/epever/sync-from-classic":
@@ -387,6 +389,43 @@ def route_control_request(supervisor: Supervisor, path: str, payload: dict) -> D
     if path == "/api/v1/control/magnum/charge-settings":
         return _control_magnum_charge_settings(supervisor, payload)
     return _json_response(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
+
+
+def _control_classic_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:
+    try:
+        absorb_time_minutes = _optional_number(payload, "absorb_time_minutes")
+        targets = {
+            "battery_current_limit_a": _optional_number(payload, "current_limit_a"),
+            "absorb_voltage_v": _optional_number(payload, "absorb_voltage_v"),
+            "float_voltage_v": _optional_number(payload, "float_voltage_v"),
+            "equalize_voltage_v": _optional_number(payload, "equalize_voltage_v"),
+            "absorb_time_s": None if absorb_time_minutes is None else round(absorb_time_minutes * 60),
+            "max_temp_comp_voltage_v": _optional_number(payload, "max_temp_comp_voltage_v"),
+        }
+        targets = {key: value for key, value in targets.items() if value is not None}
+        if not targets:
+            return _json_response(
+                HTTPStatus.BAD_REQUEST,
+                {"ok": False, "device": "classic", "error": "no Classic charge settings supplied"},
+            )
+        if absorb_time_minutes is not None and not (0 <= absorb_time_minutes <= 24 * 60):
+            raise ValueError(f"Classic absorb_time_minutes out of range: {absorb_time_minutes}")
+        voltage_targets = {
+            key: value
+            for key, value in targets.items()
+            if key in {"absorb_voltage_v", "float_voltage_v", "equalize_voltage_v", "max_temp_comp_voltage_v"}
+        }
+        if voltage_targets:
+            _guard_voltage_targets_against_bms(supervisor.read_snapshot(), voltage_targets)
+        settings = supervisor.write_classic_charge_settings(**targets)
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "device": "classic", "error": str(exc)})
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "device": "classic", "error": str(exc)})
+    return _json_response(
+        HTTPStatus.OK,
+        {"ok": True, "device": "classic", "settings": _classic_settings_api_payload(settings)},
+    )
 
 
 def _control_epever_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:
@@ -403,7 +442,12 @@ def _control_epever_charge_settings(supervisor: Supervisor, payload: dict) -> Di
         }
         voltage_kwargs = {key: value for key, value in voltage_kwargs.items() if value is not None}
         current_a = _optional_number(payload, "max_charging_current_a")
-        if not voltage_kwargs and current_a is None:
+        time_kwargs = {
+            "boost_time_minutes": _optional_int(payload, "absorb_time_minutes"),
+            "equalize_time_minutes": _optional_int(payload, "equalize_time_minutes"),
+        }
+        time_kwargs = {key: value for key, value in time_kwargs.items() if value is not None}
+        if not voltage_kwargs and current_a is None and not time_kwargs:
             return _json_response(
                 HTTPStatus.BAD_REQUEST,
                 {"ok": False, "error": "no EPEver charge settings supplied"},
@@ -422,6 +466,8 @@ def _control_epever_charge_settings(supervisor: Supervisor, payload: dict) -> Di
             settings = supervisor.write_epever_charge_voltages(**voltage_kwargs)
         if current_a is not None:
             settings = supervisor.write_epever_max_charging_current(current_a)
+        if time_kwargs:
+            settings = supervisor.write_epever_charge_times(**time_kwargs)
     except ValueError as exc:
         return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
     except RuntimeError as exc:
@@ -554,6 +600,21 @@ def _optional_int(payload: dict, key: str) -> int | None:
     return None if value is None else int(value)
 
 
+def _classic_settings_api_payload(settings) -> dict | None:
+    if settings is None:
+        return None
+    return {
+        "current_limit_a": settings.battery_current_limit_a,
+        "absorb_voltage_v": settings.absorb_voltage_v,
+        "float_voltage_v": settings.float_voltage_v,
+        "equalize_voltage_v": settings.equalize_voltage_v,
+        "absorb_time_minutes": settings.absorb_time_s / 60,
+        "max_temp_comp_voltage_v": settings.max_temp_comp_voltage_v,
+        "min_temp_comp_voltage_v": settings.min_temp_comp_voltage_v,
+        "temp_comp_mv_per_c_cell": settings.temp_comp_mv_per_c_cell,
+    }
+
+
 def _epever_settings_api_payload(settings) -> dict | None:
     if settings is None:
         return None
@@ -567,6 +628,8 @@ def _epever_settings_api_payload(settings) -> dict | None:
         "boost_reconnect_voltage_v": settings.boost_reconnect_voltage_v,
         "bulk_recovery_voltage_v": settings.boost_reconnect_voltage_v,
         "max_charging_current_a": settings.max_charging_current_a,
+        "absorb_time_minutes": settings.boost_time_minutes,
+        "equalize_time_minutes": settings.equalize_time_minutes,
     }
 
 
@@ -960,7 +1023,8 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 "absorb_voltage_v": settings.absorb_voltage_v,
                 "float_voltage_v": settings.float_voltage_v,
                 "equalize_voltage_v": settings.equalize_voltage_v,
-                "absorb_time_s": settings.absorb_time_s,
+                "absorb_time_minutes": settings.absorb_time_s / 60,
+                "max_temp_comp_voltage_v": settings.max_temp_comp_voltage_v,
             },
         }
         )
@@ -1005,6 +1069,8 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                     "equalize_voltage_v": settings.equalize_voltage_v,
                     "boost_reconnect_voltage_v": settings.boost_reconnect_voltage_v,
                     "bulk_recovery_voltage_v": settings.boost_reconnect_voltage_v,
+                    "absorb_time_minutes": settings.boost_time_minutes,
+                    "equalize_time_minutes": settings.equalize_time_minutes,
                     "low_voltage_disconnect_v": settings.low_voltage_disconnect_v,
                     "discharging_limit_voltage_v": settings.discharging_limit_voltage_v,
                 },
@@ -1252,14 +1318,14 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
         if "current_limit_a" in settings:
             value = (
                 f"Limit {_meas(settings.get('current_limit_a'), 'A', 1)}  "
-                f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)} {_hours_text(settings.get('absorb_time_s'))}  "
+                f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)} t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                 f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)}  "
                 f"EQ {_meas(settings.get('equalize_voltage_v'), 'V', 1)}"
             )
         else:
             value = (
                 f"Type {settings.get('battery_type') or 'unknown'}  "
-                f"Boost {_meas(settings.get('boost_voltage_v'), 'V', 1)}  "
+                f"Boost {_meas(settings.get('boost_voltage_v'), 'V', 1)} t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                 f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)}  "
                 f"LVD {_meas(settings.get('low_voltage_disconnect_v'), 'V', 1)}"
             )
@@ -1274,9 +1340,9 @@ def _meas(value: object, suffix: str, decimals: int = 1) -> str:
     return text if text is not None else "--"
 
 
-def _hours_text(seconds: object) -> str:
+def _minutes_text(minutes: object) -> str:
     try:
-        return f"{float(seconds) / 3600:.1f}h"
+        return f"{float(minutes):g}m"
     except (TypeError, ValueError):
         return "--"
 

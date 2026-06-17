@@ -41,11 +41,26 @@ class FakeControlSupervisor:
         )
         self.voltage_calls = []
         self.current_calls = []
+        self.classic_calls = []
+        self.time_calls = []
         self.charge_calls = []
         self.last_boost_reconnect_v = 53.6
+        self.last_current_a = None
 
     def read_snapshot(self):
         return self.snapshot
+
+    def write_classic_charge_settings(self, **kwargs):
+        self.classic_calls.append(kwargs)
+        current = self.snapshot.classic_settings or make_classic_settings()
+        return make_classic_settings(
+            battery_current_limit_a=kwargs.get("battery_current_limit_a", current.battery_current_limit_a),
+            absorb_voltage_v=kwargs.get("absorb_voltage_v", current.absorb_voltage_v),
+            float_voltage_v=kwargs.get("float_voltage_v", current.float_voltage_v),
+            equalize_voltage_v=kwargs.get("equalize_voltage_v", current.equalize_voltage_v),
+            absorb_time_s=kwargs.get("absorb_time_s", current.absorb_time_s),
+            max_temp_comp_voltage_v=kwargs.get("max_temp_comp_voltage_v", current.max_temp_comp_voltage_v),
+        )
 
     def write_epever_charge_voltages(self, **kwargs):
         self.voltage_calls.append(kwargs)
@@ -57,9 +72,19 @@ class FakeControlSupervisor:
 
     def write_epever_max_charging_current(self, current_a):
         self.current_calls.append(current_a)
+        self.last_current_a = current_a
         return make_epever_settings(
             boost_reconnect_voltage_v=self.last_boost_reconnect_v,
             max_charging_current_a=current_a,
+        )
+
+    def write_epever_charge_times(self, **kwargs):
+        self.time_calls.append(kwargs)
+        return make_epever_settings(
+            boost_reconnect_voltage_v=self.last_boost_reconnect_v,
+            max_charging_current_a=self.last_current_a,
+            boost_time_minutes=kwargs.get("boost_time_minutes", 120),
+            equalize_time_minutes=kwargs.get("equalize_time_minutes", 10),
         )
 
     def set_epever_charging(self, enabled):
@@ -270,7 +295,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("53.1V  0.0A  0W", html)
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
         self.assertIn("Stage: Resting (No charging)", html)
-        self.assertIn("Type User  Boost 54.7V  Float 53.6V  LVD 49.7V", html)
+        self.assertIn("Type User  Boost 54.7V t=120m  Float 53.6V  LVD 49.7V", html)
         # cc group mirrors the Classic: daily generation as "Production Today",
         # and no static "Rated" line.
         self.assertIn("Production Today", html)
@@ -357,6 +382,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["solar"][1]["battery_voltage_v"], 53.11)
         self.assertEqual(payload["solar"][1]["settings"]["battery_type"], "User")
         self.assertEqual(payload["solar"][1]["settings"]["bulk_recovery_voltage_v"], 53.6)
+        self.assertEqual(payload["solar"][1]["settings"]["absorb_time_minutes"], 120)
+        self.assertEqual(payload["solar"][1]["settings"]["equalize_time_minutes"], 10)
         self.assertEqual(payload["load"]["estimated_autonomy_hours"], 46.0)
 
     def test_routes_api_weather_as_json(self) -> None:
@@ -459,7 +486,7 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertEqual(payload["solar"][0]["settings"]["current_limit_a"], 80.0)
         self.assertEqual(payload["solar"][0]["settings"]["absorb_voltage_v"], 55.2)
-        self.assertEqual(payload["solar"][0]["settings"]["absorb_time_s"], 300)
+        self.assertEqual(payload["solar"][0]["settings"]["absorb_time_minutes"], 5)
 
     def test_healthz_is_liveness_only_and_stays_ok_with_offline_device(self) -> None:
         # A device read failure must not fail the liveness probe: the supervisor
@@ -541,6 +568,36 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIsNone(payload["battery"])
         self.assertEqual(payload["solar"], [])
 
+    def test_control_api_routes_classic_absorb_time(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/classic/charge-settings",
+            {"absorb_time_minutes": 30},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(supervisor.classic_calls, [{"absorb_time_s": 1800}])
+        self.assertEqual(payload["settings"]["absorb_time_minutes"], 30)
+
+    def test_control_api_rejects_classic_voltage_above_bms_cvl(self) -> None:
+        supervisor = FakeControlSupervisor(snapshot=make_snapshot(
+            classic_settings=make_classic_settings(),
+            battery=make_battery_with_cvl(55.8),
+        ))
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/classic/charge-settings",
+            {"absorb_voltage_v": 55.9},
+        )
+
+        self.assertEqual(response.status.value, 400)
+        self.assertEqual(supervisor.classic_calls, [])
+
     def test_control_api_routes_epever_charge_settings(self) -> None:
         supervisor = FakeControlSupervisor()
 
@@ -551,6 +608,7 @@ class WebDisplayTest(unittest.TestCase):
                 "boost_voltage_v": 55.6,
                 "equalize_voltage_v": 55.6,
                 "bulk_recovery_voltage_v": 54.9,
+                "absorb_time_minutes": 90,
                 "max_charging_current_a": 80,
             },
         )
@@ -563,7 +621,9 @@ class WebDisplayTest(unittest.TestCase):
             [{"boost_v": 55.6, "equalize_v": 55.6, "boost_reconnect_v": 54.9}],
         )
         self.assertEqual(supervisor.current_calls, [80.0])
+        self.assertEqual(supervisor.time_calls, [{"boost_time_minutes": 90}])
         self.assertEqual(payload["settings"]["bulk_recovery_voltage_v"], 54.9)
+        self.assertEqual(payload["settings"]["absorb_time_minutes"], 90)
         self.assertEqual(payload["settings"]["max_charging_current_a"], 80.0)
 
     def test_control_api_syncs_epever_from_classic_with_voltage_offset(self) -> None:

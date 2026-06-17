@@ -174,7 +174,7 @@ class Supervisor:
         for reader in self._readers.values():
             reader.request_refresh()
 
-    def write_classic_charge_settings(self, **kwargs) -> None:
+    def write_classic_charge_settings(self, **kwargs):
         """Write Classic charge settings via the device's actor thread.
 
         All Classic I/O must go through one thread; when readers are active
@@ -184,13 +184,12 @@ class Supervisor:
         if self.classic is None:
             raise RuntimeError("no Classic adapter configured")
 
-        def write() -> None:
-            self.classic.write_charge_settings(**kwargs)
+        def write():
+            return self.classic.write_charge_settings(**kwargs)
 
         if self._readers is not None and "classic" in self._readers:
-            self._readers["classic"].submit(write)
-            return
-        write()
+            return self._readers["classic"].submit(write)
+        return write()
 
     def write_epever_charge_voltages(self, **kwargs) -> EpeverChargeSettings:
         """Write EPEver charge voltages via the device actor thread."""
@@ -211,6 +210,18 @@ class Supervisor:
 
         def write() -> EpeverChargeSettings:
             return self.epever.write_max_charging_current(current_a)
+
+        if self._readers is not None and "epever" in self._readers:
+            return self._readers["epever"].submit(write)  # type: ignore[no-any-return]
+        return write()
+
+    def write_epever_charge_times(self, **kwargs) -> EpeverChargeSettings:
+        """Write EPEver charge-stage timers via the device actor thread."""
+        if self.epever is None:
+            raise RuntimeError("no EPEver adapter configured")
+
+        def write() -> EpeverChargeSettings:
+            return self.epever.write_charge_times(**kwargs)
 
         if self._readers is not None and "epever" in self._readers:
             return self._readers["epever"].submit(write)  # type: ignore[no-any-return]

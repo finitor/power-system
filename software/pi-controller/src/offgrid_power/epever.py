@@ -91,6 +91,8 @@ class EpeverChargeSettings:
     low_voltage_disconnect_v: float
     discharging_limit_voltage_v: float
     max_charging_current_a: float | None = None
+    boost_time_minutes: int | None = None
+    equalize_time_minutes: int | None = None
 
 
 class EpeverClient:
@@ -137,7 +139,7 @@ class EpeverClient:
             # The TEP stores these big-endian by word (opposite the live
             # registers), so decode high-word-first; see decode_telemetry.
             energy = read_input_registers(client, 0x3300, 18, self.unit)
-            settings = read_holding_registers(client, 0x9000, 20, self.unit)
+            settings = read_holding_registers(client, 0x9000, 22, self.unit)
             return (
                 decode_telemetry(rated, live, temperatures, soc, status, energy, captured_at),
                 decode_settings(settings, captured_at),
@@ -172,7 +174,7 @@ class EpeverClient:
             if response.isError():
                 raise RuntimeError(f"EPEver current-limit write failed: {response}")
             settings = decode_settings(
-                read_holding_registers(client, 0x9000, 20, self.unit),
+                read_holding_registers(client, 0x9000, 22, self.unit),
                 datetime.now(timezone.utc),
             )
             readback = settings.max_charging_current_a
@@ -181,6 +183,50 @@ class EpeverClient:
                     "EPEver current-limit readback mismatch: "
                     f"wrote {current_a:.1f} A, read {readback!r} A"
                 )
+            return settings
+        finally:
+            client.close()
+
+    def write_charge_times(
+        self,
+        *,
+        boost_time_minutes: int | None = None,
+        equalize_time_minutes: int | None = None,
+    ) -> EpeverChargeSettings:
+        """Write EPEver charge-stage duration timers and return readback.
+
+        The TEP map exposes 0x9014 as Boost/Bulk charging time and 0x9015 as
+        Equalize charging time, both in minutes. Solar Guardian labels 0x9014
+        "Bulk Charging Time"; behavior suggests it is the absorb/boost hold
+        duration after the controller reaches the boost voltage.
+        """
+        targets = {0x9014: boost_time_minutes, 0x9015: equalize_time_minutes}
+        if all(value is None for value in targets.values()):
+            raise ValueError("write_charge_times: nothing to write")
+        for label, value in (("boost time", boost_time_minutes), ("equalize time", equalize_time_minutes)):
+            if value is not None and not (0 <= value <= 600):
+                raise ValueError(f"EPEver {label} out of range: {value} min")
+
+        client = self._open_client()
+        try:
+            for address, value in targets.items():
+                if value is None:
+                    continue
+                response = client.write_registers(address=address, values=[int(value)], device_id=self.unit)
+                if response.isError():
+                    raise RuntimeError(f"EPEver charge-time write failed for 0x{address:04X}: {response}")
+            settings = decode_settings(
+                read_holding_registers(client, 0x9000, 22, self.unit),
+                datetime.now(timezone.utc),
+            )
+            for label, value, readback in (
+                ("boost time", boost_time_minutes, settings.boost_time_minutes),
+                ("equalize time", equalize_time_minutes, settings.equalize_time_minutes),
+            ):
+                if value is not None and readback != value:
+                    raise RuntimeError(
+                        f"EPEver {label} readback mismatch: wrote {value} min, read {readback!r} min"
+                    )
             return settings
         finally:
             client.close()
@@ -336,7 +382,7 @@ class EpeverClient:
             if response.isError():
                 raise RuntimeError(f"EPEver voltage-block write failed: {response}")
             settings = decode_settings(
-                read_holding_registers(client, 0x9000, 20, self.unit),
+                read_holding_registers(client, 0x9000, 22, self.unit),
                 datetime.now(timezone.utc),
             )
             for label, value, readback in (
@@ -408,6 +454,8 @@ def decode_telemetry(
 def decode_settings(settings: list[int], captured_at: datetime | None = None) -> EpeverChargeSettings:
     battery_type_code = settings[0]
     max_charging_current_a = settings[19] / 100 if len(settings) > 19 else None
+    boost_time_minutes = settings[20] if len(settings) > 20 else None
+    equalize_time_minutes = settings[21] if len(settings) > 21 else None
     voltage_offset = 7 if len(settings) > 18 else 3
     return EpeverChargeSettings(
         captured_at=captured_at or datetime.now(timezone.utc),
@@ -428,6 +476,8 @@ def decode_settings(settings: list[int], captured_at: datetime | None = None) ->
         low_voltage_disconnect_v=settings[voltage_offset + 10] / 100,
         discharging_limit_voltage_v=settings[voltage_offset + 11] / 100,
         max_charging_current_a=max_charging_current_a,
+        boost_time_minutes=boost_time_minutes,
+        equalize_time_minutes=equalize_time_minutes,
     )
 
 

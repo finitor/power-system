@@ -136,6 +136,8 @@ def make_epever_settings(captured_at: datetime | None = None, **overrides) -> Ep
         "under_voltage_warning_v": 50.0,
         "low_voltage_disconnect_v": 49.7,
         "discharging_limit_voltage_v": 48.0,
+        "boost_time_minutes": 120,
+        "equalize_time_minutes": 10,
     }
     fields.update(overrides)
     return EpeverChargeSettings(**fields)

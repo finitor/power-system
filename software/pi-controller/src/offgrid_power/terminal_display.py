@@ -270,7 +270,7 @@ def _charge_settings_line(settings: ClassicChargeSettings) -> str:
     return _row(
         "Charge Settings",
         f"Limit {settings.battery_current_limit_a:.1f}A  "
-        f"Absorb {settings.absorb_voltage_v:.1f}V {settings.absorb_time_s / 3600:.1f}h  "
+        f"Absorb {settings.absorb_voltage_v:.1f}V t={settings.absorb_time_s / 60:g}m  "
         f"Float {settings.float_voltage_v:.1f}V  "
         f"EQ {settings.equalize_voltage_v:.1f}V",
     )
@@ -280,10 +280,16 @@ def _epever_charge_settings_line(settings: EpeverChargeSettings) -> str:
     return _row(
         "Charge Settings",
         f"Type {settings.battery_type}  "
-        f"Boost {settings.boost_voltage_v:.1f}V  "
+        f"Boost {settings.boost_voltage_v:.1f}V t={_minutes_text(settings.boost_time_minutes)}  "
         f"Float {settings.float_voltage_v:.1f}V  "
         f"LVD {settings.low_voltage_disconnect_v:.1f}V",
     )
+
+
+def _minutes_text(minutes: int | float | None) -> str:
+    if minutes is None:
+        return "--"
+    return f"{minutes:g}m"
 
 
 def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:

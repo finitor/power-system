@@ -57,6 +57,30 @@ Control endpoints accept JSON objects and return JSON. They are intended for
 local operator scripts on the Pi or a trusted management network; they are not
 an unauthenticated public Internet API.
 
+`GET /api/v1/snapshot` exposes charge-controller timer readback under each
+solar controller's `settings` object:
+
+- Classic: `absorb_time_minutes`.
+- EPEver: `absorb_time_minutes`; `equalize_time_minutes` is the
+  equalize-stage duration.
+
+`POST /api/v1/control/classic/charge-settings` accepts any subset of:
+
+```json
+{
+  "current_limit_a": 80.0,
+  "absorb_voltage_v": 55.4,
+  "float_voltage_v": 54.7,
+  "equalize_voltage_v": 55.4,
+  "absorb_time_minutes": 30,
+  "max_temp_comp_voltage_v": 56.8
+}
+```
+
+Classic voltage targets are guarded against the BMS-published charge-voltage
+limit (CVL). `absorb_time_minutes` is written to the Classic absorb timer register
+after conversion to the controller's native seconds register.
+
 Successful EPEver charge-setting writes return the controller readback:
 
 ```json
@@ -70,7 +94,9 @@ Successful EPEver charge-setting writes return the controller readback:
     "equalize_voltage_v": 55.6,
     "boost_voltage_v": 55.6,
     "float_voltage_v": 54.7,
-    "max_charging_current_a": 80.0
+    "max_charging_current_a": 80.0,
+    "absorb_time_minutes": 90,
+    "equalize_time_minutes": 0
   }
 }
 ```
@@ -83,7 +109,9 @@ Successful EPEver charge-setting writes return the controller readback:
   "equalize_voltage_v": 55.6,
   "float_voltage_v": 54.7,
   "bulk_recovery_voltage_v": 54.9,
-  "max_charging_current_a": 80.0
+  "max_charging_current_a": 80.0,
+  "absorb_time_minutes": 90,
+  "equalize_time_minutes": 0
 }
 ```
 
@@ -92,6 +120,8 @@ Successful EPEver charge-setting writes return the controller readback:
 `boost_reconnect_voltage_v` and maps to BVR / Bulk Voltage Recovery, the
 threshold below float where the controller may re-enter boost/bulk after
 having dropped to float.
+`absorb_time_minutes` maps to the EPEver Boost/Bulk charging time register
+(`0x9014`) in minutes. `equalize_time_minutes` maps to `0x9015`.
 
 The supervisor-side EPEver writer preserves the rest of the `0x9007..0x9012`
 voltage block and refuses unsafe or unsupported requests, including non-User
