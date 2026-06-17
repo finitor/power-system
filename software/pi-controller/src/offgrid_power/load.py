@@ -16,6 +16,10 @@ from .supervisor import SupervisorSnapshot
 MIDNIGHT_SOC_UNAVAILABLE = "unavailable, midnight SOC was not logged"
 LIVE_SOC_UNAVAILABLE = "unavailable, battery SOC offline"
 ROLLING_LOAD_WINDOW = timedelta(hours=3)
+# Nominal pack voltage for converting an SOC (coulomb) change to energy. Only the
+# battery-gain term of the daily energy balance uses it; a 16S LiFePO4 nominal,
+# a few-% effect since the bank operates 51-56 V.
+NOMINAL_PACK_VOLTAGE_V = 51.2
 
 
 @dataclass(frozen=True)
@@ -251,10 +255,11 @@ def _snapshot_soc_percent(snapshot: SupervisorSnapshot) -> int | None:
     return snapshot.battery.state_of_charge.soc_percent
 
 
-def load_today_text(today_ah: float, bank_percent: float | None) -> str:
-    text = f"{today_ah:.1f}Ah"
+def _load_today_energy_text(kwh: float, bank_percent: float | None) -> str:
+    wh = kwh * 1000
+    text = f"{round(wh)}Wh" if abs(wh) < 1000 else f"{kwh:.1f}kWh"
     if bank_percent is not None:
-        text += f" {bank_percent:.1f}% of bank"
+        text += f" {bank_percent:.0f}% of bank"
     return text
 
 
@@ -262,6 +267,7 @@ def estimate_load_today_text(
     snapshot: SupervisorSnapshot,
     bank_capacity: float | None,
     midnight_soc_percent: int | None,
+    nominal_voltage_v: float = NOMINAL_PACK_VOLTAGE_V,
 ) -> str:
     # Attribute the failure honestly: missing live battery data is not the
     # same condition as a missing midnight baseline.
@@ -269,79 +275,48 @@ def estimate_load_today_text(
         return LIVE_SOC_UNAVAILABLE
     if midnight_soc_percent is None:
         return MIDNIGHT_SOC_UNAVAILABLE
-    today_ah = estimate_load_today_ah(snapshot, bank_capacity, midnight_soc_percent)
-    if today_ah is None:
+    today_kwh = estimate_load_today_kwh(snapshot, bank_capacity, midnight_soc_percent, nominal_voltage_v)
+    if today_kwh is None:
         return LIVE_SOC_UNAVAILABLE
-    return load_today_text(today_ah, today_ah / bank_capacity * 100)
+    capacity_kwh = bank_capacity * nominal_voltage_v / 1000
+    bank_percent = today_kwh / capacity_kwh * 100 if capacity_kwh > 0 else None
+    return _load_today_energy_text(today_kwh, bank_percent)
 
 
-def estimate_load_today_ah(
+def estimate_load_today_kwh(
     snapshot: SupervisorSnapshot,
     bank_capacity: float | None,
     midnight_soc_percent: int | None,
+    nominal_voltage_v: float = NOMINAL_PACK_VOLTAGE_V,
 ) -> float | None:
+    """Energy consumed since local midnight, by bus balance:
+
+        consumed = Σ(producer daily energy) - battery energy gained
+
+    Producers report battery-side daily kWh (Classic native, EPEver derived from
+    its lifetime counter). The battery-gain term converts the SOC change to
+    energy at a nominal pack voltage -- the only place voltage enters. Returns
+    None (rather than undercounting) if a present producer's daily is missing."""
     if (
         snapshot.classic is None
         or snapshot.battery is None
         or snapshot.battery.state_of_charge is None
         or bank_capacity is None
         or bank_capacity <= 0
+        or midnight_soc_percent is None
+        or snapshot.classic.daily_energy_kwh is None
     ):
         return None
-    if midnight_soc_percent is None:
-        return None
-
+    charge_in_kwh = snapshot.classic.daily_energy_kwh
+    if snapshot.epever is not None:
+        if snapshot.epever.generated_today_kwh is None:
+            return None  # EPEver daily not yet derivable -> don't undercount
+        charge_in_kwh += snapshot.epever.generated_today_kwh
     current_soc_percent = snapshot.battery.state_of_charge.soc_percent
-    battery_delta_ah = (current_soc_percent - midnight_soc_percent) / 100 * bank_capacity
-    return snapshot.classic.daily_amp_hours_ah - battery_delta_ah
-
-
-def estimate_load_average_today_text(
-    snapshot: SupervisorSnapshot,
-    bank_capacity: float | None,
-    midnight_soc_percent: int | None,
-) -> str | None:
-    today_ah = estimate_load_today_ah(snapshot, bank_capacity, midnight_soc_percent)
-    if today_ah is None:
-        return None
-
-    elapsed_hours = _seconds_since_midnight(snapshot.captured_at.astimezone()) / 3600
-    if elapsed_hours <= 0:
-        return None
-
-    average_a = today_ah / elapsed_hours
-    average_w = round(average_a * load_voltage_v(snapshot))
-    return f"{average_a:.1f}A  {average_w}W"
-
-
-def estimate_load_remaining_text(
-    snapshot: SupervisorSnapshot,
-    bank_capacity: float | None,
-    midnight_soc_percent: int | None,
-) -> str | None:
-    today_ah = estimate_load_today_ah(snapshot, bank_capacity, midnight_soc_percent)
-    if (
-        today_ah is None
-        or today_ah <= 0
-        or snapshot.battery is None
-        or snapshot.battery.state_of_charge is None
-        or bank_capacity is None
-        or bank_capacity <= 0
-    ):
-        return None
-
-    elapsed_hours = _seconds_since_midnight(snapshot.captured_at.astimezone()) / 3600
-    if elapsed_hours <= 0:
-        return None
-
-    average_load_a = today_ah / elapsed_hours
-    if average_load_a <= 0:
-        return None
-
-    current_soc_percent = snapshot.battery.state_of_charge.soc_percent
-    remaining_ah = current_soc_percent / 100 * bank_capacity
-    remaining_hours = remaining_ah / average_load_a
-    return f"{remaining_hours:.1f}h"
+    battery_gain_kwh = (
+        (current_soc_percent - midnight_soc_percent) / 100 * bank_capacity * nominal_voltage_v / 1000
+    )
+    return charge_in_kwh - battery_gain_kwh
 
 
 def rolling_load_average_text(rolling_average: tuple[float, float] | None) -> str | None:

@@ -29,12 +29,10 @@ from offgrid_power.load import (
     LoadTracker,
     LIVE_SOC_UNAVAILABLE,
     MIDNIGHT_SOC_UNAVAILABLE,
-    estimate_load_average_today_text,
     estimate_load_current_a,
     estimate_load_remaining_from_average_a,
-    estimate_load_remaining_text,
+    estimate_load_today_kwh,
     estimate_load_today_text,
-    load_today_text,
 )
 from snapshot_helpers import (
     make_battery_snapshot,
@@ -77,30 +75,47 @@ class LoadEstimateTest(unittest.TestCase):
     def test_load_current_unavailable_without_battery_measurements(self) -> None:
         self.assertIsNone(estimate_load_current_a(make_snapshot()))
 
-    def test_load_today_text_includes_amp_hours_and_bank_percent(self) -> None:
-        self.assertEqual(load_today_text(38.6, 19.3), "38.6Ah 19.3% of bank")
-
-    def test_load_today_uses_classic_production_and_midnight_soc(self) -> None:
+    def test_load_today_is_energy_balance_of_classic_production_and_soc_gain(self) -> None:
+        # Classic 5.9 kWh in; SOC 90->92 over a 200 Ah bank at 51.2 V nominal =
+        # 0.2048 kWh stored; consumed = 5.9 - 0.205 = 5.7 kWh. % of 10.24 kWh bank.
         snapshot = _load_snapshot(datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc))
 
-        self.assertEqual(estimate_load_today_text(snapshot, 200, 90), "104.0Ah 52.0% of bank")
+        self.assertEqual(estimate_load_today_text(snapshot, 200, 90), "5.7kWh 56% of bank")
 
-    def test_load_remaining_extrapolates_load_since_midnight(self) -> None:
-        snapshot = _load_snapshot(datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc))
+    def test_load_today_sums_both_producers(self) -> None:
+        # Adding the EPEver's derived daily must increase consumed-today, not be
+        # ignored (the single-source bug).
+        snapshot = make_snapshot(
+            captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc),
+            classic=make_classic_telemetry(daily_energy_kwh=5.9),
+            epever=make_epever_telemetry(generated_today_kwh=2.0),
+            battery=make_battery_snapshot(soc_percent=92),
+        )
+        self.assertAlmostEqual(estimate_load_today_kwh(snapshot, 200, 90), 7.695, places=2)
 
-        self.assertEqual(estimate_load_remaining_text(snapshot, 200, 90), "14.2h")
+    def test_load_today_small_value_shows_watt_hours(self) -> None:
+        # Net tiny consumption reads in Wh, not "0.0kWh".
+        snapshot = make_snapshot(
+            captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc),
+            classic=make_classic_telemetry(daily_energy_kwh=0.21),
+            battery=make_battery_snapshot(soc_percent=90),
+        )
+        self.assertEqual(estimate_load_today_text(snapshot, 200, 90), "210Wh 2% of bank")
 
-    def test_load_average_today_uses_cumulative_load_since_midnight(self) -> None:
-        snapshot = _load_snapshot(datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc))
-
-        self.assertEqual(estimate_load_average_today_text(snapshot, 200, 90), "13.0A  690W")
+    def test_load_today_unavailable_when_epever_daily_missing(self) -> None:
+        # EPEver present but its derived daily not yet available -> don't undercount.
+        snapshot = make_snapshot(
+            captured_at=datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc),
+            classic=make_classic_telemetry(daily_energy_kwh=5.9),
+            epever=make_epever_telemetry(generated_today_kwh=None),
+            battery=make_battery_snapshot(soc_percent=92),
+        )
+        self.assertIsNone(estimate_load_today_kwh(snapshot, 200, 90))
 
     def test_load_today_reports_unavailable_without_midnight_soc(self) -> None:
         snapshot = _load_snapshot(datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc))
 
         self.assertEqual(estimate_load_today_text(snapshot, 200, None), MIDNIGHT_SOC_UNAVAILABLE)
-        self.assertIsNone(estimate_load_average_today_text(snapshot, 200, None))
-        self.assertIsNone(estimate_load_remaining_text(snapshot, 200, None))
 
     def test_load_today_attributes_missing_battery_data_not_midnight_log(self) -> None:
         # During a CAN outage the failure is live SOC, even when the midnight
@@ -129,7 +144,7 @@ class LoadTrackerTest(unittest.TestCase):
 
         self.assertIsNotNone(summary)
         self.assertIsNone(summary.average_today_text)
-        self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
+        self.assertEqual(summary.today_text, "5.7kWh 56% of bank")
         self.assertIsNone(summary.remaining_text)
 
     def test_load_tracker_asks_provider_once_per_day(self) -> None:
@@ -154,7 +169,7 @@ class LoadTrackerTest(unittest.TestCase):
         summary = tracker.update(_load_snapshot(datetime(2026, 5, 31, 16, 0, tzinfo=timezone.utc)))
 
         self.assertIsNotNone(summary)
-        self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
+        self.assertEqual(summary.today_text, "5.7kWh 56% of bank")
 
     def test_load_tracker_uses_three_hour_rolling_average_for_autonomy(self) -> None:
         buffer = LoadSampleBuffer()
@@ -168,7 +183,7 @@ class LoadTrackerTest(unittest.TestCase):
 
         self.assertIsNotNone(summary)
         self.assertEqual(summary.average_today_text, "3.3A  171W")
-        self.assertEqual(summary.today_text, "104.0Ah 52.0% of bank")
+        self.assertEqual(summary.today_text, "5.7kWh 56% of bank")
         self.assertEqual(summary.remaining_text, "55.2h")
 
     def test_load_tracker_appends_samples_to_rolling_buffer(self) -> None:

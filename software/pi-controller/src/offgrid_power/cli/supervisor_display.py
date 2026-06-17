@@ -344,14 +344,16 @@ def main() -> int:
                     allocation_detail_payload = allocation_detail(
                         allocation_decision, dry_run=not charge_allocation_logger.live
                     )
-            load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
-            load_summary = load_summary_tracker.update(snapshot)
-            # Record the raw device telemetry first (keeps the raw EPEver
-            # generated_today register in the store for diagnosis), then cache a
-            # display copy whose EPEver "today" is derived from the monotonic
-            # lifetime total -- the device's own daily field doesn't reset.
-            record_metrics(metric_recorder, snapshot, load_summary)
+            # Derive the EPEver "today" from its monotonic lifetime total (its own
+            # daily register doesn't reset); the load cumulative needs it too, so
+            # build the display copy before computing the load summary.
             display_snapshot = _with_derived_epever_today(snapshot, metric_recorder)
+            load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
+            load_summary = load_summary_tracker.update(display_snapshot)
+            # Record the raw device telemetry (keeps the raw EPEver generated_today
+            # register in the store for diagnosis); the load summary already uses
+            # the derived value.
+            record_metrics(metric_recorder, snapshot, load_summary)
             snapshot_cache.set(display_snapshot, load_summary, allocation=allocation_detail_payload)
             record_weather_metrics(metric_recorder, weather_service)
             record_inverter_event(metric_recorder, inverter_event_tracker, snapshot)
