@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from .metrics import TelemetryEvent
 
 
 @dataclass(frozen=True)
@@ -244,6 +247,42 @@ class ChargeCurrentAllocator:
             reason=reason,
             targets={charger.name: ChargerAllocationTarget(None, False, reason) for charger in chargers},
         )
+
+
+def charge_allocation_event(
+    decision: ChargeAllocationDecision,
+    *,
+    dry_run: bool,
+    captured_at: datetime | None = None,
+) -> TelemetryEvent:
+    """Durable event for one allocation decision.
+
+    Dry-run records must survive reboots (journald may be volatile on the Pi),
+    and these traces are how we tune reserve/deadband/weights from real days.
+    """
+    return TelemetryEvent(
+        captured_at=captured_at or datetime.now(timezone.utc),
+        source="charge_allocator",
+        event="allocation_decision",
+        detail={
+            "mode": "dry-run" if dry_run else "live",
+            "reason": decision.reason,
+            "bms_ccl_a": decision.bms_ccl_a,
+            "budget_a": decision.budget_a,
+            "load_allowance_a": decision.load_allowance_a,
+            "battery_charge_a": decision.battery_charge_a,
+            "weight_basis": decision.weight_basis,
+            "targets": {
+                name: {
+                    "target_a": target.target_current_a,
+                    "disable": target.disable,
+                    "should_write": target.should_write,
+                    "reason": target.reason,
+                }
+                for name, target in decision.targets.items()
+            },
+        },
+    )
 
 
 def _waterfill_allocate(

@@ -13,6 +13,7 @@ from offgrid_power.charge_allocator import (  # noqa: E402
     ChargeAllocatorConfig,
     ChargeCurrentAllocator,
     ChargerAllocationInput,
+    charge_allocation_event,
 )
 
 
@@ -182,6 +183,35 @@ class ChargeAllocatorTest(unittest.TestCase):
 
         self.assertIsNone(decision.targets["epever"].target_current_a)
         self.assertEqual(decision.targets["classic"].target_current_a, 35.0)
+
+
+class ChargeAllocationEventTest(unittest.TestCase):
+    def test_event_carries_decision_context(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=35.0,
+            load_current_a=12.0,
+            chargers=[
+                _charger("classic", actual=20.0, limit=80.0, max_=80.0),
+                _charger("epever", actual=20.0, limit=100.0, max_=100.0),
+            ],
+        )
+
+        event = charge_allocation_event(decision, dry_run=True)
+
+        self.assertEqual(event.source, "charge_allocator")
+        self.assertEqual(event.event, "allocation_decision")
+        detail = event.detail or {}
+        self.assertEqual(detail["mode"], "dry-run")
+        self.assertEqual(detail["bms_ccl_a"], 40.0)
+        self.assertEqual(detail["budget_a"], 47.0)
+        self.assertEqual(detail["reason"], "normal_load_allowance")
+        self.assertEqual(detail["weight_basis"], "actual_current")
+        self.assertEqual(set(detail["targets"]), {"classic", "epever"})
+        self.assertAlmostEqual(detail["targets"]["classic"]["target_a"], 23.5)
+        self.assertIn("disable", detail["targets"]["classic"])
+        self.assertTrue(event.event_id())  # hashes without error
 
 
 def _charger(

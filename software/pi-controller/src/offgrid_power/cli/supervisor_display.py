@@ -16,6 +16,11 @@ from offgrid_power.canbus import (
     ensure_socketcan_interface_up,
     socketcan_interfaces,
 )
+from offgrid_power.charge_allocator import (
+    ChargeCurrentAllocator,
+    ChargerAllocationInput,
+    charge_allocation_event,
+)
 from offgrid_power.charger_taper import (
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
@@ -26,7 +31,7 @@ from offgrid_power.classic import ClassicClient
 from offgrid_power.epever import EpeverClient
 from offgrid_power.magnum import InverterEventTracker, MagnumClient
 from offgrid_power.config import load_config
-from offgrid_power.load import LoadTotalsTracker
+from offgrid_power.load import estimate_load_current_a, LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
@@ -125,6 +130,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--classic-current-taper", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--classic-current-taper-dry-run", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--charge-allocation-dry-run",
+        action="store_true",
+        help="Evaluate the system-level CCL charge-current allocator each cycle and log the "
+        "decision as a telemetry event, without writing any charger limits",
+    )
     parser.add_argument("--once", action="store_true", help="Render one snapshot and exit")
     return parser.parse_args()
 
@@ -272,6 +283,7 @@ def main() -> int:
         if charger_current_taper_enabled or charger_current_taper_dry_run
         else None
     )
+    charge_allocator = ChargeCurrentAllocator() if args.charge_allocation_dry_run else None
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache, weather_service)
     previous_poll_render: str | None = None
@@ -298,6 +310,7 @@ def main() -> int:
                 target=args.charger_current_taper_target,
                 recorder=metric_recorder,
             )
+            record_charge_allocation(charge_allocator, snapshot=snapshot, recorder=metric_recorder)
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
             snapshot_cache.set(snapshot, load_summary)
@@ -472,6 +485,105 @@ def apply_charger_current_taper(
         )
     except Exception as exc:  # noqa: BLE001 - taper should never kill telemetry/display.
         print(f"Charger current taper failed: {exc}", file=sys.stderr)
+
+
+# Placeholder operator/rated ceilings until per-controller config lands; only
+# used by the dry-run allocator, which never writes.
+_CLASSIC_MAX_CURRENT_A = 100.0
+_EPEVER_MAX_CURRENT_A = 100.0
+# PV is "present" (the array could charge if given budget) when its input voltage
+# sits meaningfully above the bus -- independent of whether we're throttling it.
+_PV_PRESENT_MARGIN_V = 2.0
+
+
+def record_charge_allocation(
+    allocator: ChargeCurrentAllocator | None,
+    *,
+    snapshot,
+    recorder: MetricRecorder | None,
+) -> None:
+    """Dry-run only: evaluate the CCL allocator and log the decision. No writes."""
+    if allocator is None or recorder is None:
+        return
+    try:
+        chargers = _allocation_inputs(snapshot)
+        if not chargers:
+            return
+        battery = snapshot.battery
+        bms_ccl_a = battery_current_a = None
+        charge_enabled = True  # dry-run: assume enabled unless the BMS says otherwise
+        if battery is not None:
+            if battery.charge_limits is not None:
+                bms_ccl_a = battery.charge_limits.charge_current_limit_a
+            if battery.measurements is not None:
+                battery_current_a = battery.measurements.current_a
+            if battery.status is not None:
+                charge_enabled = battery.status.charge_enable
+        decision = allocator.decide(
+            bms_ccl_a=bms_ccl_a,
+            charge_enabled=charge_enabled,
+            battery_current_a=battery_current_a,
+            load_current_a=estimate_load_current_a(snapshot),
+            chargers=chargers,
+        )
+        recorder.record_event(
+            charge_allocation_event(decision, dry_run=True, captured_at=snapshot.captured_at)
+        )
+    except Exception as exc:  # noqa: BLE001 - allocation eval must never kill telemetry.
+        print(f"Charge allocation eval failed: {exc}", file=sys.stderr)
+
+
+def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
+    chargers: list[ChargerAllocationInput] = []
+    if snapshot.classic is not None:
+        classic = snapshot.classic
+        limit = (
+            snapshot.classic_settings.battery_current_limit_a
+            if snapshot.classic_settings is not None
+            else None
+        )
+        chargers.append(
+            ChargerAllocationInput(
+                name="classic",
+                actual_current_a=classic.battery_current_a,
+                current_limit_a=limit,
+                max_current_a=_CLASSIC_MAX_CURRENT_A,
+                pv_power_w=_pv_power_w(classic.pv_voltage_v, classic.pv_current_a),
+                min_current_a=0.0,
+                active=_can_charge(classic.pv_voltage_v, classic.battery_voltage_v),
+            )
+        )
+    if snapshot.epever is not None:
+        epever = snapshot.epever
+        limit = (
+            snapshot.epever_settings.max_charging_current_a
+            if snapshot.epever_settings is not None
+            else None
+        )
+        chargers.append(
+            ChargerAllocationInput(
+                name="epever",
+                actual_current_a=epever.battery_current_a,
+                current_limit_a=limit,
+                max_current_a=epever.rated_charging_current_a or _EPEVER_MAX_CURRENT_A,
+                pv_power_w=epever.pv_power_w,
+                min_current_a=1.0,  # 0x9013 floors at 1 A; below -> coil off
+                active=_can_charge(epever.pv_voltage_v, epever.battery_voltage_v),
+            )
+        )
+    return chargers
+
+
+def _can_charge(pv_voltage_v: float | None, bus_voltage_v: float | None) -> bool:
+    if pv_voltage_v is None or bus_voltage_v is None:
+        return False
+    return pv_voltage_v > bus_voltage_v + _PV_PRESENT_MARGIN_V
+
+
+def _pv_power_w(voltage_v: float | None, current_a: float | None) -> float | None:
+    if voltage_v is None or current_a is None:
+        return None
+    return round(voltage_v * current_a, 1)
 
 
 def _classic_charger_telemetry(snapshot) -> ChargerTelemetry | None:
