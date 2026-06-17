@@ -333,7 +333,14 @@ Phases:
 - **Still conservative near full / over-rationing.** The remaining structural
   issue: the "unconstrained" short-circuit keys on combined *nameplate* max
   (≈ CCL) rather than actual headroom, so it rations whenever the maxes sum near
-  CCL even though real output is a fraction of it. The ceiling SOC ramp may also
+  CCL even though real output is a fraction of it. **Observed 2026-06-17:** under
+  a ~1500 W house load the budget correctly grew to include it (~37 A), but the
+  PV-power split then capped Classic 29 A / EPEver 7.6 A — non-transferable caps,
+  so a PV-limited Classic's unused headroom couldn't flow to the EPEver and the
+  load went partly unfed (battery discharged). Fix: when *measured* total charger
+  output is at/below the budget, don't apportion — pin both to max so neither
+  leaves the load underfed; only split once production genuinely exceeds the
+  budget. The ceiling SOC ramp may also
   be tunable upward at high SOC (the bank took up to ~13 A at 90–95% in the
   traces, vs the ~9 A ceiling). Next: drive "unconstrained" off measured
   output/headroom, and re-tune the SOC ramp from data.
