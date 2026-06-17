@@ -17,6 +17,63 @@ net battery charge current <= BMS CCL
 
 Controller limits are only the actuators used to maintain that invariant.
 
+## Algorithm (as implemented)
+
+Once per supervisor cycle the allocation logger builds a `ChargerAllocationInput`
+for each controller from one coherent snapshot, evaluates the battery-state
+ceiling, calls the pure allocator `decide()`, logs the decision (on material
+change + a heartbeat), and — when live — writes the per-controller limits.
+`decide()` is a pure function; the only state (the full-charge latch) lives in
+the ceiling object. It resolves the per-cycle targets in this order:
+
+1. **Missing data → no action.** If BMS CCL or pack current is unreadable,
+   return no targets and write nothing (fail safe; never guess).
+2. **Charge disabled / CCL ≤ 0 → stop.** If the BMS charge-enable flag is false
+   (live: also if it is *unreadable*) or CCL ≤ 0, command every charger off —
+   Classic 0 A, EPEver coil off.
+3. **Battery-state ceiling.** Evaluate `ChargeCeiling` (top-knee taper + cell
+   safety, below): a cap on *total net charge current*. The effective limit is
+   `min(BMS CCL, ceiling)`. If that is ≤ 0 (a cell-safety stop or the full-charge
+   latch), stop all chargers, carrying the ceiling's reason.
+4. **Unconstrained short-circuit.** If every eligible charger at its own max
+   still couldn't reach the effective limit — `Σ(max) ≤ effective CCL` — the
+   allocator is *not* the binding constraint (sunlight is). Pin each charger to
+   its own max: no reserve, no apportionment, no per-cycle writes. This is the
+   normal state for most of a sunny day.
+5. **Budget.** Otherwise `budget = effective_CCL + max(load, 0) − reserve`,
+   then the feedback clamp (see Budget).
+6. **Apportion** the budget across eligible controllers by PV-power weight
+   (water-fill with cap redistribution).
+7. **Targets → writes.** Each target is capped at the controller's max; a target
+   below its `min_current_a` floor becomes `disable`. Live writes are gated by a
+   deadband (`min_write_delta_a`): the Classic limit is written volatile, the
+   EPEver current register is written, and the EPEver charge coil is toggled to
+   match the disable intent (only on change).
+
+The binding limit — `unconstrained`, `normal_load_allowance`, `feedback_clamp`,
+the ceiling reason (`top-knee taper`, `full-charge latch`, a cell stop), or a
+disable reason — is recorded as the decision `reason`, so a trace shows *why*
+each cycle did what it did.
+
+### Battery-state ceiling
+
+`ChargeCeiling.evaluate()` caps total net charge current from battery state and
+is combined with the BMS CCL by `min()`:
+
+- **Top-knee taper:** a ceiling that ramps down with SOC and with pack voltage
+  (the lower wins). Below the knee → no ceiling (CCL/budget govern).
+- **Cell-safety stops → 0 A:** max cell ≥ `high_cell_stop_v`, or cell delta ≥
+  `high_delta_stop_mv` while max cell ≥ `high_cell_soft_limit_v`.
+- **Full-charge latch → 0 A:** once SOC reaches `full_soc_percent`, hold zero
+  until the pack rests (SOC < `full_reset_soc_percent` **and** voltage ≤
+  `full_reset_voltage_v`). This is the one piece of carried state.
+
+> ⚠️ The ceiling thresholds are inherited from the single-controller ~54 V-era
+> taper and **over-clamp at the bank's current 55–56 V operating point** (voltage
+> above `top_voltage_v` pins the ceiling to `ramp2_low_current_a` ≈ 4 A). They
+> are env-tunable (Operator controls) and should be re-tuned once a full charge
+> cycle of traces is in hand.
+
 ## Inputs
 
 Use one coherent supervisor snapshot per decision:
@@ -51,18 +108,22 @@ if measured_battery_charge_a > bms_ccl_a + tolerance_a:
 ```
 
 The feedback clamp catches bad load estimates, stale controller output, and
-controller overshoot. Downward changes should be immediate; upward changes
-should be rate-limited in the live writer.
+controller overshoot.
 
 The clamp is a unity-gain proportional correction, and `reserve_a` is its
 companion margin. If the load estimate is biased high by more than the reserve,
 the feed-forward over-allocates and the clamp pulls net battery current back down
 to exactly CCL in steady state — safe, just at the ceiling. So `reserve_a`
 absorbs load-estimate error in the safe direction and the clamp catches the
-unsafe direction. The residual risk is transient overshoot and oscillation given
-the chargers' heterogeneous response (the EPEver's soft-start lag vs the
-Classic), which is why the allocator stays stateless and rate-limiting lives in
-the live writer — immediate down, slow up.
+unsafe direction; the clamp's "down" is effectively immediate (it's recomputed
+every cycle from the measured current).
+
+**No rate-limiting on the limit writes.** A controller's current limit is a
+*ceiling*, not a setpoint: the controller still ramps its actual output via its
+own CV regulation / soft-start, so jumping the limit does not surge current.
+That, plus the budget-level clamp giving immediate-down behaviour, is why we do
+not slow the limit writes — and not slowing them also avoids extra EEPROM writes
+to the EPEver. If traces ever show oscillation, revisit this.
 
 ## Apportionment
 
@@ -143,16 +204,91 @@ Every actionable decision should be logged as a structured event:
 Those records are how we tune reserve, deadband, rate limits, and apportionment
 weights from real sunny-day traces.
 
-## Implementation Plan
+## Operator controls
 
-1. Add a pure allocator module with deterministic tests for budget calculation,
-   feedback clamping, and two-controller apportionment.
-2. Add dry-run telemetry events from the supervisor loop.
-3. Add live writes behind an explicit flag:
-   - Classic: volatile charge-current limit.
-   - EPEver: max charging current register, with coil-off below useful minimum.
-4. Add rate limiting and stale-data guards before enabling live writes by
-   default.
+### Toggling (version-controlled, by design)
+
+On/off authority lives in a flag in the supervisor systemd unit
+(`config/systemd/offgrid-supervisor.service`), **not** an env var — after the
+legacy taper was found running live via a stray `CHARGER_CURRENT_TAPER=true`,
+control authority stays auditable in git.
+
+| ExecStart flag | Behaviour |
+|---|---|
+| `--charge-allocation` | **Live** — evaluates and writes per-controller limits |
+| `--charge-allocation-dry-run` | Evaluates and logs decisions; writes nothing |
+| (neither) | Off |
+
+- **Toggle:** edit the flag in the unit and run `scripts/deploy.sh` (renders the
+  unit and restarts). Use the dry-run flag to watch decisions without acting.
+- **Mutual exclusion:** the supervisor refuses to start `--charge-allocation`
+  while the live taper is enabled (`CHARGER_CURRENT_TAPER`). The allocator is the
+  sole current-limit writer; disable the taper first.
+- **Emergency off without a deploy:** `systemctl stop offgrid-supervisor` (stops
+  all supervision) or drive the controllers via `POST /api/v1/control/...`. The
+  BMS hard limits remain the backstop regardless.
+
+### Tuning parameters (env, no deploy)
+
+Tuning knobs are env vars in `/etc/offgrid-power.env` — edit, then
+`systemctl restart offgrid-supervisor` (no deploy). Unset → the defaults below.
+This is the opposite split from the toggle on purpose: tuning values are not
+safety authority, and the Phase-2 ceiling re-tune wants fast iteration. Each var
+is the config field name upper-cased with its prefix; a non-numeric value is
+ignored (logged) and falls back to the default.
+
+Allocator (`CHARGE_ALLOC_…`):
+
+| env var | default | meaning |
+|---|---|---|
+| `CHARGE_ALLOC_RESERVE_A` | 5.0 | margin subtracted from the budget |
+| `CHARGE_ALLOC_FEEDBACK_TOLERANCE_A` | 1.0 | clamp deadband above CCL |
+| `CHARGE_ALLOC_MIN_WRITE_DELTA_A` | 2.0 | skip a write within this of the present limit |
+| `CHARGE_ALLOC_MIN_ACTIVE_WEIGHT_A` | 1.0 | sunrise weight floor (output basis) |
+| `CHARGE_ALLOC_MIN_ACTIVE_WEIGHT_W` | 10.0 | sunrise weight floor (PV-power basis) |
+| `CHARGE_ALLOC_CLASSIC_MAX_A` | 100 | Classic operator ceiling |
+| `CHARGE_ALLOC_EPEVER_MAX_A` | 100 | EPEver ceiling (its rated value is preferred when read) |
+| `CHARGE_ALLOC_HEARTBEAT_S` | 300 | seconds between trace events when nothing changes |
+
+Battery-state ceiling (`CHARGE_CEILING_…`) — the Phase-2 re-tune targets:
+
+| env var | default | meaning |
+|---|---|---|
+| `CHARGE_CEILING_BULK_SOC_PERCENT` | 85 | below → no SOC ceiling |
+| `CHARGE_CEILING_RAMP2_SOC_PERCENT` | 92 | bulk→ramp2 SOC knee |
+| `CHARGE_CEILING_FULL_SOC_PERCENT` | 100 | full-charge latch trips at/above |
+| `CHARGE_CEILING_FULL_RESET_SOC_PERCENT` | 98 | latch clears below (with voltage) |
+| `CHARGE_CEILING_BULK_VOLTAGE_V` | 53.6 | below → no voltage ceiling |
+| `CHARGE_CEILING_RAMP2_VOLTAGE_V` | 54.4 | bulk→ramp2 voltage knee |
+| `CHARGE_CEILING_TOP_VOLTAGE_V` | 54.8 | at/above → `ramp2_low` |
+| `CHARGE_CEILING_FULL_RESET_VOLTAGE_V` | 54.0 | latch-clear voltage |
+| `CHARGE_CEILING_RAMP1_HIGH_CURRENT_A` | 30 | ceiling at the bulk knee |
+| `CHARGE_CEILING_RAMP1_LOW_CURRENT_A` | 20 | ceiling at the ramp2 knee |
+| `CHARGE_CEILING_RAMP2_HIGH_CURRENT_A` | 10 | ceiling entering the top |
+| `CHARGE_CEILING_RAMP2_LOW_CURRENT_A` | 4 | ceiling at full / top voltage |
+| `CHARGE_CEILING_HIGH_CELL_STOP_V` | 3.55 | hard cell-voltage stop |
+| `CHARGE_CEILING_HIGH_CELL_SOFT_LIMIT_V` | 3.50 | soft cell limit (with delta) |
+| `CHARGE_CEILING_HIGH_DELTA_STOP_MV` | 175 | cell-delta stop |
+
+### Reading what it's doing
+
+- **Live:** the "Charge Allocation" panel on the console (Mode, Limits CCL/ceiling,
+  Budget, per-controller targets; `*` marks a write this cycle) and the
+  `allocation` block in `GET /api/v1/snapshot`.
+- **History:** `charge_allocator` / `allocation_decision` events in the metric
+  store (and the B2 Parquet export); the `reason` field is the quickest read of
+  why a cycle did what it did.
+
+## Implementation status
+
+Done: pure allocator + tests; dry-run telemetry; live writes behind the flag
+(Classic volatile limit, EPEver register + coil) with taper mutual exclusion;
+battery-state ceiling (top-knee taper + cell safety + full-charge latch) combined
+via `min()`; the unconstrained short-circuit; env-tunable parameters.
+
+Remaining: re-tune the ceiling thresholds for the 55–56 V operating point from a
+full charge cycle of traces (Phase 2); finish removing the legacy taper (Phase 4
+below).
 
 ## Sunsetting the legacy taper (`charger_taper`)
 
@@ -162,34 +298,28 @@ writers fight over the same `0x9013` / Classic limit register. (We watched the
 env-enabled taper, `CHARGER_CURRENT_TAPER=true` + `TARGET=epever`, fight an API
 write down to its taper value in real time.)
 
-But the taper carries behaviors the allocator does **not yet** have, including
-**safety** ones. Do not remove it until these are ported and validated:
-
-- the **top-knee current taper** by voltage/SOC (the `voltage_taper` term the
-  allocator's `min(hw_max, voltage_taper, ccl_share)` references but does not yet
-  compute);
-- the **high-cell-voltage safety stop**;
-- the **full-charge latch** (hold zero until the pack rests).
-
-Native controller CV regulation and the BMS's own protection remain in place, so
-disabling the taper is not removing the last line of defense — but until the
-allocator owns the `voltage_taper`/latch behaviors, the system-level CCL clamp on
-the EPEver is absent between low SOC and high production. Prioritize accordingly.
+The taper's behaviors — including the **safety** ones — are now ported into the
+allocator's battery-state ceiling (`charge_ceiling.py`): the **top-knee taper**,
+the **high-cell-voltage stop**, and the **full-charge latch**. Native controller
+CV regulation and the BMS's own protection remain in place underneath. So the
+last lines of defense are intact, and the allocator now owns the system-level
+clamp — the remaining work is calibration and removing the dead machinery.
 
 Phases:
 
-0. **Disable the live taper, hand the knob back.** Done 2026-06-16:
+0. **Disable the live taper, hand the knob back.** ✅ Done 2026-06-16:
    `CHARGER_CURRENT_TAPER=false` in the Pi env, EPEver limit restored to 80 A via
    the control API. Taper writes ceased.
-1. **Port the per-controller ceiling into the allocator** as the `voltage_taper`
-   constraint, including the high-cell-voltage stop and full-charge latch. Reuse
-   `charger_taper`'s ramp/latch logic; keep it a pure function the allocator
-   consumes per controller.
-2. **Validate by comparison** from dry-run traces (optionally run the taper in
-   dry-run alongside) before trusting the allocator with the safety behaviors.
-3. **Make the allocator the sole live current writer** (its live-write path +
-   writer-side rate-limiting). Enforce mutual exclusion: the supervisor refuses
-   to start with both the taper and the allocator's live path enabled.
+1. **Port the per-controller ceiling into the allocator.** ✅ Done —
+   `charge_ceiling.py` (top-knee taper + high-cell stop + cell-delta stop +
+   full-charge latch), combined with the BMS CCL by `min()`. Thresholds are
+   inherited from the taper and still need re-tuning (Phase 2).
+2. **Validate / re-tune.** ⏳ In progress — collect a full charge cycle of live
+   traces and re-tune the `CHARGE_CEILING_*` thresholds for the 55–56 V operating
+   point (they currently over-clamp near full).
+3. **Make the allocator the sole live current writer.** ✅ Done — `--charge-allocation`
+   live path writes the Classic limit and the EPEver register/coil; the supervisor
+   refuses to start with both it and the live taper (mutual exclusion).
 4. **Remove the machinery:** `charger_taper.py`, `apply_charger_current_taper`,
    the `--charger-current-taper*` / `--classic-current-taper*` flags and the
    `CHARGER_CURRENT_TAPER*` env handling (and the Pi env lines + `.env.example`),

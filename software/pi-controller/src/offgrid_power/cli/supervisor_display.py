@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 from datetime import datetime, timedelta
 import os
 import sys
@@ -17,12 +18,13 @@ from offgrid_power.canbus import (
     socketcan_interfaces,
 )
 from offgrid_power.charge_allocator import (
+    ChargeAllocatorConfig,
     ChargeCurrentAllocator,
     ChargerAllocationInput,
     allocation_detail,
     charge_allocation_event,
 )
-from offgrid_power.charge_ceiling import ChargeCeiling
+from offgrid_power.charge_ceiling import ChargeCeiling, ChargeCeilingConfig
 from offgrid_power.charger_taper import (
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
@@ -300,7 +302,11 @@ def main() -> int:
         )
     charge_allocation_logger = (
         ChargeAllocationLogger(
-            ChargeCurrentAllocator(), supervisor=supervisor, live=args.charge_allocation
+            ChargeCurrentAllocator(_config_from_env(ChargeAllocatorConfig, "CHARGE_ALLOC_")),
+            supervisor=supervisor,
+            live=args.charge_allocation,
+            ceiling_config=_config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_"),
+            heartbeat_s=_env_float("CHARGE_ALLOC_HEARTBEAT_S", 300.0),
         )
         if args.charge_allocation or args.charge_allocation_dry_run
         else None
@@ -515,10 +521,8 @@ def apply_charger_current_taper(
         print(f"Charger current taper failed: {exc}", file=sys.stderr)
 
 
-# Placeholder operator/rated ceilings until per-controller config lands; only
-# used by the dry-run allocator, which never writes.
-_CLASSIC_MAX_CURRENT_A = 100.0
-_EPEVER_MAX_CURRENT_A = 100.0
+# Per-controller current ceilings are operator knobs (CHARGE_ALLOC_CLASSIC_MAX_A
+# / CHARGE_ALLOC_EPEVER_MAX_A; the EPEver also prefers its rated value when read).
 # PV is "present" (the array could charge if given budget) when its input voltage
 # sits meaningfully above the bus -- independent of whether we're throttling it.
 _PV_PRESENT_MARGIN_V = 2.0
@@ -549,13 +553,14 @@ class ChargeAllocationLogger:
         heartbeat_s: float = 300.0,
         supervisor: Supervisor | None = None,
         live: bool = False,
+        ceiling_config: ChargeCeilingConfig | None = None,
     ) -> None:
         self.allocator = allocator
         self.heartbeat_s = heartbeat_s
         self.supervisor = supervisor
         self.live = live
         # Stateful (full-charge latch); evaluated once per cycle here.
-        self.ceiling = ChargeCeiling()
+        self.ceiling = ChargeCeiling(ceiling_config)
         self._last_signature: tuple | None = None
         self._last_logged_monotonic: float | None = None
         self._epever_charging_state: bool | None = None
@@ -671,7 +676,7 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 name="classic",
                 actual_current_a=classic.battery_current_a,
                 current_limit_a=limit,
-                max_current_a=_CLASSIC_MAX_CURRENT_A,
+                max_current_a=_env_float("CHARGE_ALLOC_CLASSIC_MAX_A", 100.0),
                 pv_power_w=_pv_power_w(classic.pv_voltage_v, classic.pv_current_a),
                 min_current_a=0.0,
                 active=_can_charge(classic.pv_voltage_v, classic.battery_voltage_v),
@@ -689,7 +694,8 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 name="epever",
                 actual_current_a=epever.battery_current_a,
                 current_limit_a=limit,
-                max_current_a=epever.rated_charging_current_a or _EPEVER_MAX_CURRENT_A,
+                max_current_a=epever.rated_charging_current_a
+                or _env_float("CHARGE_ALLOC_EPEVER_MAX_A", 100.0),
                 pv_power_w=epever.pv_power_w,
                 min_current_a=1.0,  # 0x9013 floors at 1 A; below -> coil off
                 active=_can_charge(epever.pv_voltage_v, epever.battery_voltage_v),
@@ -755,6 +761,22 @@ def _env_float(name: str, default: float) -> float:
         return float(value)
     except ValueError:
         return default
+
+
+def _config_from_env(config_cls, prefix: str):
+    """Build a (float-field) config dataclass, overriding any field from
+    ``<prefix><FIELD_NAME_UPPER>`` in the environment. Unset/blank -> the
+    dataclass default; non-numeric -> ignored with a warning."""
+    overrides: dict = {}
+    for field in dataclasses.fields(config_cls):
+        raw = os.getenv(prefix + field.name.upper())
+        if raw in (None, ""):
+            continue
+        try:
+            overrides[field.name] = float(raw)
+        except ValueError:
+            print(f"Ignoring non-numeric {prefix}{field.name.upper()}={raw!r}", file=sys.stderr)
+    return config_cls(**overrides)
 
 
 if __name__ == "__main__":

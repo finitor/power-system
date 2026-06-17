@@ -15,8 +15,10 @@ from offgrid_power.cli.supervisor_display import (  # noqa: E402
     ChargeAllocationLogger,
     _allocation_inputs,
     _can_charge,
+    _config_from_env,
     _pv_power_w,
 )
+from offgrid_power.charge_ceiling import ChargeCeilingConfig  # noqa: E402
 from offgrid_power.charge_allocator import ChargeCurrentAllocator, ChargerAllocationInput  # noqa: E402
 
 
@@ -124,6 +126,34 @@ class LiveApplyTest(unittest.TestCase):
         self.assertEqual(sup.coil, [False])  # EPEver off via coil
         self.assertIn({"battery_current_limit_a": 0.0, "persist": False}, sup.classic_writes)
         self.assertEqual(sup.epever_currents, [])  # no current write while disabled
+
+
+class ConfigFromEnvTest(unittest.TestCase):
+    def test_overrides_named_fields_and_keeps_defaults(self) -> None:
+        import os
+
+        os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"] = "56.0"
+        os.environ["CHARGE_CEILING_RAMP2_LOW_CURRENT_A"] = "6"
+        os.environ.pop("CHARGE_CEILING_BULK_VOLTAGE_V", None)
+        try:
+            config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
+        finally:
+            del os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"]
+            del os.environ["CHARGE_CEILING_RAMP2_LOW_CURRENT_A"]
+
+        self.assertEqual(config.top_voltage_v, 56.0)  # overridden
+        self.assertEqual(config.ramp2_low_current_a, 6.0)  # overridden
+        self.assertEqual(config.bulk_voltage_v, 53.6)  # default preserved
+
+    def test_non_numeric_value_is_ignored(self) -> None:
+        import os
+
+        os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"] = "oops"
+        try:
+            config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
+        finally:
+            del os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"]
+        self.assertEqual(config.top_voltage_v, 54.8)  # falls back to default
 
 
 class EligibilityTest(unittest.TestCase):
