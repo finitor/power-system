@@ -331,6 +331,17 @@ risk is *cell overvoltage*, so taper on the signals that measure it directly.
 - **Replace the SOC≥100 full-charge latch with CV-termination**: max cell at the
   CV target *and* charge current tapered below a small fraction — more robust and
   the textbook "full" definition.
+- **Live calibration anchor (2026-06-17 16:31):** ceiling pinned at 9.2 A while
+  BMS CCL = 200 A, SOC 93%, pack 54.62 V, **max cell 3.425 V, delta 21 mV**. The
+  SOC (>92) and pack-voltage (>54.4) ramps were throttling hard while the cells
+  were barely into the knee. Operator reference points: max cell 3.425 V = full
+  current, no concern; **delta alarms only above ~100 mV** (one cell running
+  away). So the cell-voltage taper should hold full current to ~3.45 V/cell,
+  taper 3.45→3.50 (soft), stop ~3.55; delta benign <~50 mV, ease ~70–100 mV,
+  operator-alarm 100 mV, hard stop ~150–175 mV. At low delta (well balanced)
+  pack voltage ≈ 16× max cell, so an interim env re-tune can recalibrate the
+  voltage ramp to cell-equivalents (≈55.2/55.6/56.0 V for 3.45/3.475/3.50) and
+  push the SOC knees to ~96/99 to neutralize the uncalibrated-SOC contribution.
 - Tune thresholds to *under-charge* (IR-inflated) cell voltage, not rested OCV;
   keep a conservative fallback when per-cell readings are missing; smooth the
   cell-voltage input (twitchy under fluctuating current). The BMS already walks
