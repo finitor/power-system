@@ -153,3 +153,46 @@ weights from real sunny-day traces.
    - EPEver: max charging current register, with coil-off below useful minimum.
 4. Add rate limiting and stale-data guards before enabling live writes by
    default.
+
+## Sunsetting the legacy taper (`charger_taper`)
+
+The allocator is meant to replace `charger_taper`, which today writes a single
+controller's current limit. They **cannot both run live** — two independent
+writers fight over the same `0x9013` / Classic limit register. (We watched the
+env-enabled taper, `CHARGER_CURRENT_TAPER=true` + `TARGET=epever`, fight an API
+write down to its taper value in real time.)
+
+But the taper carries behaviors the allocator does **not yet** have, including
+**safety** ones. Do not remove it until these are ported and validated:
+
+- the **top-knee current taper** by voltage/SOC (the `voltage_taper` term the
+  allocator's `min(hw_max, voltage_taper, ccl_share)` references but does not yet
+  compute);
+- the **high-cell-voltage safety stop**;
+- the **full-charge latch** (hold zero until the pack rests).
+
+Native controller CV regulation and the BMS's own protection remain in place, so
+disabling the taper is not removing the last line of defense — but until the
+allocator owns the `voltage_taper`/latch behaviors, the system-level CCL clamp on
+the EPEver is absent between low SOC and high production. Prioritize accordingly.
+
+Phases:
+
+0. **Disable the live taper, hand the knob back.** Done 2026-06-16:
+   `CHARGER_CURRENT_TAPER=false` in the Pi env, EPEver limit restored to 80 A via
+   the control API. Taper writes ceased.
+1. **Port the per-controller ceiling into the allocator** as the `voltage_taper`
+   constraint, including the high-cell-voltage stop and full-charge latch. Reuse
+   `charger_taper`'s ramp/latch logic; keep it a pure function the allocator
+   consumes per controller.
+2. **Validate by comparison** from dry-run traces (optionally run the taper in
+   dry-run alongside) before trusting the allocator with the safety behaviors.
+3. **Make the allocator the sole live current writer** (its live-write path +
+   writer-side rate-limiting). Enforce mutual exclusion: the supervisor refuses
+   to start with both the taper and the allocator's live path enabled.
+4. **Remove the machinery:** `charger_taper.py`, `apply_charger_current_taper`,
+   the `--charger-current-taper*` / `--classic-current-taper*` flags and the
+   `CHARGER_CURRENT_TAPER*` env handling (and the Pi env lines + `.env.example`),
+   the `ChargerTelemetry` / `ChargerCurrentSettings` helpers, and
+   `tests/test_charger_taper.py`. Leave historical `charger_taper` events in the
+   store untouched; note the producer's retirement in the journal.
