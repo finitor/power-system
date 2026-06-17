@@ -1327,7 +1327,7 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
     if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
         parts = []
         if controller.get("daily_energy_kwh") is not None:
-            parts.append(_meas(controller.get("daily_energy_kwh"), "kWh", 1))
+            parts.append(_energy_text(controller.get("daily_energy_kwh")))
         if controller.get("daily_amp_hours_ah") is not None:
             parts.append(_meas(controller.get("daily_amp_hours_ah"), "Ah", 0))
         lines.append(_row("Production Today", "  ".join(parts)))
@@ -1366,6 +1366,16 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
 def _meas(value: object, suffix: str, decimals: int = 1) -> str:
     text = _format_number(value, suffix, decimals)
     return text if text is not None else "--"
+
+
+def _energy_text(kwh) -> str:
+    """Readable energy: Wh (integer) below 1 kWh, kWh (1 decimal) above. The
+    counters are 10 Wh (EPEver) / 100 Wh (Classic) resolution, so the Wh value is
+    quantized to those steps -- this just avoids the '0.0x kWh' clutter."""
+    if kwh is None:
+        return "--"
+    wh = float(kwh) * 1000
+    return f"{round(wh)} Wh" if abs(wh) < 1000 else f"{float(kwh):.1f} kWh"
 
 
 def _first_present(mapping: dict, *keys: str):

@@ -350,7 +350,7 @@ def _solar_lines(solar: list[dict]) -> list[str]:
         if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
             parts = []
             if controller.get("daily_energy_kwh") is not None:
-                parts.append(f"{_fmt(controller.get('daily_energy_kwh'), 1)}kWh")
+                parts.append(_energy_text(controller.get("daily_energy_kwh")))
             if controller.get("daily_amp_hours_ah") is not None:
                 parts.append(f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah")
             lines.append(_row("Production Today", "  ".join(parts)))
@@ -526,6 +526,16 @@ def _fmt(value, decimals: int) -> str:
     if value is None:
         return "?"
     return f"{float(value):.{decimals}f}"
+
+
+def _energy_text(kwh) -> str:
+    """Readable energy: Wh (integer) below 1 kWh, kWh (1 decimal) above. The
+    underlying counters are 10 Wh (EPEver) / 100 Wh (Classic) resolution, so the
+    Wh value is quantized to those steps -- this just avoids the '0.0x kWh' clutter."""
+    if kwh is None:
+        return "?"
+    wh = float(kwh) * 1000
+    return f"{round(wh)}Wh" if abs(wh) < 1000 else f"{float(kwh):.1f}kWh"
 
 
 def _yes_no(value) -> str | None:

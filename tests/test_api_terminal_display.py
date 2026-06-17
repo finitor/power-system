@@ -12,6 +12,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.api_terminal_display import (
     _allocation_lines,
+    _energy_text,
     render_api_snapshot,
     render_api_unavailable,
     render_api_weather,
@@ -131,9 +132,11 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Charge Settings       Limit 80.0A  Absorb 55.6V t=32.5m  Float 55.0V  EQ 55.6V", rendered)
         self.assertIn("Charge Controller 0 (MidNite Classic 200)\n", rendered)
         self.assertIn("\n\nCharge Controller 1 (EPEver TEP10425)\n", rendered)
-        # cc1 mirrors cc0: a "Production Today" line (kWh only, no Ah from the
-        # EPEver), and no static "Rated" line.
-        self.assertIn("Production Today      0.1kWh", rendered)
+        # cc1 mirrors cc0: a "Production Today" line (energy only, no Ah from the
+        # EPEver), and no static "Rated" line. Adaptive units: sub-1 kWh shows Wh
+        # (EPEver 0.1 -> 100Wh), >=1 kWh shows kWh (Classic 5.8 -> 5.8kWh).
+        self.assertIn("Production Today      100Wh", rendered)
+        self.assertIn("Production Today      5.8kWh  106Ah", rendered)
         self.assertNotIn("Rated", rendered)
         self.assertIn("Charge Settings       Limit 80.0A  Absorb 54.7V t=120m  Float 53.6V  EQ 54.7V", rendered)
         self.assertIn("\n\nInverter/Charger\n", rendered)
@@ -199,6 +202,14 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = render_api_snapshot(payload, now=datetime(2026, 6, 5, 12, 0, 2, tzinfo=timezone.utc))
         self.assertIn("Charge Allocation", rendered)
         self.assertLess(rendered.index("Charge Allocation"), rendered.index("Temperatures"))
+
+    def test_energy_text_switches_units_at_one_kwh(self) -> None:
+        self.assertEqual(_energy_text(0.01), "10Wh")
+        self.assertEqual(_energy_text(0.23), "230Wh")
+        self.assertEqual(_energy_text(0.999), "999Wh")
+        self.assertEqual(_energy_text(1.0), "1.0kWh")
+        self.assertEqual(_energy_text(3.52), "3.5kWh")
+        self.assertEqual(_energy_text(None), "?")
 
     def test_render_api_unavailable(self) -> None:
         rendered = render_api_unavailable("connection refused")
