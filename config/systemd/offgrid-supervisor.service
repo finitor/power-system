@@ -41,7 +41,7 @@ ExecStartPre=+/bin/chown @SERVICE_USER@:@SERVICE_USER@ /var/lib/offgrid
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up
-ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --epever-device /dev/epever-rs485 --web-display --web-host 127.0.0.1 --web-port 8081 --weather --weather-cache-path /srv/telemetry/data/weather-cache.json --interval 5 --no-terminal-display --metrics-db-path /srv/telemetry/data/metrics.sqlite --metrics-db-mountpoint /srv/telemetry --metrics-fallback-db-path /var/lib/offgrid/metrics-fallback.sqlite --metrics-snapshot-interval 60
+ExecStart=@PROJECT_DIR@/.venv/bin/python @PROJECT_DIR@/scripts/supervisor-display.py --classic-host ${CLASSIC_HOST} --epever-device /dev/epever-rs485 --web-display --web-host 127.0.0.1 --web-port 8081 --weather --weather-cache-path /srv/telemetry/data/weather-cache.json --interval 5 --no-terminal-display --metrics-db-path /srv/telemetry/data/metrics.sqlite --metrics-db-mountpoint /srv/telemetry --metrics-fallback-db-path /var/lib/offgrid/metrics-fallback.sqlite --metrics-snapshot-interval 60 --charge-allocation-dry-run
 Restart=on-failure
 RestartSec=5
 
