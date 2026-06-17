@@ -12,10 +12,10 @@ sys.path.insert(0, str(PACKAGE_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from offgrid_power.cli.supervisor_display import (  # noqa: E402
+    ChargeAllocationLogger,
     _allocation_inputs,
     _can_charge,
     _pv_power_w,
-    record_charge_allocation,
 )
 from offgrid_power.charge_allocator import ChargeCurrentAllocator  # noqa: E402
 from snapshot_helpers import (  # noqa: E402
@@ -84,16 +84,38 @@ class DryRunRecordingTest(unittest.TestCase):
         )
         recorder = _FakeRecorder()
 
-        record_charge_allocation(ChargeCurrentAllocator(), snapshot=snapshot, recorder=recorder)
+        ChargeAllocationLogger(ChargeCurrentAllocator()).record(snapshot, recorder)
 
         self.assertEqual(len(recorder.events), 1)
         event = recorder.events[0]
         self.assertEqual(event.source, "charge_allocator")
         self.assertEqual((event.detail or {})["reason"], "missing BMS CCL")
 
-    def test_no_allocator_is_a_noop(self) -> None:
+    def test_throttles_unchanged_decisions_but_keeps_a_heartbeat(self) -> None:
+        snapshot = make_snapshot(
+            battery=make_battery_snapshot(soc_percent=90),
+            classic=make_classic_telemetry(pv_voltage_v=120.0, battery_voltage_v=54.0),
+        )
         recorder = _FakeRecorder()
-        record_charge_allocation(None, snapshot=make_snapshot(), recorder=recorder)
+        # Large heartbeat so only the first (changed) decision logs.
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), heartbeat_s=10_000.0)
+
+        for _ in range(5):
+            logger.record(snapshot, recorder)
+
+        self.assertEqual(len(recorder.events), 1)  # identical decisions suppressed
+
+        # Zero heartbeat -> every poll logs (heartbeat always due).
+        recorder2 = _FakeRecorder()
+        beat = ChargeAllocationLogger(ChargeCurrentAllocator(), heartbeat_s=0.0)
+        for _ in range(3):
+            beat.record(snapshot, recorder2)
+        self.assertEqual(len(recorder2.events), 3)
+
+    def test_no_logger_is_a_noop(self) -> None:
+        recorder = _FakeRecorder()
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator())
+        logger.record(make_snapshot(), recorder)  # no chargers -> nothing logged
         self.assertEqual(recorder.events, [])
 
 

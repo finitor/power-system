@@ -283,7 +283,11 @@ def main() -> int:
         if charger_current_taper_enabled or charger_current_taper_dry_run
         else None
     )
-    charge_allocator = ChargeCurrentAllocator() if args.charge_allocation_dry_run else None
+    charge_allocation_logger = (
+        ChargeAllocationLogger(ChargeCurrentAllocator())
+        if args.charge_allocation_dry_run
+        else None
+    )
     if args.web_display:
         start_web_display(args, supervisor, snapshot_cache, weather_service)
     previous_poll_render: str | None = None
@@ -310,7 +314,8 @@ def main() -> int:
                 target=args.charger_current_taper_target,
                 recorder=metric_recorder,
             )
-            record_charge_allocation(charge_allocator, snapshot=snapshot, recorder=metric_recorder)
+            if charge_allocation_logger is not None:
+                charge_allocation_logger.record(snapshot, metric_recorder)
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(snapshot)
             snapshot_cache.set(snapshot, load_summary)
@@ -496,41 +501,75 @@ _EPEVER_MAX_CURRENT_A = 100.0
 _PV_PRESENT_MARGIN_V = 2.0
 
 
-def record_charge_allocation(
-    allocator: ChargeCurrentAllocator | None,
-    *,
-    snapshot,
-    recorder: MetricRecorder | None,
-) -> None:
-    """Dry-run only: evaluate the CCL allocator and log the decision. No writes."""
-    if allocator is None or recorder is None:
-        return
-    try:
-        chargers = _allocation_inputs(snapshot)
-        if not chargers:
+class ChargeAllocationLogger:
+    """Dry-run only: evaluate the CCL allocator each tick and log the decision.
+
+    Records on a *material change* (reason, budget, or any per-charger target /
+    disable) plus a periodic heartbeat, so the event store captures every
+    transition and a steady-state pulse without a row every poll. Never writes
+    charger settings; best-effort so it can never kill telemetry.
+    """
+
+    def __init__(
+        self, allocator: ChargeCurrentAllocator, *, heartbeat_s: float = 300.0
+    ) -> None:
+        self.allocator = allocator
+        self.heartbeat_s = heartbeat_s
+        self._last_signature: tuple | None = None
+        self._last_logged_monotonic: float | None = None
+
+    def record(self, snapshot, recorder: MetricRecorder | None) -> None:
+        if recorder is None:
             return
-        battery = snapshot.battery
-        bms_ccl_a = battery_current_a = None
-        charge_enabled = True  # dry-run: assume enabled unless the BMS says otherwise
-        if battery is not None:
-            if battery.charge_limits is not None:
-                bms_ccl_a = battery.charge_limits.charge_current_limit_a
-            if battery.measurements is not None:
-                battery_current_a = battery.measurements.current_a
-            if battery.status is not None:
-                charge_enabled = battery.status.charge_enable
-        decision = allocator.decide(
-            bms_ccl_a=bms_ccl_a,
-            charge_enabled=charge_enabled,
-            battery_current_a=battery_current_a,
-            load_current_a=estimate_load_current_a(snapshot),
-            chargers=chargers,
+        try:
+            chargers = _allocation_inputs(snapshot)
+            if not chargers:
+                return
+            battery = snapshot.battery
+            bms_ccl_a = battery_current_a = None
+            charge_enabled = True  # dry-run: assume enabled unless the BMS says otherwise
+            if battery is not None:
+                if battery.charge_limits is not None:
+                    bms_ccl_a = battery.charge_limits.charge_current_limit_a
+                if battery.measurements is not None:
+                    battery_current_a = battery.measurements.current_a
+                if battery.status is not None:
+                    charge_enabled = battery.status.charge_enable
+            decision = self.allocator.decide(
+                bms_ccl_a=bms_ccl_a,
+                charge_enabled=charge_enabled,
+                battery_current_a=battery_current_a,
+                load_current_a=estimate_load_current_a(snapshot),
+                chargers=chargers,
+            )
+            if self._should_log(decision):
+                recorder.record_event(
+                    charge_allocation_event(decision, dry_run=True, captured_at=snapshot.captured_at)
+                )
+        except Exception as exc:  # noqa: BLE001 - allocation eval must never kill telemetry.
+            print(f"Charge allocation eval failed: {exc}", file=sys.stderr)
+
+    def _should_log(self, decision) -> bool:
+        signature = (
+            decision.reason,
+            decision.weight_basis,
+            decision.budget_a,
+            tuple(
+                sorted(
+                    (name, target.target_current_a, target.disable)
+                    for name, target in decision.targets.items()
+                )
+            ),
         )
-        recorder.record_event(
-            charge_allocation_event(decision, dry_run=True, captured_at=snapshot.captured_at)
-        )
-    except Exception as exc:  # noqa: BLE001 - allocation eval must never kill telemetry.
-        print(f"Charge allocation eval failed: {exc}", file=sys.stderr)
+        now = time.monotonic()
+        if signature != self._last_signature:
+            self._last_signature = signature
+            self._last_logged_monotonic = now
+            return True
+        if self._last_logged_monotonic is None or now - self._last_logged_monotonic >= self.heartbeat_s:
+            self._last_logged_monotonic = now
+            return True
+        return False
 
 
 def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
