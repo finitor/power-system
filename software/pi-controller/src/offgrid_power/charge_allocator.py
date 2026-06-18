@@ -371,6 +371,64 @@ def charge_allocation_event(
     )
 
 
+def charge_limit_write_event(
+    *,
+    controller: str,
+    target_a: float,
+    previous_a: float | None,
+    reason: str,
+    disable: bool,
+    success: bool,
+    error: str | None = None,
+    captured_at: datetime | None = None,
+) -> TelemetryEvent:
+    detail = {
+        "controller": controller,
+        "action": "current_limit",
+        "target_a": target_a,
+        "previous_a": previous_a,
+        "reason": reason,
+        "disable": disable,
+        "success": success,
+    }
+    if error:
+        detail["error"] = error
+    return TelemetryEvent(
+        captured_at=captured_at or datetime.now(timezone.utc),
+        source="charge_allocator",
+        event="limit_write",
+        detail=detail,
+    )
+
+
+def charge_enable_write_event(
+    *,
+    controller: str,
+    enabled: bool,
+    previous_enabled: bool | None,
+    reason: str,
+    success: bool,
+    error: str | None = None,
+    captured_at: datetime | None = None,
+) -> TelemetryEvent:
+    detail = {
+        "controller": controller,
+        "action": "charge_enable",
+        "enabled": enabled,
+        "previous_enabled": previous_enabled,
+        "reason": reason,
+        "success": success,
+    }
+    if error:
+        detail["error"] = error
+    return TelemetryEvent(
+        captured_at=captured_at or datetime.now(timezone.utc),
+        source="charge_allocator",
+        event="charge_enable_write",
+        detail=detail,
+    )
+
+
 def _waterfill_allocate(
     budget_a: float,
     weights: dict[str, float],

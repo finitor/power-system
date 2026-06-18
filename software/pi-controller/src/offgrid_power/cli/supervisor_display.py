@@ -25,6 +25,8 @@ from offgrid_power.charge_allocator import (
     ChargerAllocationTarget,
     allocation_detail,
     charge_allocation_event,
+    charge_enable_write_event,
+    charge_limit_write_event,
 )
 from offgrid_power.charge_ceiling import ChargeCeiling, ChargeCeilingConfig
 from offgrid_power.charger_taper import (
@@ -667,7 +669,12 @@ class ChargeAllocationLogger:
                     )
                 )
             if self.live and self.supervisor is not None:
-                self._apply(decision, {c.name: c.current_limit_a for c in chargers})
+                self._apply(
+                    decision,
+                    {c.name: c.current_limit_a for c in chargers},
+                    recorder=recorder,
+                    captured_at=snapshot.captured_at,
+                )
             return decision
         except Exception as exc:  # noqa: BLE001 - allocation must never kill telemetry.
             print(f"Charge allocation failed: {exc}", file=sys.stderr)
@@ -736,7 +743,14 @@ class ChargeAllocationLogger:
             for reason in reasons
         )
 
-    def _apply(self, decision, current_limits: dict) -> None:
+    def _apply(
+        self,
+        decision,
+        current_limits: dict,
+        *,
+        recorder: MetricRecorder | None = None,
+        captured_at: datetime | None = None,
+    ) -> None:
         targets = decision.targets
         # Reconcile the EPEver charge coil to the disable intent, toggling only on
         # change (the limit register can't reach 0, so off/on is the coil's job).
@@ -744,30 +758,94 @@ class ChargeAllocationLogger:
         if epever is not None:
             want_on = not epever.disable
             if want_on != self._epever_charging_state:
+                previous = self._epever_charging_state
                 try:
                     self.supervisor.set_epever_charging(want_on)
                     self._epever_charging_state = want_on
-                    print(f"Charge allocation: epever coil -> {want_on}", file=sys.stderr)
+                    self._record_control_event(
+                        recorder,
+                        charge_enable_write_event(
+                            controller="epever",
+                            enabled=want_on,
+                            previous_enabled=previous,
+                            reason=epever.reason,
+                            success=True,
+                            captured_at=captured_at,
+                        ),
+                    )
                 except Exception as exc:  # noqa: BLE001
+                    self._record_control_event(
+                        recorder,
+                        charge_enable_write_event(
+                            controller="epever",
+                            enabled=want_on,
+                            previous_enabled=previous,
+                            reason=epever.reason,
+                            success=False,
+                            error=str(exc),
+                            captured_at=captured_at,
+                        ),
+                    )
                     print(f"Charge allocation: epever coil -> {want_on} failed: {exc}", file=sys.stderr)
         for name, target in targets.items():
             if not target.should_write or target.target_current_a is None:
                 continue
+            write_current_a = target.target_current_a
+            if target.disable:
+                write_current_a = 0.0
+            elif name == "epever":
+                write_current_a = max(1.0, target.target_current_a)
             try:
                 if target.disable:
-                    if name == "classic":
-                        self.supervisor.write_classic_charge_settings(
-                            battery_current_limit_a=0.0, persist=False
-                        )
-                    # epever disable is the coil, handled above
+                    if name != "classic":
+                        # epever disable is the coil, handled above.
+                        continue
+                    self.supervisor.write_classic_charge_settings(
+                        battery_current_limit_a=0.0, persist=False
+                    )
                 elif name == "epever":
                     self.supervisor.write_epever_max_charging_current(max(1.0, target.target_current_a))
                 elif name == "classic":
                     self.supervisor.write_classic_charge_settings(
                         battery_current_limit_a=target.target_current_a, persist=False
                     )
+                else:
+                    continue
+                self._record_control_event(
+                    recorder,
+                    charge_limit_write_event(
+                        controller=name,
+                        target_a=write_current_a,
+                        previous_a=current_limits.get(name),
+                        reason=target.reason,
+                        disable=target.disable,
+                        success=True,
+                        captured_at=captured_at,
+                    ),
+                )
             except Exception as exc:  # noqa: BLE001
+                self._record_control_event(
+                    recorder,
+                    charge_limit_write_event(
+                        controller=name,
+                        target_a=write_current_a,
+                        previous_a=current_limits.get(name),
+                        reason=target.reason,
+                        disable=target.disable,
+                        success=False,
+                        error=str(exc),
+                        captured_at=captured_at,
+                    ),
+                )
                 print(f"Charge allocation: {name} write failed: {exc}", file=sys.stderr)
+
+    def _record_control_event(self, recorder: MetricRecorder | None, event) -> None:
+        if recorder is None:
+            return
+        try:
+            recorder.record_event(event)
+        except Exception as exc:  # noqa: BLE001 - never let telemetry kill control.
+            print(f"Charge allocation event record failed: {exc}", file=sys.stderr)
 
     def _should_log(self, decision) -> bool:
         signature = (

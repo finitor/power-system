@@ -89,6 +89,11 @@ class _FakeSupervisor:
         self.coil.append(enabled)
 
 
+class _FailingClassicSupervisor(_FakeSupervisor):
+    def write_classic_charge_settings(self, **kwargs):
+        raise RuntimeError("classic write failed")
+
+
 class LiveApplyTest(unittest.TestCase):
     def test_writes_limits_and_turns_the_coil_on_once(self) -> None:
         sup = _FakeSupervisor()
@@ -156,6 +161,65 @@ class LiveApplyTest(unittest.TestCase):
 
         self.assertEqual(sup.coil, [True])
         self.assertEqual(sup.epever_currents, [])
+
+    def test_records_successful_live_control_events(self) -> None:
+        sup = _FakeSupervisor()
+        recorder = _FakeRecorder()
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), supervisor=sup, live=True)
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=0.0,
+            chargers=[
+                _charger("classic", actual=10.0, limit=10.0, max_=80.0),
+                _charger("epever", actual=10.0, limit=10.0, max_=100.0),
+            ],
+        )
+
+        logger._apply(
+            decision,
+            {"classic": 10.0, "epever": 10.0},
+            recorder=recorder,
+        )
+
+        events = {(event.event, (event.detail or {}).get("controller")): event for event in recorder.events}
+        self.assertIn(("charge_enable_write", "epever"), events)
+        self.assertIn(("limit_write", "classic"), events)
+        self.assertIn(("limit_write", "epever"), events)
+        coil_detail = events[("charge_enable_write", "epever")].detail or {}
+        self.assertEqual(coil_detail["action"], "charge_enable")
+        self.assertTrue(coil_detail["enabled"])
+        self.assertTrue(coil_detail["success"])
+        limit_detail = events[("limit_write", "classic")].detail or {}
+        self.assertEqual(limit_detail["action"], "current_limit")
+        self.assertEqual(limit_detail["previous_a"], 10.0)
+        self.assertTrue(limit_detail["success"])
+
+    def test_records_failed_live_control_event_without_raising(self) -> None:
+        sup = _FailingClassicSupervisor()
+        recorder = _FakeRecorder()
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), supervisor=sup, live=True)
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=False,
+            battery_current_a=0.0,
+            load_current_a=0.0,
+            chargers=[_charger("classic", actual=0.0, limit=80.0, max_=80.0)],
+            charge_ceiling_a=0.0,
+            charge_ceiling_reason="BMS charge disabled",
+        )
+
+        logger._apply(decision, {"classic": 80.0}, recorder=recorder)
+
+        self.assertEqual(len(recorder.events), 1)
+        event = recorder.events[0]
+        self.assertEqual(event.event, "limit_write")
+        detail = event.detail or {}
+        self.assertEqual(detail["controller"], "classic")
+        self.assertEqual(detail["target_a"], 0.0)
+        self.assertFalse(detail["success"])
+        self.assertIn("classic write failed", detail["error"])
 
 
 class ConfigFromEnvTest(unittest.TestCase):
