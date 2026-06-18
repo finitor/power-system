@@ -1,6 +1,6 @@
 """Best-effort flat time-series telemetry store (decision 0003).
 
-One canonical local model: scalar telemetry goes to the flat
+One canonical local storage model: scalar telemetry goes to the flat
 ``samples`` EAV table, irregular events to the hash-keyed
 ``events`` table. Both carry a content-hashed identity column so merging
 two stores is an idempotent ``INSERT OR IGNORE`` union.
@@ -14,7 +14,7 @@ degrade to "no data" on any failure.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 import hashlib
 import json
 import os
@@ -26,6 +26,38 @@ from typing import Callable, Iterable
 from .load import LoadSample, LoadSummary
 from .supervisor import SupervisorSnapshot
 from .weather import WeatherReport, weather_api_payload
+
+
+def utc_timestamp_text(value: datetime) -> str:
+    """Canonical durable timestamp text: aware UTC ISO 8601.
+
+    Naive datetimes are treated the way Python's ``astimezone`` treats them:
+    local wall time. Runtime readers should produce aware datetimes; the naive
+    fallback keeps tests/tools from writing ambiguous strings silently.
+    """
+    if value.tzinfo is None or value.utcoffset() is None:
+        value = value.astimezone()
+    return value.astimezone(timezone.utc).isoformat()
+
+
+def parse_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        parsed = parsed.astimezone()
+    return parsed.astimezone(timezone.utc)
+
+
+def _local_time_on_day(day: date) -> datetime:
+    # Build a naive local wall-clock time and let astimezone attach the system
+    # local zone for that date. This preserves local-day semantics across DST
+    # without hard-coding a fixed offset.
+    return datetime.combine(day, time.min).replace(tzinfo=None).astimezone()
+
+
+def _local_window_utc_text(day: date, duration: timedelta) -> tuple[str, str]:
+    start = _local_time_on_day(day)
+    end = start + duration
+    return utc_timestamp_text(start), utc_timestamp_text(end)
 
 
 @dataclass(frozen=True)
@@ -40,7 +72,7 @@ class MetricSample:
 
     def sample_id(self) -> str:
         payload = {
-            "captured_at": self.captured_at.isoformat(),
+            "captured_at": utc_timestamp_text(self.captured_at),
             "source": self.source,
             "metric": self.metric,
             "value": self.value,
@@ -61,7 +93,7 @@ class TelemetryEvent:
 
     def event_id(self) -> str:
         payload = {
-            "captured_at": self.captured_at.isoformat(),
+            "captured_at": utc_timestamp_text(self.captured_at),
             "source": self.source,
             "event": self.event,
             "detail": self.detail or {},
@@ -132,8 +164,8 @@ class MetricRecorder:
         store = self._active_path()
         if store is None or not store.exists():
             return []
-        reference = (now or datetime.now().astimezone()).astimezone()
-        cutoff = (reference - window).isoformat()
+        reference = now or datetime.now(timezone.utc)
+        cutoff = utc_timestamp_text(reference - window)
 
         def query(connection: sqlite3.Connection) -> list[LoadSample]:
             rows = connection.execute(
@@ -143,8 +175,8 @@ class MetricRecorder:
                 WHERE source = 'load'
                   AND metric IN ('current', 'power')
                   AND value IS NOT NULL
-                  AND captured_at >= ?
-                ORDER BY captured_at
+                  AND julianday(captured_at) >= julianday(?)
+                ORDER BY julianday(captured_at), captured_at
                 """,
                 (cutoff,),
             ).fetchall()
@@ -157,7 +189,7 @@ class MetricRecorder:
                     continue
                 samples.append(
                     LoadSample(
-                        captured_at=datetime.fromisoformat(captured_at_text),
+                        captured_at=parse_timestamp(captured_at_text),
                         current_a=values["current"],
                         power_w=round(values["power"]),
                     )
@@ -174,6 +206,7 @@ class MetricRecorder:
             return None
 
         def query(connection: sqlite3.Connection) -> int | None:
+            start, end = _local_window_utc_text(day, timedelta(minutes=5))
             rows = connection.execute(
                 """
                 SELECT captured_at, value
@@ -181,14 +214,15 @@ class MetricRecorder:
                 WHERE source = 'battery'
                   AND metric = 'soc'
                   AND value IS NOT NULL
-                  AND captured_at LIKE ?
-                ORDER BY captured_at
+                  AND julianday(captured_at) >= julianday(?)
+                  AND julianday(captured_at) < julianday(?)
+                ORDER BY julianday(captured_at), captured_at
                 LIMIT 20
                 """,
-                (f"{day.isoformat()}T00:0%",),
+                (start, end),
             ).fetchall()
             for captured_at_text, value in rows:
-                captured_at = datetime.fromisoformat(captured_at_text)
+                captured_at = parse_timestamp(captured_at_text).astimezone()
                 if captured_at.minute * 60 + captured_at.second <= 300:
                     return round(value)
             return None
@@ -204,6 +238,7 @@ class MetricRecorder:
             return None
 
         def query(connection: sqlite3.Connection) -> float | None:
+            start, end = _local_window_utc_text(day, timedelta(minutes=5))
             rows = connection.execute(
                 """
                 SELECT captured_at, value
@@ -211,14 +246,15 @@ class MetricRecorder:
                 WHERE source = ?
                   AND metric = ?
                   AND value IS NOT NULL
-                  AND captured_at LIKE ?
-                ORDER BY captured_at
+                  AND julianday(captured_at) >= julianday(?)
+                  AND julianday(captured_at) < julianday(?)
+                ORDER BY julianday(captured_at), captured_at
                 LIMIT 20
                 """,
-                (source, metric, f"{day.isoformat()}T00:0%"),
+                (source, metric, start, end),
             ).fetchall()
             for captured_at_text, value in rows:
-                captured_at = datetime.fromisoformat(captured_at_text)
+                captured_at = parse_timestamp(captured_at_text).astimezone()
                 if captured_at.minute * 60 + captured_at.second <= 300:
                     return value
             return None
@@ -447,7 +483,7 @@ def _insert_samples(connection: sqlite3.Connection, samples: list[MetricSample])
         [
             (
                 sample.sample_id(),
-                sample.captured_at.isoformat(),
+                utc_timestamp_text(sample.captured_at),
                 sample.source,
                 sample.metric,
                 sample.value,
@@ -470,7 +506,7 @@ def _insert_events(connection: sqlite3.Connection, events: list[TelemetryEvent])
         [
             (
                 event.event_id(),
-                event.captured_at.isoformat(),
+                utc_timestamp_text(event.captured_at),
                 event.source,
                 event.event,
                 json.dumps(event.detail or {}, sort_keys=True, separators=(",", ":")),
@@ -542,7 +578,7 @@ def snapshot_metric_samples(
     snapshot: SupervisorSnapshot,
     load_summary: LoadSummary | None = None,
 ) -> Iterable[MetricSample]:
-    captured_at = snapshot.captured_at.astimezone()
+    captured_at = snapshot.captured_at.astimezone(timezone.utc)
     yield MetricSample(captured_at, "supervisor", "ok", value=1.0 if snapshot.ok else 0.0)
     yield MetricSample(captured_at, "supervisor", "error_count", value=float(len(snapshot.errors)))
     for index, error in enumerate(snapshot.errors):
@@ -554,28 +590,28 @@ def snapshot_metric_samples(
     if load_summary is not None:
         yield from _load_samples(captured_at, load_summary)
     if snapshot.classic is not None:
-        yield from _classic_samples(snapshot.classic.captured_at.astimezone(), snapshot.classic)
+        yield from _classic_samples(snapshot.classic.captured_at.astimezone(timezone.utc), snapshot.classic)
     if snapshot.classic_settings is not None:
-        yield from _classic_settings_samples(snapshot.classic_settings.captured_at.astimezone(), snapshot.classic_settings)
+        yield from _classic_settings_samples(snapshot.classic_settings.captured_at.astimezone(timezone.utc), snapshot.classic_settings)
     if snapshot.epever is not None:
-        yield from _epever_samples(snapshot.epever.captured_at.astimezone(), snapshot.epever)
+        yield from _epever_samples(snapshot.epever.captured_at.astimezone(timezone.utc), snapshot.epever)
     if snapshot.epever_settings is not None:
-        yield from _epever_settings_samples(snapshot.epever_settings.captured_at.astimezone(), snapshot.epever_settings)
+        yield from _epever_settings_samples(snapshot.epever_settings.captured_at.astimezone(timezone.utc), snapshot.epever_settings)
     if snapshot.battery is not None:
         yield from _battery_samples(captured_at, snapshot.battery)
     if snapshot.battery_can_health is not None:
         yield from _battery_can_health_samples(captured_at, snapshot.battery_can_health)
     if snapshot.magnum is not None:
-        yield from _magnum_samples(snapshot.magnum.captured_at.astimezone(), snapshot.magnum)
+        yield from _magnum_samples(snapshot.magnum.captured_at.astimezone(timezone.utc), snapshot.magnum)
     if snapshot.ambient is not None:
-        yield from _ambient_samples(snapshot.ambient.captured_at.astimezone(), snapshot.ambient)
+        yield from _ambient_samples(snapshot.ambient.captured_at.astimezone(timezone.utc), snapshot.ambient)
 
 
 def weather_metric_samples(report: WeatherReport) -> Iterable[MetricSample]:
     # Consume the normalized weather payload so provider field names live only
     # in weather.py; this maps the canonical schema onto stored metric names.
     payload = weather_api_payload(report)
-    captured_at = report.fetched_at.astimezone()
+    captured_at = report.fetched_at.astimezone(timezone.utc)
     source = "weather"
     current = payload.get("current") or {}
     wind = current.get("wind") or {}

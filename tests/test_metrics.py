@@ -24,6 +24,7 @@ from offgrid_power.load import LoadSummary
 from offgrid_power.metrics import (
     MetricRecorder,
     TelemetryEvent,
+    initialize_metrics_db,
     merge_metric_stores,
     snapshot_metric_samples,
     weather_metric_samples,
@@ -172,6 +173,20 @@ class MetricRecorderTest(unittest.TestCase):
 
         self.assertEqual(ticks, 2)
 
+    def test_record_snapshot_stores_captured_at_as_utc(self) -> None:
+        recorder = MetricRecorder(str(self.path), snapshot_interval_s=60)
+        local_offset = timezone(timedelta(hours=-4))
+        captured_at = datetime(2026, 5, 31, 0, 1, tzinfo=local_offset)
+
+        recorder.record_snapshot(full_snapshot(captured_at))
+
+        with sqlite3.connect(self.path) as connection:
+            stored = connection.execute(
+                "SELECT captured_at FROM samples WHERE source = 'supervisor' LIMIT 1"
+            ).fetchone()[0]
+
+        self.assertEqual(stored, "2026-05-31T04:01:00+00:00")
+
     def test_record_event_is_hash_keyed_and_idempotent(self) -> None:
         recorder = MetricRecorder(str(self.path))
         event = TelemetryEvent(
@@ -283,6 +298,21 @@ class MetricRecorderTest(unittest.TestCase):
 
         self.assertEqual(recorder.midnight_soc_percent(date(2026, 5, 31)), 92)
         self.assertIsNone(recorder.midnight_soc_percent(date(2026, 6, 1)))
+
+    def test_midnight_soc_percent_reads_legacy_local_offset_rows(self) -> None:
+        recorder = MetricRecorder(str(self.path), snapshot_interval_s=60)
+        legacy_local = datetime(2026, 5, 31, 0, 2).astimezone().isoformat()
+        with sqlite3.connect(self.path) as connection:
+            initialize_metrics_db(connection)
+            connection.execute(
+                """
+                INSERT INTO samples (captured_at, source, metric, value, tags_json)
+                VALUES (?, 'battery', 'soc', 91.0, '{}')
+                """,
+                (legacy_local,),
+            )
+
+        self.assertEqual(recorder.midnight_soc_percent(date(2026, 5, 31)), 91)
 
     def test_midnight_soc_percent_ignores_samples_after_window(self) -> None:
         recorder = MetricRecorder(str(self.path), snapshot_interval_s=60)

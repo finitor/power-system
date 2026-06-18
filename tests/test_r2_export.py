@@ -95,6 +95,25 @@ class R2ExportTest(unittest.TestCase):
             self.assertIn("/date=2026-06-06/", second.object_key)
             self.assertEqual(second.row_count, 1)
 
+    def test_batches_partition_legacy_offset_rows_by_utc_date(self) -> None:
+        with sqlite3.connect(":memory:") as connection:
+            initialize_metrics_db(connection)
+            connection.execute(
+                """
+                INSERT INTO samples (
+                    sample_id, captured_at, source, metric, value, unit, tags_json
+                ) VALUES (
+                    'legacy', '2026-06-05T23:30:00-04:00', 'battery', 'soc', 91.0, '%', '{}'
+                )
+                """
+            )
+
+            batch = build_export_batch(connection, site_id="cabin", prefix="metrics", limit=10)
+
+            assert batch is not None
+            self.assertIn("/date=2026-06-06/", batch.object_key)
+            self.assertEqual(batch.records, (("sample", 1),))
+
     def test_mark_batch_exported_stamps_rows_and_batch(self) -> None:
         with sqlite3.connect(":memory:") as connection:
             initialize_metrics_db(connection)

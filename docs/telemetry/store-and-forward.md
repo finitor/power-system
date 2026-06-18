@@ -24,7 +24,7 @@ One canonical flat model: scalar telemetry goes to `samples`, irregular events t
 |---|---|
 | `id` | Local row id (diagnostic only) |
 | `sample_id` | sha256 of the row content; durable identity and dedup key |
-| `captured_at` | Sample timestamp, local-offset ISO 8601 |
+| `captured_at` | Sample timestamp, UTC ISO 8601 with an explicit `+00:00` offset |
 | `source` | Producer, e.g. `classic.0`, `epever.1`, `battery`, `magnum`, `load`, `ambient`, `weather`, `supervisor` |
 | `metric` | Metric name within the source; new metrics need no schema change |
 | `value` / `text` | Numeric or text payload |
@@ -56,7 +56,7 @@ SELECT COUNT(*) FROM samples WHERE exported_at IS NULL;
 
 ## Object Format
 
-Each batch holds one table and one local capture date, under a hive-style partition (oldest unexported date drains first):
+Each batch holds one table and one UTC capture date, under a hive-style partition (oldest unexported date drains first):
 
 ```text
 metrics/samples/date=YYYY-MM-DD/YYYYMMDDTHHMMSSZ-<batch_id>.parquet
@@ -70,6 +70,14 @@ Serialization is Apache Parquet (snappy-compressed), written with pyarrow. The e
 `events` columns: `record_type`, `site_id`, `record_id` (event sha256), `local_row_id` (int64), `captured_at`, `source`, `event`, `detail` (JSON string — heterogeneous across event types, so it stays a string rather than a fixed struct).
 
 `local_row_id` is diagnostic only. Consumers should use the content-hash `record_id` as the idempotency key.
+
+## Timestamp Policy
+
+Durable telemetry timestamps are stored as aware UTC ISO 8601 strings. Runtime readers should produce aware datetimes, the recorder normalizes writes to UTC, and displays convert to local time at the edge.
+
+Historical rows written before 2026-06-18 may contain local-offset text such as `-04:00`. Readers and the exporter compare timestamps as instants with SQLite date functions, so mixed old/new rows remain queryable without an in-place migration.
+
+Queries that mean "site-local day" should derive a local wall-clock window first, convert that window to UTC, and compare instants. Export partitions intentionally use the UTC capture date, not the local date.
 
 ## Ad Hoc Queries with DuckDB
 

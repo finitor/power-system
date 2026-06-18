@@ -171,9 +171,10 @@ def export_metrics_once(db_path: str | Path, config: R2Config, limit: int = 5000
     )
 
 
-# Per-table export streams. Each batch holds one table and one local
-# capture date, so every object has a uniform schema and lands under a
-# hive-style date partition that DuckDB can prune
+# Per-table export streams. Each batch holds one table and one UTC capture date,
+# so every object has a uniform schema and lands under a hive-style date
+# partition that DuckDB can prune. ``date(captured_at)`` keeps legacy local-
+# offset rows and new UTC rows grouped by the actual instant, not raw text.
 # (e.g. metrics/samples/date=2026-06-12/<ts>-<batch>.parquet).
 _EXPORT_TABLES = ("samples", "events")
 
@@ -218,7 +219,7 @@ def build_export_batch(
 ) -> ExportBatch | None:
     for table in _EXPORT_TABLES:
         day = connection.execute(
-            f"SELECT MIN(substr(captured_at, 1, 10)) FROM {table} WHERE exported_at IS NULL"
+            f"SELECT MIN(date(captured_at)) FROM {table} WHERE exported_at IS NULL"
         ).fetchone()[0]
         if day is None:
             continue
@@ -320,7 +321,7 @@ def _unexported_records(connection: sqlite3.Connection, table: str, day: str, li
             """
             SELECT id, sample_id, captured_at, source, metric, value, text, unit, tags_json
             FROM samples
-            WHERE exported_at IS NULL AND substr(captured_at, 1, 10) = ?
+            WHERE exported_at IS NULL AND date(captured_at) = ?
             ORDER BY id
             LIMIT ?
             """,
@@ -345,7 +346,7 @@ def _unexported_records(connection: sqlite3.Connection, table: str, day: str, li
         """
         SELECT id, event_id, captured_at, source, event, detail_json
         FROM events
-        WHERE exported_at IS NULL AND substr(captured_at, 1, 10) = ?
+        WHERE exported_at IS NULL AND date(captured_at) = ?
         ORDER BY id
         LIMIT ?
         """,
