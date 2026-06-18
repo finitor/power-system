@@ -537,7 +537,8 @@ def apply_charger_current_taper(
 
 
 # Per-controller current ceilings are operator knobs (CHARGE_ALLOC_CLASSIC_MAX_A
-# / CHARGE_ALLOC_EPEVER_MAX_A; the EPEver also prefers its rated value when read).
+# / CHARGE_ALLOC_EPEVER_MAX_A). Device telemetry can be stale/miscalibrated, so
+# allocator write ceilings come from explicit config.
 # Charger state is the allocation availability signal. Unloaded PV voltage can
 # remain high long after an array can deliver useful power, especially at
 # twilight, so voltage is kept as telemetry rather than the release trigger.
@@ -806,7 +807,7 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 name="classic",
                 actual_current_a=classic.battery_current_a,
                 current_limit_a=limit,
-                max_current_a=_env_float("CHARGE_ALLOC_CLASSIC_MAX_A", 100.0),
+                max_current_a=_env_float("CHARGE_ALLOC_CLASSIC_MAX_A", 80.0),
                 pv_power_w=_pv_power_w(classic.pv_voltage_v, classic.pv_current_a),
                 min_current_a=0.0,
                 active=classic.canonical_stage.value in _ACTIVE_CHARGE_STAGES,
@@ -824,8 +825,7 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 name="epever",
                 actual_current_a=epever.battery_current_a,
                 current_limit_a=limit,
-                max_current_a=epever.rated_charging_current_a
-                or _env_float("CHARGE_ALLOC_EPEVER_MAX_A", 100.0),
+                max_current_a=_env_float("CHARGE_ALLOC_EPEVER_MAX_A", 100.0),
                 pv_power_w=epever.pv_power_w,
                 min_current_a=1.0,  # 0x9013 floors at 1 A
                 active=epever.canonical_stage.value in _ACTIVE_CHARGE_STAGES,

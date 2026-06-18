@@ -292,8 +292,8 @@ Allocator (`CHARGE_ALLOC_…`):
 | `CHARGE_ALLOC_TARGET_QUANTUM_A` | 5.0 | snap larger non-emergency target moves to this amp bucket |
 | `CHARGE_ALLOC_MIN_ACTIVE_WEIGHT_A` | 1.0 | sunrise weight floor (output basis) |
 | `CHARGE_ALLOC_MIN_ACTIVE_WEIGHT_W` | 10.0 | sunrise weight floor (PV-power basis) |
-| `CHARGE_ALLOC_CLASSIC_MAX_A` | 100 | Classic operator ceiling |
-| `CHARGE_ALLOC_EPEVER_MAX_A` | 100 | EPEver ceiling (its rated value is preferred when read) |
+| `CHARGE_ALLOC_CLASSIC_MAX_A` | 80 | Classic hardware/operator ceiling |
+| `CHARGE_ALLOC_EPEVER_MAX_A` | 100 | EPEver hardware/operator ceiling |
 | `CHARGE_ALLOC_HEARTBEAT_S` | 300 | seconds between trace events when nothing changes |
 | `CHARGE_ALLOC_CLASSIC_SLEEP_DEBOUNCE_S` | 180 | Classic Resting/no-active-stage duration before releasing stale constraints |
 | `CHARGE_ALLOC_EPEVER_SLEEP_DEBOUNCE_S` | 180 | EPEver No charging duration before releasing stale constraints |

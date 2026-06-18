@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -393,9 +394,27 @@ class AllocationInputsTest(unittest.TestCase):
         self.assertEqual(set(inputs), {"classic", "epever"})
         self.assertEqual(inputs["classic"].min_current_a, 0.0)
         self.assertEqual(inputs["epever"].min_current_a, 1.0)  # 0x9013 floor
+        self.assertEqual(inputs["classic"].max_current_a, 80.0)
+        self.assertEqual(inputs["epever"].max_current_a, 100.0)
         self.assertEqual(inputs["classic"].pv_power_w, 600.0)
         self.assertTrue(inputs["classic"].active)
         self.assertTrue(inputs["epever"].active)
+
+    def test_allocation_input_maxima_can_be_overridden_by_env(self) -> None:
+        os.environ["CHARGE_ALLOC_CLASSIC_MAX_A"] = "70"
+        os.environ["CHARGE_ALLOC_EPEVER_MAX_A"] = "90"
+        try:
+            snapshot = make_snapshot(
+                classic=make_classic_telemetry(),
+                epever=make_epever_telemetry(rated_charging_current_a=None),
+            )
+            inputs = {c.name: c for c in _allocation_inputs(snapshot)}
+        finally:
+            del os.environ["CHARGE_ALLOC_CLASSIC_MAX_A"]
+            del os.environ["CHARGE_ALLOC_EPEVER_MAX_A"]
+
+        self.assertEqual(inputs["classic"].max_current_a, 70.0)
+        self.assertEqual(inputs["epever"].max_current_a, 90.0)
 
     def test_classic_resting_state_marks_it_inactive_even_with_high_pv_voltage(self) -> None:
         snapshot = make_snapshot(
