@@ -9,6 +9,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
+from dataclasses import replace
+
 from offgrid_power.magnum import (
     InverterEventTracker,
     MagnumClient,
@@ -164,6 +166,48 @@ class MagnumClientTest(unittest.TestCase):
             client.read()
 
         self.assertIn("Could not open", str(ctx.exception))
+
+
+class MagnumLastSettingsTest(unittest.TestCase):
+    """The remote packet (charge settings) isn't in every cycle; the client
+    fills missing settings from the last seen values so the display doesn't
+    strobe."""
+
+    @staticmethod
+    def _client() -> MagnumClient:
+        return MagnumClient("/dev/unused-for-merge-test")
+
+    def test_missing_settings_filled_from_last_seen(self) -> None:
+        client = self._client()
+        full = replace(
+            _magnum(True),
+            absorb_v=58.0, float_v=54.0, absorb_time_hr=2.0,
+            shore_amps=30, charger_amps_pct=80,
+        )
+        # First cycle carries settings -> cache populated, returned unchanged.
+        self.assertIs(client._merge_last_settings(full), full)
+        # Next cycle has no remote packet -> fields filled from cache.
+        merged = client._merge_last_settings(_magnum(True, dc_volts=52.1))
+        self.assertEqual(merged.absorb_v, 58.0)
+        self.assertEqual(merged.float_v, 54.0)
+        self.assertEqual(merged.absorb_time_hr, 2.0)
+        self.assertEqual(merged.shore_amps, 30)
+        self.assertEqual(merged.charger_amps_pct, 80)
+        # Non-settings fields are this cycle's, untouched.
+        self.assertEqual(merged.dc_volts, 52.1)
+
+    def test_fresh_settings_update_the_cache(self) -> None:
+        client = self._client()
+        client._merge_last_settings(replace(_magnum(True), absorb_v=58.0))
+        client._merge_last_settings(replace(_magnum(True), absorb_v=59.5))
+        merged = client._merge_last_settings(_magnum(True))
+        self.assertEqual(merged.absorb_v, 59.5)
+
+    def test_no_cache_leaves_none(self) -> None:
+        client = self._client()
+        merged = client._merge_last_settings(_magnum(True))
+        self.assertIsNone(merged.absorb_v)
+        self.assertIsNone(merged.float_v)
 
 
 if __name__ == "__main__":

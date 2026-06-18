@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from magnum_pi.bus import MagnumBus
@@ -178,9 +178,17 @@ class MagnumClient:
     # engineering-plan item 12); this just quiets the warnings until the wiring
     # is investigated. A failing read can now take up to ~max_cycles*0.5 s, but
     # it runs on the Magnum actor thread so it never stalls the main poll tick.
+    # The remote packet (charge setpoints, shore/charger limits) is not present
+    # in every bus cycle, so these fields are frequently None on an otherwise
+    # healthy read. Carry forward the last seen values so consumers (e.g. the
+    # display's Charge Settings row) stay stable instead of blinking out for a
+    # cycle and strobing everything below them.
+    _SETTINGS_FIELDS = ("absorb_v", "float_v", "absorb_time_hr", "shore_amps", "charger_amps_pct")
+
     def __init__(self, device: str, max_cycles: int = 20) -> None:
         self._device = device
         self._max_cycles = max_cycles
+        self._last_settings: dict[str, float | int] = {}
 
     def read(self) -> MagnumSnapshot | None:
         if self._device and not os.path.exists(self._device):
@@ -192,10 +200,23 @@ class MagnumClient:
             # bus is no-data, not an adapter fault.
             raise ConnectionError(f"Could not open {self._device}")
         try:
-            return asyncio.run(self._read_async())
+            snapshot = asyncio.run(self._read_async())
         except Exception as exc:
             log.warning("Magnum read failed: %s", exc)
             return None
+        return self._merge_last_settings(snapshot) if snapshot is not None else None
+
+    def _merge_last_settings(self, snapshot: MagnumSnapshot) -> MagnumSnapshot:
+        """Update the last-known charge settings from this cycle, and fill any
+        that the cycle's remote packet didn't carry from the cached values."""
+        fill: dict[str, float | int] = {}
+        for field in self._SETTINGS_FIELDS:
+            value = getattr(snapshot, field)
+            if value is not None:
+                self._last_settings[field] = value
+            elif field in self._last_settings:
+                fill[field] = self._last_settings[field]
+        return replace(snapshot, **fill) if fill else snapshot
 
     async def _read_async(self) -> MagnumSnapshot | None:
         async with MagnumBus(self._device) as bus:
