@@ -185,6 +185,28 @@ Mitigation already in place: `MagnumClient.max_cycles` raised 10 -> 20 so a read
 tolerates more missed cycles before warning (quiets the noise; not a fix).
 Raised 2026-06-17.
 
+Diagnosis refined (2026-06-17) -- byte-framing slips, one root cause for both log
+signatures. Alongside the `no valid inverter packet` warnings (~14-16/hr) there
+are `Failed to parse REMOTE packet ... less_than_equal` errors (~3-4/hr). Decoded
+against the known-good fixture, the failing remote payload is the good packet
+with its leading `0x00` dropped: every field shifts left one, so
+`battery_size_ah`'s 100 lands in `search_watts` (limit 50) and trips validation.
+So it's a lost byte on the wire (signal integrity) -- not charging noise, not
+value corruption, and not a parser bug (the `le=` limits correctly reject the
+misframe; do not loosen). Both signatures are bus byte/cycle-sync loss,
+consistent with the physical-onset theory. Byte-alignment proof in
+`research/magnum-inverter-interface.md`.
+
+Grounding experiment (2026-06-17 ~20:50): added the RS485 signal-ground reference
+the Magnum tap lacked -- breakout pin 5 (Magnum GND) -> SH-U11H GND via a 150 ohm
+series resistor (measured 0.58 V offset -> ~3.9 mA, no ground-loop risk; pin 8
+read 0 V = floating, not ground). Baseline before: ~14-16/hr "no inverter packet"
++ ~3-4/hr parse fails. Evaluate after it runs an hour:
+`journalctl --since "<HH:MM>" --no-pager | grep -c "no valid inverter packet"`
+(and the `Failed to parse REMOTE` string). A drop in either confirms common-mode
+noise was a contributor; no change means the framing loss is bus-timing/wiring,
+not noise.
+
 ## Done
 
 - Item 1 (deploy.sh, watcher retired): e4444fc, a6f506f — verified with a

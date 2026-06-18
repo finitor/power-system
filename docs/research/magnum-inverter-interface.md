@@ -105,6 +105,32 @@ Correct identification by known values (MS4448PAE, firmware rev 6.1):
 
 Detection approach: check byte 14 for 0x73 to confirm the inverter packet; the other 21/22-byte packet is the remote. A `MagnumClient` wrapper must verify alignment on connect and swap if inverted before using decoded values or sending writes.
 
+### Read-failure decode: intermittent byte-framing slips (2026-06-17)
+
+The recurring runtime warnings are two faces of one bus-sync problem — not value
+corruption and not a parser bug:
+
+- `Magnum: no valid inverter packet seen in 20 cycles` — the read exhausts its
+  cycles without a clean inverter packet.
+- `Failed to parse REMOTE packet … ValidationError … less_than_equal` — a remote
+  packet parses but a field overflows its `le=` limit.
+
+Decoding a failing payload against the known-good fixture shows a **dropped
+leading byte** (a framing slip), not corruption:
+
+```
+good:    00 05 64 89 00 1E 1C 06 00 F0 9B 89 00 1E 14 2B 00 00 17 00 00
+failing:    05 64 88 00 1E 1C 06 00 F0 9B 88 00 1E 08 2A 00 00 17 00 00 FF
+```
+
+Everything shifts left one, so `battery_size_ah`'s byte (`0x64` = 100) lands in
+`search_watts` (limit 50) and validation rejects it. The surviving bytes are
+otherwise correct, so a byte is being lost on the wire. The `le=` constraints are
+correctly catching the misframe — **do not loosen them** (that would admit
+garbage as real settings). Intermittent (~3–4/hr out of thousands of good reads),
+so it's signal integrity, not a deterministic off-by-one. See engineering-plan
+item 12 for the RS485 ground-reference experiment.
+
 ## Voltage Encoding
 
 The Magnum bus stores voltages as 12V-nominal × 10, single byte. For a 48V system (multiplier = 4):
