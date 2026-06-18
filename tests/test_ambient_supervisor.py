@@ -265,9 +265,7 @@ class SupervisorSemanticsTest(unittest.TestCase):
         )
 
         self.assertIn("Charge Allocation", rendered)
-        self.assertIn("Mode:                  live  binding none", rendered)
-        self.assertIn("Mechanisms:            none", rendered)
-        self.assertIn("Limits:                CCL 200A  allowance inactive", rendered)
+        self.assertIn("Limit:                 live: not limiting (BMS CCL 200A)", rendered)
         self.assertIn("Budget:                200A  (battery -2A, load 4A)", rendered)
         self.assertIn("Classic:               100.0A max", rendered)
         self.assertIn("Epever:                100.0A released  *", rendered)

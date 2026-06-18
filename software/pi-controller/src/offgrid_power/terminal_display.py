@@ -353,13 +353,8 @@ def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
 
 def _allocation_lines(allocation: dict) -> list[str]:
     lines = ["Charge Allocation"]
-    mode = allocation.get("mode") or "?"
     reason = allocation.get("reason") or "?"
-    lines.append(_row("Mode", f"{mode}  binding {_allocation_binding_label(allocation)}"))
-    lines.append(_row("Mechanisms", _allocation_mechanisms_text(allocation)))
-    allowance = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
-    allowance_text = "inactive" if allowance is None else f"{_fmt_value(allowance, 0)}A"
-    lines.append(_row("Limits", f"CCL {_fmt_value(allocation.get('bms_ccl_a'), 0)}A  allowance {allowance_text}"))
+    lines.append(_row("Limit", _allocation_limit_text(allocation)))
     basis = allocation.get("weight_basis")
     basis_text = f"  split by {basis}" if basis else ""
     lines.append(
@@ -380,27 +375,19 @@ def _allocation_lines(allocation: dict) -> list[str]:
     return lines
 
 
-def _allocation_binding_label(allocation: dict) -> str:
+def _allocation_limit_text(allocation: dict) -> str:
+    mode = allocation.get("mode") or "?"
     reason = allocation.get("reason")
+    allowance = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
+    ccl = f"BMS CCL {_fmt_value(allocation.get('bms_ccl_a'), 0)}A"
+    mechanism = _allocation_mechanisms_text(allocation)
     if reason == "unconstrained":
-        return "none"
-    if reason == "normal_load_allowance":
-        return "CCL"
-    if reason == "BMS CCL fraction":
-        return "CCL fraction"
-    if reason == "feedback_clamp":
-        return "feedback clamp"
-    if reason in {"full-charge latch", "cell safety latch"}:
-        return f"stop ({reason})"
-    if isinstance(reason, str) and (
-        reason.startswith("max cell ")
-        or reason.startswith("cell delta ")
-        or reason == "charge_ceiling"
-    ):
-        return f"stop ({reason})"
-    if reason in {"BMS charge disabled", "BMS CCL is zero"}:
-        return f"stop ({reason})"
-    return str(reason or "?")
+        return f"{mode}: not limiting ({ccl})"
+    if allowance is None:
+        return f"{mode}: no action ({mechanism}; {ccl})"
+    if allowance <= 0:
+        return f"{mode}: stop ({mechanism}; {ccl})"
+    return f"{mode}: {_fmt_value(allowance, 0)}A net ({mechanism}; {ccl})"
 
 
 def _allocation_mechanisms_text(allocation: dict) -> str:

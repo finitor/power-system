@@ -186,9 +186,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Charge Allocation", rendered)
-        self.assertIn("Mode                  live  binding CCL fraction", rendered)
-        self.assertIn("Mechanisms            CCL taper", rendered)
-        self.assertIn("Limits                CCL 100A  allowance 21A", rendered)
+        self.assertIn("Limit                 live: 21A net (CCL taper; BMS CCL 100A)", rendered)
         self.assertIn("Budget                22A  (battery +5A, load 6A)", rendered)
         self.assertIn("split by pv_power", rendered)
         self.assertIn("Classic               11.0A limited  *", rendered)
@@ -224,9 +222,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         )
         rendered = "\n".join(lines)
 
-        self.assertIn("Mode                  live  binding none", rendered)
-        self.assertIn("Mechanisms            none", rendered)
-        self.assertIn("Limits                CCL 200A  allowance inactive", rendered)
+        self.assertIn("Limit                 live: not limiting (BMS CCL 200A)", rendered)
         self.assertIn("Budget                200A  (battery -3A, load 4A)", rendered)
         self.assertIn("Classic               100.0A max", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)
