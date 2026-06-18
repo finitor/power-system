@@ -449,16 +449,7 @@ def _allocation_lines(allocation: dict) -> list[str]:
     lines = ["Charge Allocation"]
     reason = allocation.get("reason") or "?"
     lines.append(_row("Limit", _allocation_limit_text(allocation)))
-    basis = allocation.get("weight_basis")
-    basis_text = f"  split by {basis}" if basis else ""
-    lines.append(
-        _row(
-            "Budget",
-            f"{_fmt(allocation.get('budget_a'), 0)}A  "
-            f"(battery {_fmt_signed_a(allocation.get('battery_current_a', allocation.get('battery_charge_a')))}, "
-            f"load {_fmt(allocation.get('load_allowance_a'), 0)}A){basis_text}",
-        )
-    )
+    lines.append(_row("Budget", _allocation_budget_text(allocation)))
     targets = allocation.get("targets") or {}
     for name in sorted(targets):
         target = targets[name]
@@ -467,6 +458,23 @@ def _allocation_lines(allocation: dict) -> list[str]:
             value += "  *"  # a write is pending/applied this cycle
         lines.append(_row(name.capitalize(), value))
     return lines
+
+
+def _allocation_budget_text(allocation: dict) -> str:
+    basis = allocation.get("weight_basis")
+    basis_text = f"  split by {basis}" if basis else ""
+    budget = f"{_fmt(allocation.get('budget_a'), 0)}A"
+    reason = allocation.get("reason")
+    ceiling = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
+    if reason == "feedback_clamp":
+        return (
+            f"{budget}  feedback: battery "
+            f"{_fmt_signed_a(allocation.get('battery_current_a', allocation.get('battery_charge_a')))} "
+            f"> ceiling {_fmt(ceiling, 0)}A{basis_text}"
+        )
+    if reason == "BMS CCL fraction":
+        return f"{budget}  includes load {_fmt(allocation.get('load_allowance_a'), 0)}A{basis_text}"
+    return f"{budget}{basis_text}"
 
 
 def _allocation_limit_text(allocation: dict) -> str:

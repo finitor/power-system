@@ -266,7 +266,8 @@ class SupervisorSemanticsTest(unittest.TestCase):
 
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Limit:                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget:                200A  (battery -2A, load 4A)", rendered)
+        self.assertIn("Budget:                200A  split by pv_power", rendered)
+        self.assertNotIn("battery -2A", rendered)
         self.assertIn("Classic:               100.0A max", rendered)
         self.assertIn("Epever:                100.0A released  *", rendered)
 

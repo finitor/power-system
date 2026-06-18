@@ -187,7 +187,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
 
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Limit                 21A net (CCL taper; BMS CCL 100A)", rendered)
-        self.assertIn("Budget                22A  (battery +5A, load 6A)", rendered)
+        self.assertIn("Budget                22A  includes load 6A", rendered)
         self.assertIn("split by pv_power", rendered)
         self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
@@ -223,9 +223,31 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Limit                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget                200A  (battery -3A, load 4A)", rendered)
+        self.assertIn("Budget                200A  split by pv_power", rendered)
+        self.assertNotIn("battery -3A", rendered)
         self.assertIn("Classic               100.0A max", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)
+
+    def test_allocation_section_explains_feedback_clamp(self) -> None:
+        lines = _allocation_lines(
+            {
+                "mode": "live",
+                "reason": "feedback_clamp",
+                "bms_ccl_a": 40.0,
+                "charge_ceiling_a": 20.0,
+                "budget_a": 1.0,
+                "battery_current_a": 46.0,
+                "battery_charge_a": 46.0,
+                "load_allowance_a": 12.0,
+                "weight_basis": "pv_power",
+                "targets": {},
+            }
+        )
+
+        rendered = "\n".join(lines)
+
+        self.assertIn("Limit                 20A net (CCL taper, feedback clamp; BMS CCL 40A)", rendered)
+        self.assertIn("Budget                1A  feedback: battery +46A > ceiling 20A  split by pv_power", rendered)
 
     def test_allocation_section_marks_dry_run_mode(self) -> None:
         lines = _allocation_lines(
