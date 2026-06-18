@@ -447,10 +447,12 @@ def _inverter_charger_lines(inverter: dict | None) -> list[str]:
 
 def _allocation_lines(allocation: dict) -> list[str]:
     lines = ["Charge Allocation"]
-    lines.append(_row("Mode", f"{allocation.get('mode') or '?'}  {allocation.get('reason') or '?'}"))
-    ceiling = allocation.get("charge_ceiling_a")
-    ceiling_text = "--" if ceiling is None else f"{_fmt(ceiling, 0)}A"
-    lines.append(_row("Limits", f"CCL {_fmt(allocation.get('bms_ccl_a'), 0)}A  ceiling {ceiling_text}"))
+    mode = allocation.get("mode") or "?"
+    reason = allocation.get("reason") or "?"
+    lines.append(_row("Mode", f"{mode}  binding {_allocation_binding_label(allocation)}"))
+    allowance = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
+    allowance_text = "--" if allowance is None else f"{_fmt(allowance, 0)}A"
+    lines.append(_row("Limits", f"CCL {_fmt(allocation.get('bms_ccl_a'), 0)}A  allowance {allowance_text}"))
     basis = allocation.get("weight_basis")
     basis_text = f"  split by {basis}" if basis else ""
     lines.append(
@@ -464,11 +466,57 @@ def _allocation_lines(allocation: dict) -> list[str]:
     targets = allocation.get("targets") or {}
     for name in sorted(targets):
         target = targets[name]
-        value = "off" if target.get("disable") else f"{_fmt(target.get('target_a'), 1)}A"
+        value = _allocation_target_text(target, global_reason=reason)
         if target.get("should_write"):
             value += "  *"  # a write is pending/applied this cycle
         lines.append(_row(name.capitalize(), value))
     return lines
+
+
+def _allocation_binding_label(allocation: dict) -> str:
+    reason = allocation.get("reason")
+    if reason == "unconstrained":
+        return "none"
+    if reason == "normal_load_allowance":
+        return "CCL"
+    if reason == "BMS CCL fraction":
+        return "CCL fraction"
+    if reason == "feedback_clamp":
+        return "feedback clamp"
+    if reason in {"full-charge latch", "cell safety latch"}:
+        return f"stop ({reason})"
+    if isinstance(reason, str) and (
+        reason.startswith("max cell ")
+        or reason.startswith("cell delta ")
+        or reason == "charge_ceiling"
+    ):
+        return f"stop ({reason})"
+    if reason in {"BMS charge disabled", "BMS CCL is zero"}:
+        return f"stop ({reason})"
+    return str(reason or "?")
+
+
+def _allocation_target_text(target: dict, *, global_reason: str) -> str:
+    reason = target.get("reason")
+    target_a = target.get("target_a")
+    if target.get("disable"):
+        return _with_local_reason("off", reason, global_reason)
+    if target_a is None:
+        return _with_local_reason("--", reason, global_reason)
+    value = f"{_fmt(target_a, 1)}A"
+    if reason in {"charger inactive", "charger unavailable"}:
+        return f"{value} released"
+    if reason == "unconstrained":
+        return f"{value} max"
+    if reason in {"charger offline", "missing BMS CCL", "missing battery current"}:
+        return _with_local_reason(value, reason, global_reason)
+    return f"{value} limited"
+
+
+def _with_local_reason(value: str, reason: str | None, global_reason: str) -> str:
+    if reason and reason != global_reason:
+        return f"{value} ({reason})"
+    return value
 
 
 def _temperature_lines(payload: dict) -> list[str]:

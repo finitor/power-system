@@ -332,14 +332,14 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_renders_status_conditions(self) -> None:
         snapshot = make_snapshot(
-            status_conditions=["Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A"],
+            status_conditions=["Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V > 55.8V"],
         )
 
         html = render_kindle_snapshot(snapshot)
 
         self.assertIn("Status: WARNING", html)
         self.assertIn("<h2>Status Conditions</h2>", html)
-        self.assertIn("Charge controller 0 CCL exceeds battery CCL: 80.0A &gt; 40.0A", html)
+        self.assertIn("Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V", html)
 
     def test_routes_kindle_path(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()
@@ -566,12 +566,12 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["conditions"], ["Battery cell overvoltage"])
 
     def test_snapshot_api_payload_includes_status_conditions(self) -> None:
-        snapshot = make_snapshot(status_conditions=["Battery cell delta high"])
+        snapshot = make_snapshot(status_conditions=["Charge controller 0 CVS exceeds battery CVL"])
 
         payload = snapshot_api_payload(snapshot)
 
         self.assertEqual(payload["status"]["severity"], "WARNING")
-        self.assertEqual(payload["status"]["conditions"], ["Battery cell delta high"])
+        self.assertEqual(payload["status"]["conditions"], ["Charge controller 0 CVS exceeds battery CVL"])
         self.assertIsNone(payload["battery"])
         self.assertEqual(payload["solar"], [])
 

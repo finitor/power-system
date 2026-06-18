@@ -203,7 +203,7 @@ class SupervisorSemanticsTest(unittest.TestCase):
         self.assertEqual(len(snapshot.errors), 1)
         self.assertIn("Classic read failed", snapshot.errors[0])
 
-    def test_supervisor_reports_charge_controller_settings_above_bms_limits(self) -> None:
+    def test_supervisor_reports_charge_controller_voltage_settings_above_bms_limit(self) -> None:
         snapshot = Supervisor(
             classic=FakeClassicSettingsClient(),
             battery=FakeLimitedBatteryCanClient(),
@@ -213,16 +213,14 @@ class SupervisorSemanticsTest(unittest.TestCase):
 
         self.assertFalse(snapshot.ok)
         self.assertEqual(snapshot.errors, [])
-        self.assertIn("Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A", snapshot.status_conditions)
         self.assertIn(
             "Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V, Float 55.9V, "
             "Equalize 56.0V, Max temp-comp 56.0V > 55.8V",
             snapshot.status_conditions,
         )
         self.assertIn("Status:  ERROR", rendered)
-        self.assertIn("Charge controller 0 CCL exceeds battery CCL", rendered)
 
-    def test_supervisor_reports_current_limit_exceedance_as_warning(self) -> None:
+    def test_supervisor_does_not_warn_when_controller_current_limit_exceeds_bms_ccl(self) -> None:
         snapshot = Supervisor(
             classic=FakeClassicSettingsClient(),
             battery=FakeCurrentLimitedBatteryCanClient(),
@@ -231,11 +229,46 @@ class SupervisorSemanticsTest(unittest.TestCase):
         rendered = render_snapshot(snapshot)
 
         self.assertTrue(snapshot.ok)
-        self.assertEqual(snapshot.status_text, "WARNING")
-        self.assertIn("Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A", snapshot.status_conditions)
-        self.assertIn("Status:  WARNING", rendered)
+        self.assertEqual(snapshot.status_text, "OK")
+        self.assertEqual(snapshot.status_conditions, [])
+        self.assertIn("Status:  OK", rendered)
 
-    def test_supervisor_debounces_high_cell_and_delta_conditions(self) -> None:
+    def test_terminal_display_renders_charge_allocation(self) -> None:
+        snapshot = make_snapshot()
+        rendered = render_snapshot(
+            snapshot,
+            allocation={
+                "mode": "live",
+                "reason": "unconstrained",
+                "bms_ccl_a": 200.0,
+                "charge_ceiling_a": None,
+                "budget_a": 200.0,
+                "battery_charge_a": 5.0,
+                "load_allowance_a": 4.0,
+                "weight_basis": "pv_power",
+                "targets": {
+                    "classic": {
+                        "target_a": 100.0,
+                        "disable": False,
+                        "should_write": False,
+                        "reason": "unconstrained",
+                    },
+                    "epever": {
+                        "target_a": 100.0,
+                        "disable": False,
+                        "should_write": True,
+                        "reason": "charger inactive",
+                    },
+                },
+            },
+        )
+
+        self.assertIn("Charge Allocation", rendered)
+        self.assertIn("Mode:                  live  binding none", rendered)
+        self.assertIn("Classic:               100.0A max", rendered)
+        self.assertIn("Epever:                100.0A released  *", rendered)
+
+    def test_supervisor_does_not_warn_on_high_cell_or_delta_conditions(self) -> None:
         supervisor = Supervisor(
             classic=None,
             battery=FakeCellSequenceBatteryCanClient(
@@ -252,22 +285,18 @@ class SupervisorSemanticsTest(unittest.TestCase):
         self.assertTrue(first.ok)
         self.assertEqual(first.status_conditions, [])
         self.assertTrue(second.ok)
-        self.assertEqual(second.status_text, "WARNING")
-        self.assertIn("Battery cell high: max cell 3.555V >= 3.550V", second.status_conditions)
-        self.assertIn(
-            "Battery cell delta high: 85mV >= 75mV while max cell 3.555V >= 3.450V",
-            second.status_conditions,
-        )
+        self.assertEqual(second.status_text, "OK")
+        self.assertEqual(second.status_conditions, [])
 
-    def test_supervisor_reports_cell_overvoltage_immediately(self) -> None:
+    def test_supervisor_does_not_error_on_cell_overvoltage(self) -> None:
         snapshot = Supervisor(
             classic=None,
             battery=FakeCellSequenceBatteryCanClient([(3.520, 3.610)]),
         ).read_snapshot()
 
-        self.assertFalse(snapshot.ok)
-        self.assertEqual(snapshot.status_text, "ERROR")
-        self.assertIn("Battery cell overvoltage risk: max cell 3.610V >= 3.600V", snapshot.status_conditions)
+        self.assertTrue(snapshot.ok)
+        self.assertEqual(snapshot.status_text, "OK")
+        self.assertEqual(snapshot.status_conditions, [])
 
     def test_unconfigured_adapters_are_marked_disabled(self) -> None:
         snapshot = Supervisor(classic=None, battery=FakeBatteryCanClient()).read_snapshot()

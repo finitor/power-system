@@ -19,8 +19,10 @@ from offgrid_power.canbus import (
 )
 from offgrid_power.charge_allocator import (
     ChargeAllocatorConfig,
+    ChargeAllocationDecision,
     ChargeCurrentAllocator,
     ChargerAllocationInput,
+    ChargerAllocationTarget,
     allocation_detail,
     charge_allocation_event,
 )
@@ -308,6 +310,10 @@ def main() -> int:
             ceiling_config=_config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_"),
             heartbeat_s=_env_float("CHARGE_ALLOC_HEARTBEAT_S", 300.0),
             pv_smooth_alpha=_env_float("CHARGE_ALLOC_PV_SMOOTH_ALPHA", 0.25),
+            target_deadband_a=_env_float("CHARGE_ALLOC_TARGET_DEADBAND_A", 5.0),
+            target_quantum_a=_env_float("CHARGE_ALLOC_TARGET_QUANTUM_A", 5.0),
+            classic_sleep_debounce_s=_env_float("CHARGE_ALLOC_CLASSIC_SLEEP_DEBOUNCE_S", 180.0),
+            epever_sleep_debounce_s=_env_float("CHARGE_ALLOC_EPEVER_SLEEP_DEBOUNCE_S", 180.0),
         )
         if args.charge_allocation or args.charge_allocation_dry_run
         else None
@@ -374,6 +380,7 @@ def main() -> int:
                     now=datetime.now(snapshot.captured_at.tzinfo),
                     load_totals=load_totals,
                     load_summary=load_summary,
+                    allocation=allocation_detail_payload,
                 )
                 if not args.no_clear:
                     clear_screen()
@@ -531,9 +538,11 @@ def apply_charger_current_taper(
 
 # Per-controller current ceilings are operator knobs (CHARGE_ALLOC_CLASSIC_MAX_A
 # / CHARGE_ALLOC_EPEVER_MAX_A; the EPEver also prefers its rated value when read).
-# PV is "present" (the array could charge if given budget) when its input voltage
-# sits meaningfully above the bus -- independent of whether we're throttling it.
+# Charger state is the allocation availability signal. Unloaded PV voltage can
+# remain high long after an array can deliver useful power, especially at
+# twilight, so voltage is kept as telemetry rather than the release trigger.
 _PV_PRESENT_MARGIN_V = 2.0
+_ACTIVE_CHARGE_STAGES = {"Bulk", "Absorb", "Float", "Equalize"}
 
 
 class ChargeAllocationLogger:
@@ -546,12 +555,9 @@ class ChargeAllocationLogger:
     a write or eval failure prints and is swallowed, never killing telemetry.
 
     When ``live``, the allocator is the sole current-limit writer (the legacy
-    taper must not also be live -- enforced at startup). Limit writes are gated
-    by the allocator's deadband; the EPEver charge coil is reconciled to the
-    disable intent (toggled only on change). No limit-write rate-limiting: the
-    limit is a ceiling, so a jump does not surge current (controllers ramp via
-    their own CV/soft-start), and the budget-level feedback clamp already gives
-    immediate-down behavior.
+    taper must not also be live -- enforced at startup). Computed targets are
+    deliberately sticky/coarse before logging or writing; the EPEver charge coil
+    is reconciled to the disable intent (toggled only on change).
     """
 
     def __init__(
@@ -563,6 +569,10 @@ class ChargeAllocationLogger:
         live: bool = False,
         ceiling_config: ChargeCeilingConfig | None = None,
         pv_smooth_alpha: float = 0.25,
+        target_deadband_a: float = 5.0,
+        target_quantum_a: float = 5.0,
+        classic_sleep_debounce_s: float = 180.0,
+        epever_sleep_debounce_s: float = 180.0,
     ) -> None:
         self.allocator = allocator
         self.heartbeat_s = heartbeat_s
@@ -574,10 +584,17 @@ class ChargeAllocationLogger:
         # whipsawing the apportionment split (which set the limits cycling near
         # full). 0 < alpha <= 1; smaller = smoother/slower.
         self.pv_smooth_alpha = pv_smooth_alpha
+        self.target_deadband_a = max(0.0, target_deadband_a)
+        self.target_quantum_a = max(1.0, target_quantum_a)
+        self._sleep_debounce_s = {
+            "classic": classic_sleep_debounce_s,
+            "epever": epever_sleep_debounce_s,
+        }
         self._pv_ema: dict[str, float] = {}
         self._last_signature: tuple | None = None
         self._last_logged_monotonic: float | None = None
         self._epever_charging_state: bool | None = None
+        self._inactive_since: dict[str, datetime] = {}
 
     def _smoothed(self, charger: ChargerAllocationInput) -> ChargerAllocationInput:
         if charger.pv_power_w is None:
@@ -591,9 +608,31 @@ class ChargeAllocationLogger:
         self._pv_ema[charger.name] = ema
         return dataclasses.replace(charger, pv_power_w=round(ema, 1))
 
+    def _debounced_inputs(
+        self, chargers: list[ChargerAllocationInput], captured_at: datetime
+    ) -> list[ChargerAllocationInput]:
+        out: list[ChargerAllocationInput] = []
+        for charger in chargers:
+            debounce_s = self._sleep_debounce_s.get(charger.name)
+            if debounce_s is None:
+                out.append(charger)
+                continue
+            if charger.active:
+                self._inactive_since.pop(charger.name, None)
+                out.append(charger)
+                continue
+            inactive_since = self._inactive_since.setdefault(charger.name, captured_at)
+            elapsed_s = max(0.0, (captured_at - inactive_since).total_seconds())
+            debounced_active = elapsed_s < debounce_s
+            out.append(dataclasses.replace(charger, active=debounced_active))
+        return out
+
     def record(self, snapshot, recorder: MetricRecorder | None):
         try:
-            chargers = [self._smoothed(c) for c in _allocation_inputs(snapshot)]
+            chargers = self._debounced_inputs(
+                [self._smoothed(c) for c in _allocation_inputs(snapshot)],
+                snapshot.captured_at,
+            )
             if not chargers:
                 return None
             battery = snapshot.battery
@@ -609,16 +648,17 @@ class ChargeAllocationLogger:
                     battery_current_a = battery.measurements.current_a
                 if battery.request_flags is not None:
                     charge_enabled = battery.request_flags.charge_enable
-            ceiling = self.ceiling.evaluate(battery)
+            ceiling = self.ceiling.evaluate(battery, charge_enabled=charge_enabled)
             decision = self.allocator.decide(
                 bms_ccl_a=bms_ccl_a,
-                charge_enabled=charge_enabled,
+                charge_enabled=True,
                 battery_current_a=battery_current_a,
                 load_current_a=estimate_load_current_a(snapshot),
                 chargers=chargers,
                 charge_ceiling_a=ceiling.ceiling_a,
                 charge_ceiling_reason=ceiling.reason,
             )
+            decision = self._stabilized_decision(decision, chargers)
             if recorder is not None and self._should_log(decision):
                 recorder.record_event(
                     charge_allocation_event(
@@ -632,17 +672,81 @@ class ChargeAllocationLogger:
             print(f"Charge allocation failed: {exc}", file=sys.stderr)
             return None
 
+    def _stabilized_decision(
+        self,
+        decision: ChargeAllocationDecision,
+        chargers: list[ChargerAllocationInput],
+    ) -> ChargeAllocationDecision:
+        charger_by_name = {charger.name: charger for charger in chargers}
+        targets: dict[str, ChargerAllocationTarget] = {}
+        for name, target in decision.targets.items():
+            charger = charger_by_name.get(name)
+            if charger is None:
+                targets[name] = target
+                continue
+            targets[name] = self._stabilized_target(decision.reason, charger, target)
+        return dataclasses.replace(decision, targets=targets)
+
+    def _stabilized_target(
+        self,
+        global_reason: str,
+        charger: ChargerAllocationInput,
+        target: ChargerAllocationTarget,
+    ) -> ChargerAllocationTarget:
+        raw = target.target_current_a
+        current = charger.current_limit_a
+        if raw is None or target.disable or self._immediate_limit_reason(global_reason, target.reason):
+            return target
+        if current is None:
+            return target
+
+        stable = raw
+        if abs(raw - current) < self.target_deadband_a:
+            stable = current
+        else:
+            stable = self._quantized_target(raw, charger.min_current_a, charger.max_current_a)
+
+        should_write = abs(current - stable) >= self.allocator.config.min_write_delta_a
+        return dataclasses.replace(target, target_current_a=stable, should_write=should_write)
+
+    def _quantized_target(self, target_a: float, min_current_a: float, max_current_a: float) -> float:
+        if target_a <= 0.0:
+            return 0.0
+        quantized = round(target_a / self.target_quantum_a) * self.target_quantum_a
+        quantized = max(min_current_a, min(max_current_a, quantized))
+        if target_a > 0.0 and quantized <= 0.0:
+            quantized = max(min_current_a, 1.0)
+        return float(round(quantized))
+
+    @staticmethod
+    def _immediate_limit_reason(global_reason: str, target_reason: str) -> bool:
+        reasons = {global_reason, target_reason}
+        if reasons & {
+            "BMS charge disabled",
+            "BMS CCL is zero",
+            "full-charge latch",
+            "cell safety latch",
+            "feedback_clamp",
+        }:
+            return True
+        return any(
+            isinstance(reason, str)
+            and (reason.startswith("max cell ") or reason.startswith("cell delta "))
+            for reason in reasons
+        )
+
     def _apply(self, decision, current_limits: dict) -> None:
         targets = decision.targets
         # Reconcile the EPEver charge coil to the disable intent, toggling only on
         # change (the limit register can't reach 0, so off/on is the coil's job).
         epever = targets.get("epever")
-        if epever is not None and epever.should_write:
+        if epever is not None:
             want_on = not epever.disable
             if want_on != self._epever_charging_state:
                 try:
                     self.supervisor.set_epever_charging(want_on)
                     self._epever_charging_state = want_on
+                    print(f"Charge allocation: epever coil -> {want_on}", file=sys.stderr)
                 except Exception as exc:  # noqa: BLE001
                     print(f"Charge allocation: epever coil -> {want_on} failed: {exc}", file=sys.stderr)
         for name, target in targets.items():
@@ -705,7 +809,7 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 max_current_a=_env_float("CHARGE_ALLOC_CLASSIC_MAX_A", 100.0),
                 pv_power_w=_pv_power_w(classic.pv_voltage_v, classic.pv_current_a),
                 min_current_a=0.0,
-                active=_can_charge(classic.pv_voltage_v, classic.battery_voltage_v),
+                active=classic.canonical_stage.value in _ACTIVE_CHARGE_STAGES,
             )
         )
     if snapshot.epever is not None:
@@ -723,8 +827,8 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 max_current_a=epever.rated_charging_current_a
                 or _env_float("CHARGE_ALLOC_EPEVER_MAX_A", 100.0),
                 pv_power_w=epever.pv_power_w,
-                min_current_a=1.0,  # 0x9013 floors at 1 A; below -> coil off
-                active=_can_charge(epever.pv_voltage_v, epever.battery_voltage_v),
+                min_current_a=1.0,  # 0x9013 floors at 1 A
+                active=epever.canonical_stage.value in _ACTIVE_CHARGE_STAGES,
             )
         )
     return chargers

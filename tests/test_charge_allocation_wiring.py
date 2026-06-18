@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 import sys
 import unittest
@@ -20,7 +21,11 @@ from offgrid_power.cli.supervisor_display import (  # noqa: E402
     _with_derived_epever_today,
 )
 from offgrid_power.charge_ceiling import ChargeCeilingConfig  # noqa: E402
-from offgrid_power.charge_allocator import ChargeCurrentAllocator, ChargerAllocationInput  # noqa: E402
+from offgrid_power.charge_allocator import (  # noqa: E402
+    ChargeAllocatorConfig,
+    ChargeCurrentAllocator,
+    ChargerAllocationInput,
+)
 
 
 def _charger(name, *, actual, limit, max_, min_current_a=0.0):
@@ -48,8 +53,8 @@ def _battery_with_limits(*, ccl_a: float, charge_enable: bool, current_a: float 
     return decode_pylon_snapshot(
         [
             CanFrame(0x351, bytes([0x48, 0x02, ccl_raw & 0xFF, ccl_raw >> 8, 0, 0, 0, 0])),
-            # 52.0 V: below the top-knee, so the charge ceiling doesn't bind and
-            # this test stays focused on the CCL / charge-enable path.
+            # 52.0 V: ordinary pack voltage; this test stays focused on the CCL
+            # / charge-enable path.
             CanFrame(0x356, bytes([0x08, 0x02, cur_raw & 0xFF, cur_raw >> 8, 0, 0, 0, 0])),
             CanFrame(0x35C, bytes([0x80 if charge_enable else 0x00, 0, 0, 0, 0, 0, 0, 0])),
             # Populate status too, so reusing the wrong attribute (status vs
@@ -120,6 +125,8 @@ class LiveApplyTest(unittest.TestCase):
                 _charger("classic", actual=0.0, limit=80.0, max_=80.0),
                 _charger("epever", actual=0.0, limit=80.0, max_=100.0, min_current_a=1.0),
             ],
+            charge_ceiling_a=0.0,
+            charge_ceiling_reason="BMS charge disabled",
         )
 
         logger._apply(decision, {"classic": 80.0, "epever": 80.0})
@@ -128,33 +135,54 @@ class LiveApplyTest(unittest.TestCase):
         self.assertIn({"battery_current_limit_a": 0.0, "persist": False}, sup.classic_writes)
         self.assertEqual(sup.epever_currents, [])  # no current write while disabled
 
+    def test_reenables_epever_coil_even_when_limit_is_already_correct(self) -> None:
+        sup = _FakeSupervisor()
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), supervisor=sup, live=True)
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=200.0,
+            charge_enabled=True,
+            battery_current_a=0.0,
+            load_current_a=0.0,
+            chargers=[
+                _charger("classic", actual=0.0, limit=100.0, max_=100.0),
+                _charger("epever", actual=0.0, limit=100.0, max_=100.0, min_current_a=1.0),
+            ],
+        )
+
+        self.assertFalse(decision.targets["epever"].should_write)
+
+        logger._apply(decision, {"classic": 100.0, "epever": 100.0})
+
+        self.assertEqual(sup.coil, [True])
+        self.assertEqual(sup.epever_currents, [])
+
 
 class ConfigFromEnvTest(unittest.TestCase):
     def test_overrides_named_fields_and_keeps_defaults(self) -> None:
         import os
 
-        os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"] = "56.0"
-        os.environ["CHARGE_CEILING_RAMP2_LOW_CURRENT_A"] = "6"
-        os.environ.pop("CHARGE_CEILING_BULK_VOLTAGE_V", None)
+        os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"] = "0.6"
+        os.environ["CHARGE_CEILING_HIGH_CELL_STOP_V"] = "3.54"
+        os.environ.pop("CHARGE_CEILING_BMS_KNEE_CCL_BASELINE_A", None)
         try:
             config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
         finally:
-            del os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"]
-            del os.environ["CHARGE_CEILING_RAMP2_LOW_CURRENT_A"]
+            del os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"]
+            del os.environ["CHARGE_CEILING_HIGH_CELL_STOP_V"]
 
-        self.assertEqual(config.top_voltage_v, 56.0)  # overridden
-        self.assertEqual(config.ramp2_low_current_a, 6.0)  # overridden
-        self.assertEqual(config.bulk_voltage_v, 53.6)  # default preserved
+        self.assertEqual(config.bms_ccl_budget_fraction, 0.6)  # overridden
+        self.assertEqual(config.high_cell_stop_v, 3.54)  # overridden
+        self.assertEqual(config.bms_knee_ccl_baseline_a, 200.0)  # default preserved
 
     def test_non_numeric_value_is_ignored(self) -> None:
         import os
 
-        os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"] = "oops"
+        os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"] = "oops"
         try:
             config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
         finally:
-            del os.environ["CHARGE_CEILING_TOP_VOLTAGE_V"]
-        self.assertEqual(config.top_voltage_v, 54.8)  # falls back to default
+            del os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"]
+        self.assertEqual(config.bms_ccl_budget_fraction, 0.5)  # falls back to default
 
 
 class PvSmoothingTest(unittest.TestCase):
@@ -172,6 +200,134 @@ class PvSmoothingTest(unittest.TestCase):
         logger = ChargeAllocationLogger(ChargeCurrentAllocator())
         c = _charger("classic", actual=5.0, limit=80.0, max_=100.0)  # pv_power_w None
         self.assertIs(logger._smoothed(c), c)
+
+
+class TargetStabilizationTest(unittest.TestCase):
+    def test_holds_target_inside_deadband(self) -> None:
+        logger = ChargeAllocationLogger(
+            ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)),
+            target_deadband_a=5.0,
+            target_quantum_a=5.0,
+        )
+        charger = _charger("classic", actual=10.0, limit=17.0, max_=100.0)
+        decision = logger.allocator.decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=0.0,
+            chargers=[charger],
+            charge_ceiling_a=20.0,
+            charge_ceiling_reason="BMS CCL fraction",
+        )
+
+        stabilized = logger._stabilized_decision(decision, [charger])
+
+        target = stabilized.targets["classic"]
+        self.assertEqual(target.target_current_a, 17.0)
+        self.assertFalse(target.should_write)
+
+    def test_quantizes_large_target_changes(self) -> None:
+        logger = ChargeAllocationLogger(
+            ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)),
+            target_deadband_a=5.0,
+            target_quantum_a=5.0,
+        )
+        charger = _charger("classic", actual=10.0, limit=10.0, max_=100.0)
+        decision = logger.allocator.decide(
+            bms_ccl_a=44.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=0.0,
+            chargers=[charger],
+            charge_ceiling_a=22.0,
+            charge_ceiling_reason="BMS CCL fraction",
+        )
+
+        stabilized = logger._stabilized_decision(decision, [charger])
+
+        target = stabilized.targets["classic"]
+        self.assertEqual(target.target_current_a, 20.0)
+        self.assertTrue(target.should_write)
+
+    def test_real_stop_bypasses_target_smoothing(self) -> None:
+        logger = ChargeAllocationLogger(
+            ChargeCurrentAllocator(),
+            target_deadband_a=100.0,
+            target_quantum_a=5.0,
+        )
+        charger = _charger("classic", actual=10.0, limit=80.0, max_=100.0)
+        decision = logger.allocator.decide(
+            bms_ccl_a=40.0,
+            charge_enabled=False,
+            battery_current_a=10.0,
+            load_current_a=0.0,
+            chargers=[charger],
+            charge_ceiling_a=0.0,
+            charge_ceiling_reason="BMS charge disabled",
+        )
+
+        stabilized = logger._stabilized_decision(decision, [charger])
+
+        target = stabilized.targets["classic"]
+        self.assertEqual(target.target_current_a, 0.0)
+        self.assertTrue(target.disable)
+        self.assertTrue(target.should_write)
+
+
+class ControllerSleepDebounceTest(unittest.TestCase):
+    def test_epever_resting_must_persist_before_it_is_marked_inactive(self) -> None:
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), epever_sleep_debounce_s=120.0)
+        t0 = make_snapshot().captured_at
+        sleeping = ChargerAllocationInput(
+            name="epever",
+            actual_current_a=0.0,
+            current_limit_a=5.0,
+            max_current_a=100.0,
+            min_current_a=1.0,
+            active=False,
+        )
+
+        first = logger._debounced_inputs([sleeping], t0)[0]
+        held = logger._debounced_inputs([sleeping], t0 + timedelta(seconds=119))[0]
+        released = logger._debounced_inputs([sleeping], t0 + timedelta(seconds=120))[0]
+
+        self.assertTrue(first.active)
+        self.assertTrue(held.active)
+        self.assertFalse(released.active)
+
+    def test_epever_active_stage_resets_sleep_debounce(self) -> None:
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), epever_sleep_debounce_s=120.0)
+        t0 = make_snapshot().captured_at
+        sleeping = ChargerAllocationInput(
+            name="epever",
+            actual_current_a=0.0,
+            current_limit_a=5.0,
+            max_current_a=100.0,
+            min_current_a=1.0,
+            active=False,
+        )
+        awake = type(sleeping)(**{**sleeping.__dict__, "active": True})
+
+        logger._debounced_inputs([sleeping], t0)
+        self.assertTrue(logger._debounced_inputs([awake], t0 + timedelta(seconds=60))[0].active)
+        self.assertTrue(logger._debounced_inputs([sleeping], t0 + timedelta(seconds=61))[0].active)
+
+    def test_classic_resting_must_persist_before_it_is_marked_inactive(self) -> None:
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), classic_sleep_debounce_s=120.0)
+        t0 = make_snapshot().captured_at
+        sleeping = ChargerAllocationInput(
+            name="classic",
+            actual_current_a=0.0,
+            current_limit_a=5.0,
+            max_current_a=100.0,
+            active=False,
+        )
+
+        first = logger._debounced_inputs([sleeping], t0)[0]
+        released = logger._debounced_inputs([sleeping], t0 + timedelta(seconds=120))[0]
+
+        self.assertTrue(first.active)
+        self.assertFalse(released.active)
 
 
 class _FakeMidnightRecorder:
@@ -217,10 +373,18 @@ class AllocationInputsTest(unittest.TestCase):
     def test_maps_both_controllers_with_per_device_floors_and_eligibility(self) -> None:
         snapshot = make_snapshot(
             classic=make_classic_telemetry(
-                pv_voltage_v=120.0, pv_current_a=5.0, battery_voltage_v=54.0, battery_current_a=18.0
+                pv_voltage_v=120.0,
+                pv_current_a=5.0,
+                battery_voltage_v=54.0,
+                battery_current_a=18.0,
+                charge_stage="BulkMppt",
             ),
             epever=make_epever_telemetry(
-                pv_voltage_v=160.0, pv_current_a=2.0, battery_voltage_v=54.0, battery_current_a=8.0
+                pv_voltage_v=160.0,
+                pv_current_a=2.0,
+                battery_voltage_v=54.0,
+                battery_current_a=8.0,
+                charging_status="Boost",
             ),
         )
 
@@ -233,12 +397,45 @@ class AllocationInputsTest(unittest.TestCase):
         self.assertTrue(inputs["classic"].active)
         self.assertTrue(inputs["epever"].active)
 
-    def test_controller_with_pv_below_bus_is_ineligible(self) -> None:
-        # Default classic telemetry pv (28 V) sits below the bus -> not able to
-        # charge, so it must be marked ineligible rather than fed budget.
-        snapshot = make_snapshot(classic=make_classic_telemetry(battery_voltage_v=54.0))
+    def test_classic_resting_state_marks_it_inactive_even_with_high_pv_voltage(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(
+                pv_voltage_v=160.0,
+                pv_current_a=0.0,
+                battery_voltage_v=54.0,
+                charge_stage="Resting",
+            ),
+        )
+
         inputs = {c.name: c for c in _allocation_inputs(snapshot)}
+
         self.assertFalse(inputs["classic"].active)
+
+    def test_epever_resting_state_marks_it_inactive_even_with_high_pv_voltage(self) -> None:
+        snapshot = make_snapshot(
+            epever=make_epever_telemetry(
+                pv_voltage_v=160.0,
+                pv_current_a=0.0,
+                pv_power_w=0.0,
+                battery_voltage_v=54.0,
+                charging_status="No charging",
+            ),
+        )
+
+        inputs = {c.name: c for c in _allocation_inputs(snapshot)}
+
+        self.assertFalse(inputs["epever"].active)
+
+    def test_classic_active_stage_stays_eligible_even_when_pv_voltage_is_low(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(
+                pv_voltage_v=28.0,
+                battery_voltage_v=54.0,
+                charge_stage="BulkMppt",
+            )
+        )
+        inputs = {c.name: c for c in _allocation_inputs(snapshot)}
+        self.assertTrue(inputs["classic"].active)
 
 
 class DryRunRecordingTest(unittest.TestCase):
@@ -285,10 +482,18 @@ class DryRunRecordingTest(unittest.TestCase):
         snapshot = make_snapshot(
             battery=_battery_with_limits(ccl_a=40.0, charge_enable=True, current_a=10.0),
             classic=make_classic_telemetry(
-                pv_voltage_v=120.0, pv_current_a=6.0, battery_voltage_v=54.0, battery_current_a=20.0
+                pv_voltage_v=120.0,
+                pv_current_a=6.0,
+                battery_voltage_v=54.0,
+                battery_current_a=20.0,
+                charge_stage="BulkMppt",
             ),
             epever=make_epever_telemetry(
-                pv_voltage_v=160.0, pv_current_a=3.0, battery_voltage_v=54.0, battery_current_a=12.0
+                pv_voltage_v=160.0,
+                pv_current_a=3.0,
+                battery_voltage_v=54.0,
+                battery_current_a=12.0,
+                charging_status="Boost",
             ),
         )
         recorder = _FakeRecorder()
@@ -297,7 +502,7 @@ class DryRunRecordingTest(unittest.TestCase):
 
         self.assertEqual(len(recorder.events), 1)
         detail = recorder.events[0].detail or {}
-        self.assertEqual(detail["reason"], "normal_load_allowance")
+        self.assertEqual(detail["reason"], "BMS CCL fraction")
         self.assertEqual(detail["bms_ccl_a"], 40.0)
         self.assertEqual(set(detail["targets"]), {"classic", "epever"})
 

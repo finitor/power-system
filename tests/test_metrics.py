@@ -74,7 +74,7 @@ class SnapshotMetricSamplesTest(unittest.TestCase):
         )
         snapshot = full_snapshot(
             battery=battery,
-            status_conditions=["Charge controller 0 CCL exceeds battery CCL: 80.0A > 40.0A"],
+            status_conditions=["Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V > 55.8V"],
         )
 
         samples = list(
@@ -97,7 +97,7 @@ class SnapshotMetricSamplesTest(unittest.TestCase):
         self.assertTrue(any(sample.source == "load" and sample.metric == "estimated_autonomy" and sample.value == 46.0 for sample in samples))
         self.assertTrue(any(sample.source == "load" and sample.metric == "rolling_average_current" and sample.value == 3.5 for sample in samples))
         self.assertTrue(any(sample.source == "supervisor" and sample.metric == "status_condition_count" and sample.value == 1 for sample in samples))
-        self.assertTrue(any(sample.source == "supervisor" and sample.metric == "status_condition" and "CCL exceeds" in (sample.text or "") for sample in samples))
+        self.assertTrue(any(sample.source == "supervisor" and sample.metric == "status_condition" and "CVS exceeds" in (sample.text or "") for sample in samples))
 
     def test_samples_cover_epever_and_magnum(self) -> None:
         snapshot = full_snapshot(

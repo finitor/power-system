@@ -1,6 +1,6 @@
 # Charge Management
 
-This system treats the battery BMS as the authority on the battery's safe operating envelope, and treats charge controllers as actuators that must stay inside that envelope. The supervisor is currently read-only for automatic control: it alerts on concerning conditions but does not autonomously rewrite charger limits.
+This system treats the battery BMS as the authority on the battery's safe operating envelope, and treats charge controllers as actuators that must stay inside that envelope. The supervisor can automatically allocate charge-controller current limits when charge allocation is enabled; otherwise it reports telemetry and write-time guard failures.
 
 ## BMS Negotiation Signals
 
@@ -9,11 +9,11 @@ The Eco-Worthy rack batteries expose Pylon-style CAN telemetry. The most importa
 | Signal | Meaning | Supervisor use |
 |---|---|---|
 | CVL | Charge voltage limit advertised by the BMS | Compare against Classic absorb, float, equalize, and max temp-comp voltage settings |
-| CCL | Charge current limit advertised by the BMS | Compare against Classic battery current limit |
+| CCL | Charge current limit advertised by the BMS | Input to the charge allocator's closed-loop current budget |
 | Charge enable | Whether the BMS currently permits charge | Display and future alert/control input |
 | Protections/alarms | BMS fault and warning state | Display as battery `Protection/Alarms`; any non-nominal value is significant |
-| Min/max cell voltage | Cell-level top-of-charge behavior | Alert on high max-cell voltage and top-of-charge imbalance |
-| Cell voltage delta | Difference between highest and lowest reported cell | Alert only near the top knee, where voltage delta is meaningful |
+| Min/max cell voltage | Cell-level top-of-charge behavior | Guardrail input to the charge allocator |
+| Cell voltage delta | Difference between highest and lowest reported cell | Guardrail input to the charge allocator near the top knee |
 
 The BMS can change CCL dynamically. During the June 2, 2026 top-off observation, the BMS advertised 200 A through most of the charge, stepped down to 100 A near the top, and later stepped down to 40 A while max-cell voltage and cell delta rose. Actual battery charge current was far below these advertised limits, so the CCL reduction was interpreted as an advisory/taper signal rather than an immediate current constraint.
 
@@ -29,7 +29,7 @@ The guard checks:
 - Classic equalize voltage must be less than or equal to BMS CVL.
 - Classic max temp-comp voltage must be less than or equal to BMS CVL.
 
-This is a write-time guard only. Because BMS CCL can fall later during taper, the supervisor also continuously reports read-only status conditions when the current Classic settings exceed the current BMS limits.
+This is a write-time guard only. Because BMS CCL can fall later during taper, the charge allocator continuously adjusts controller current limits to stay inside the current BMS envelope. The supervisor no longer raises a passive warning simply because a controller's configured current limit is higher than the instantaneous BMS CCL.
 
 ### Classic Modbus Write Modes
 
@@ -84,18 +84,13 @@ Use `--dry-run` to print the planned settings and BMS guard result without writi
 
 The supervisor reports status conditions but does not autonomously act on them. Any active status condition makes the top display status `ERROR`, appears in terminal and web displays, and is logged in SQLite as `supervisor.status_condition`.
 
-Current charge-management conditions:
+Current charge-management condition:
 
 | Condition | Trigger | Rationale |
 |---|---|---|
-| `Charge controller 0 CCL exceeds battery CCL` | Classic current limit is greater than BMS CCL | The charger setting is outside the BMS-advertised current envelope |
 | `Charge controller 0 CVS exceeds battery CVL` | Any Classic charge voltage setpoint is greater than BMS CVL | The charger setting is outside the BMS-advertised voltage envelope |
-| `Battery cell high` | Max cell >= 3.550 V for two consecutive samples | Warn before approaching common LiFePO4 overvoltage territory |
-| `Battery cell overvoltage risk` | Max cell >= 3.600 V immediately | High-cell voltage is close enough to typical BMS protection thresholds to require intervention |
-| `Battery cell delta high` | Delta >= 75 mV for two consecutive samples while max cell >= 3.450 V | Top-of-charge imbalance is becoming meaningful near the LiFePO4 voltage knee |
-| `Battery cell delta critical` | Delta >= 100 mV for two consecutive samples while max cell >= 3.450 V | Imbalance is large enough near the top knee that continuing a top-off attempt is not useful |
 
-Two consecutive samples are required for the warning-style thresholds to avoid false alarms from one noisy CAN read. The overvoltage-risk threshold is immediate because the consequence of waiting is worse than a false positive.
+Current-limit exceedance, high-cell voltage, and high cell delta are handled by the allocator's closed-loop budget resolver instead of by passive supervisor warning/error conditions.
 
 ## Threshold Theory
 
@@ -105,23 +100,28 @@ LiFePO4 cell voltage is relatively flat through the middle of SOC and rises shar
 - Near the top knee, a rising delta can mean one cell is accepting charge faster than the others or has reached the steep part of the curve earlier.
 - Passive balancing is slow. If the charger keeps holding a high pack voltage, the high cell can continue rising while lower cells lag.
 
-The supervisor therefore gates delta alerts on max-cell voltage. Delta is watched more closely only when max cell is at or above 3.450 V.
+The allocator therefore gates delta guardrails on max-cell voltage. Delta is watched more closely only when max cell is in the configured upper-cell zone.
 
-The initial thresholds are intentionally conservative and based on observed behavior:
+The initial thresholds are based on observed behavior and were later moved from passive alerts into allocator guardrails:
 
 - On June 2, 2026, max cell reached 3.513 V and delta peaked around 68 mV during a supervised elevated-voltage top-off attempt.
 - The BMS reported no protections or alarms, and charge enable remained true.
 - CCL tapered downward as max-cell voltage and delta rose.
 - Rollback reduced charger output and the delta began falling.
 
-The selected warning threshold of 75 mV is just above the observed peak, so normal repeats of this experiment should not alert unless imbalance grows beyond what has already been observed. The 100 mV threshold is a stronger signal that a top-off attempt should stop. The 3.550 V and 3.600 V max-cell thresholds are below typical LiFePO4 hard overvoltage values, leaving margin for manual intervention.
+The current allocator guardrails are documented in
+[`charge-current-allocation.md`](charge-current-allocation.md). As of
+2026-06-18, they are max-cell stop at 3.62 V, recovery / upper-zone threshold at
+3.55 V, and cell-delta stop at 150 mV in that upper zone.
 
 ## Current Control Boundary
 
-The supervisor does not automatically change Classic settings in response to these conditions. The current response policy is:
+The supervisor status layer still reports voltage setpoint violations against
+BMS CVL because those are static configuration mismatches. Dynamic current and
+cell-voltage conditions are handled in the allocator loop instead:
 
-1. Alert visibly.
-2. Let the operator decide whether to roll back charge settings, stop a top-off attempt, or continue observing.
-3. Keep all automatic write behavior out of the supervisor until the manual policy has more history.
-
-Possible future automation should start with conservative actions such as restoring the documented baseline settings or reducing Classic current limit, and should still require explicit enablement during early operation.
+1. `ChargeCeiling` resolves a net charge allowance from BMS CCL, charge-enable,
+   and cell guardrails.
+2. `ChargeCurrentAllocator` distributes that allowance across the controllers.
+3. The live supervisor writes the resulting controller current limits and EPEver
+   coil state when `--charge-allocation` is enabled.

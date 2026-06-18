@@ -159,7 +159,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         lines = _allocation_lines(
             {
                 "mode": "live",
-                "reason": "top-knee taper",
+                "reason": "BMS CCL fraction",
                 "bms_ccl_a": 100.0,
                 "charge_ceiling_a": 21.0,
                 "budget_a": 22.0,
@@ -167,19 +167,62 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "load_allowance_a": 6.0,
                 "weight_basis": "pv_power",
                 "targets": {
-                    "classic": {"target_a": 11.0, "disable": False, "should_write": True},
-                    "epever": {"target_a": 0.0, "disable": True, "should_write": True},
+                    "classic": {
+                        "target_a": 11.0,
+                        "disable": False,
+                        "should_write": True,
+                        "reason": "BMS CCL fraction",
+                    },
+                    "epever": {
+                        "target_a": 0.0,
+                        "disable": True,
+                        "should_write": True,
+                        "reason": "BMS CCL fraction",
+                    },
                 },
             }
         )
         rendered = "\n".join(lines)
 
         self.assertIn("Charge Allocation", rendered)
-        self.assertIn("Mode                  live  top-knee taper", rendered)
-        self.assertIn("Limits                CCL 100A  ceiling 21A", rendered)
+        self.assertIn("Mode                  live  binding CCL fraction", rendered)
+        self.assertIn("Limits                CCL 100A  allowance 21A", rendered)
         self.assertIn("split by pv_power", rendered)
-        self.assertIn("Classic               11.0A  *", rendered)
+        self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
+
+    def test_allocation_section_renders_per_controller_release_state(self) -> None:
+        lines = _allocation_lines(
+            {
+                "mode": "live",
+                "reason": "unconstrained",
+                "bms_ccl_a": 200.0,
+                "charge_ceiling_a": None,
+                "budget_a": 200.0,
+                "battery_charge_a": 5.0,
+                "load_allowance_a": 4.0,
+                "weight_basis": "pv_power",
+                "targets": {
+                    "classic": {
+                        "target_a": 100.0,
+                        "disable": False,
+                        "should_write": False,
+                        "reason": "unconstrained",
+                    },
+                    "epever": {
+                        "target_a": 100.0,
+                        "disable": False,
+                        "should_write": True,
+                        "reason": "charger inactive",
+                    },
+                },
+            }
+        )
+        rendered = "\n".join(lines)
+
+        self.assertIn("Mode                  live  binding none", rendered)
+        self.assertIn("Classic               100.0A max", rendered)
+        self.assertIn("Epever                100.0A released  *", rendered)
 
     def test_allocation_section_precedes_temperatures_when_present(self) -> None:
         payload = {

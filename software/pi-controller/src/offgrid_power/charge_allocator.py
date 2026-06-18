@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 
 from .metrics import TelemetryEvent
 
@@ -17,7 +18,7 @@ class ChargeAllocatorConfig:
     # fallback) -- see ChargeCurrentAllocator._weights.
     min_active_weight_a: float = 1.0
     min_active_weight_w: float = 10.0
-    min_write_delta_a: float = 2.0
+    min_write_delta_a: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -49,9 +50,10 @@ class ChargerAllocationTarget:
     target_current_a: float | None
     should_write: bool
     reason: str
-    # True when the charger should be turned off (target below its representable
-    # floor, or zero) rather than current-limited. The actuator layer maps this
-    # to the EPEver charge coil off / a 0 A Classic limit.
+    # True when the charger should be turned off for a battery/control-side stop
+    # rather than current-limited. Resource-side states (no PV, sleeping
+    # controller) must not set this; the controller's own state machine owns
+    # low-input sleep/wake behavior.
     disable: bool = False
 
 
@@ -66,8 +68,8 @@ class ChargeAllocationDecision:
     # "pv_power" or "actual_current": which signal drove the apportionment split,
     # for trace analysis. None when no budget was apportioned.
     weight_basis: str | None = None
-    # Battery-state ceiling on net charge current (top-knee taper / cell safety);
-    # combined with bms_ccl_a via min(). None = no such constraint this cycle.
+    # Resolved net charge-current allowance from ChargeCeiling. None means
+    # unconstrained; 0 means stop.
     charge_ceiling_a: float | None = None
 
 
@@ -91,18 +93,28 @@ class ChargeCurrentAllocator:
         if battery_current_a is None:
             return self._no_targets("missing battery current", bms_ccl_a, battery_current_a, chargers)
 
-        if not charge_enabled:
-            return self._zero_targets(
-                "BMS charge disabled",
-                bms_ccl_a,
-                battery_current_a,
-                max(load_current_a or 0.0, 0.0),
-                chargers,
+        eligible_max_a = sum(
+            charger.max_current_a
+            for charger in chargers
+            if charger.online and charger.enabled and charger.active and charger.max_current_a > 0
+        )
+
+        if charge_ceiling_a is None:
+            targets, weight_basis = self._allocate_budget(chargers, eligible_max_a, "unconstrained")
+            return ChargeAllocationDecision(
+                budget_a=round(eligible_max_a, 1),
+                bms_ccl_a=bms_ccl_a,
+                load_allowance_a=round(max(load_current_a or 0.0, 0.0), 1),
+                battery_charge_a=max(battery_current_a, 0.0),
+                reason="unconstrained",
+                targets=targets,
+                weight_basis=weight_basis,
                 charge_ceiling_a=charge_ceiling_a,
             )
-        if bms_ccl_a <= 0:
+
+        if charge_ceiling_a <= 0.0:
             return self._zero_targets(
-                "BMS CCL is zero",
+                charge_ceiling_reason or "charge_ceiling",
                 bms_ccl_a,
                 battery_current_a,
                 max(load_current_a or 0.0, 0.0),
@@ -110,33 +122,14 @@ class ChargeCurrentAllocator:
                 charge_ceiling_a=charge_ceiling_a,
             )
 
-        # The battery-state ceiling (top-knee taper / cell safety) is a second
-        # limit on net battery charge current; the binding one wins.
-        effective_ccl_a = bms_ccl_a
-        reason = "normal_load_allowance"
-        if charge_ceiling_a is not None and charge_ceiling_a < bms_ccl_a:
-            effective_ccl_a = max(0.0, charge_ceiling_a)
-            reason = charge_ceiling_reason or "charge_ceiling"
-            if effective_ccl_a <= 0.0:
-                return self._zero_targets(
-                    reason,
-                    bms_ccl_a,
-                    battery_current_a,
-                    max(load_current_a or 0.0, 0.0),
-                    chargers,
-                    charge_ceiling_a=charge_ceiling_a,
-                )
+        effective_ccl_a = charge_ceiling_a
+        reason = charge_ceiling_reason or "charge_ceiling"
 
         # If every eligible charger at full output still couldn't reach the
         # battery limit, the allocator is not the binding constraint (sunlight
         # is). Impose nothing: pin each to its own max, don't apportion, don't
         # subtract reserve. This avoids needlessly throttling -- and needlessly
         # writing -- through the abundant-headroom part of the day.
-        eligible_max_a = sum(
-            charger.max_current_a
-            for charger in chargers
-            if charger.online and charger.enabled and charger.active and charger.max_current_a > 0
-        )
         if eligible_max_a <= effective_ccl_a:
             targets, weight_basis = self._allocate_budget(chargers, eligible_max_a, "unconstrained")
             return ChargeAllocationDecision(
@@ -185,9 +178,14 @@ class ChargeCurrentAllocator:
         eligible_names = {charger.name for charger in eligible}
 
         weights, weight_basis = self._weights(eligible)
-        allocations = _waterfill_allocate(
+        raw_allocations = _waterfill_allocate(
             budget_a,
             weights,
+            {charger.name: charger.max_current_a for charger in eligible},
+        )
+        allocations = _whole_amp_allocations(
+            raw_allocations,
+            budget_a,
             {charger.name: charger.max_current_a for charger in eligible},
         )
 
@@ -199,10 +197,10 @@ class ChargeCurrentAllocator:
                 targets[charger.name] = self._target(charger, 0.0, "charger disabled")
                 continue
             if not charger.active:
-                targets[charger.name] = self._target(charger, 0.0, "charger inactive")
+                targets[charger.name] = self._release_target(charger, "charger inactive")
                 continue
             if charger.name not in eligible_names:
-                targets[charger.name] = self._target(charger, 0.0, "charger unavailable")
+                targets[charger.name] = self._release_target(charger, "charger unavailable")
                 continue
             # Eligible apportionment: never disable here -- a producing charger
             # that wins only a sub-floor share keeps charging at min_current.
@@ -247,9 +245,9 @@ class ChargeCurrentAllocator:
         *,
         allow_disable: bool = True,
     ) -> ChargerAllocationTarget:
-        target = round(max(0.0, min(target_current_a, charger.max_current_a)), 1)
-        # Only a genuine stop (charge disabled, CCL/ceiling <= 0, latch, safety --
-        # the callers that pass allow_disable) commands the charger OFF. During
+        target = _whole_amp_limit(target_current_a, charger.max_current_a)
+        # Only a genuine stop (resolved allowance is 0 A -- the callers that pass
+        # allow_disable) commands the charger OFF. During
         # apportionment an eligible, producing charger that merely loses the split
         # keeps charging at its floor instead of being switched off -- otherwise a
         # controller whose PV-power weight dips gets its coil flapped on/off.
@@ -260,6 +258,21 @@ class ChargeCurrentAllocator:
             return ChargerAllocationTarget(0.0, should_write, reason, True)
         if target < charger.min_current_a:
             target = charger.min_current_a
+        should_write = (
+            charger.current_limit_a is not None
+            and abs(charger.current_limit_a - target) >= self.config.min_write_delta_a
+        )
+        return ChargerAllocationTarget(target, should_write, reason, False)
+
+    def _release_target(self, charger: ChargerAllocationInput, reason: str) -> ChargerAllocationTarget:
+        """Release stale allocation constraints when a charger is not a usable
+        resource right now.
+
+        No-PV / sleeping-controller states are not battery safety events. Return
+        the current limit toward the device's normal ceiling so it is ready for
+        the next wakeup, but never request an EPEver coil disable from this path.
+        """
+        target = _whole_amp_limit(charger.max_current_a, charger.max_current_a)
         should_write = (
             charger.current_limit_a is not None
             and abs(charger.current_limit_a - target) >= self.config.min_write_delta_a
@@ -314,6 +327,7 @@ def allocation_detail(decision: ChargeAllocationDecision, *, dry_run: bool) -> d
         "mode": "dry-run" if dry_run else "live",
         "reason": decision.reason,
         "bms_ccl_a": decision.bms_ccl_a,
+        "allowance_a": decision.charge_ceiling_a,
         "charge_ceiling_a": decision.charge_ceiling_a,
         "budget_a": decision.budget_a,
         "load_allowance_a": decision.load_allowance_a,
@@ -377,4 +391,40 @@ def _waterfill_allocate(
                 allocations[name] += remaining_budget * weights[name] / total_weight
             remaining_budget = 0.0
 
-    return {name: round(current, 1) for name, current in allocations.items()}
+    return allocations
+
+
+def _whole_amp_limit(target_current_a: float, max_current_a: float) -> float:
+    bounded = max(0.0, min(target_current_a, max_current_a))
+    return float(math.floor(bounded + 1e-9))
+
+
+def _whole_amp_allocations(
+    allocations: dict[str, float],
+    budget_a: float,
+    caps: dict[str, float],
+) -> dict[str, float]:
+    whole_budget = int(math.floor(max(0.0, budget_a) + 1e-9))
+    cap_floor = {name: int(math.floor(max(0.0, caps.get(name, 0.0)) + 1e-9)) for name in allocations}
+    whole = {
+        name: min(int(math.floor(max(0.0, current) + 1e-9)), cap_floor[name])
+        for name, current in allocations.items()
+    }
+    leftover = max(0, whole_budget - sum(whole.values()))
+    candidates = sorted(
+        allocations,
+        key=lambda name: (-(max(0.0, allocations[name]) - math.floor(max(0.0, allocations[name]))), name),
+    )
+    while leftover > 0:
+        progressed = False
+        for name in candidates:
+            if leftover <= 0:
+                break
+            if whole[name] >= cap_floor[name]:
+                continue
+            whole[name] += 1
+            leftover -= 1
+            progressed = True
+        if not progressed:
+            break
+    return {name: float(current) for name, current in whole.items()}

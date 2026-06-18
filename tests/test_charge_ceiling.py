@@ -10,15 +10,40 @@ sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.canbus import (  # noqa: E402
     PylonCanSnapshot,
+    PylonChargeLimits,
     PylonExtendedMeasurements,
     PylonMeasurements,
+    PylonRequestFlags,
     PylonStateOfCharge,
 )
 from offgrid_power.charge_ceiling import ChargeCeiling  # noqa: E402
 
 
-def _battery(*, soc=None, voltage=None, max_cell=None, min_cell=None) -> PylonCanSnapshot:
+def _battery(
+    *,
+    ccl=200.0,
+    charge_enabled=True,
+    soc=None,
+    voltage=None,
+    max_cell=None,
+    min_cell=None,
+) -> PylonCanSnapshot:
     return PylonCanSnapshot(
+        charge_limits=None
+        if ccl is None
+        else PylonChargeLimits(
+            charge_voltage_limit_v=58.4,
+            charge_current_limit_a=ccl,
+            discharge_current_limit_a=200.0,
+            discharge_voltage_limit_v=44.8,
+        ),
+        request_flags=PylonRequestFlags(
+            charge_enable=charge_enabled,
+            discharge_enable=True,
+            force_charge_1=False,
+            force_charge_2=False,
+            full_charge_request=False,
+        ),
         state_of_charge=None if soc is None else PylonStateOfCharge(soc_percent=soc, soh_percent=100),
         measurements=None if voltage is None else PylonMeasurements(voltage_v=voltage, current_a=0.0, temperature_c=20.0),
         extended_measurements=PylonExtendedMeasurements(
@@ -28,27 +53,50 @@ def _battery(*, soc=None, voltage=None, max_cell=None, min_cell=None) -> PylonCa
 
 
 class ChargeCeilingTest(unittest.TestCase):
-    def test_below_the_knee_has_no_ceiling(self) -> None:
-        # 80% SOC, 53.0 V: below both knees -> CCL/budget governs, no cap.
-        result = ChargeCeiling().evaluate(_battery(soc=80, voltage=53.0))
+    def test_baseline_bms_ccl_has_no_ceiling(self) -> None:
+        result = ChargeCeiling().evaluate(_battery(ccl=200.0, soc=94, voltage=56.0))
         self.assertIsNone(result.ceiling_a)
-        self.assertEqual(result.reason, "below knee")
+        self.assertEqual(result.reason, "unconstrained")
 
-    def test_tapers_on_the_knee_taking_the_lower_of_soc_and_voltage(self) -> None:
-        # 90% SOC ramp1 -> ~24 A; 54.6 V ramp2 -> ~7 A; min wins.
-        result = ChargeCeiling().evaluate(_battery(soc=90, voltage=54.6))
-        self.assertEqual(result.reason, "top-knee taper")
-        self.assertAlmostEqual(result.ceiling_a, 7.0, delta=0.5)
+    def test_reduced_bms_ccl_sets_fractional_budget(self) -> None:
+        result = ChargeCeiling().evaluate(_battery(ccl=40.0, soc=94, voltage=56.0))
+        self.assertEqual(result.reason, "BMS CCL fraction")
+        self.assertEqual(result.ceiling_a, 20.0)
+
+    def test_bms_charge_disabled_is_a_hard_stop(self) -> None:
+        result = ChargeCeiling().evaluate(_battery(ccl=40.0), charge_enabled=False)
+        self.assertEqual(result.ceiling_a, 0.0)
+        self.assertEqual(result.reason, "BMS charge disabled")
+
+    def test_bms_ccl_zero_is_a_hard_stop(self) -> None:
+        result = ChargeCeiling().evaluate(_battery(ccl=0.0))
+        self.assertEqual(result.ceiling_a, 0.0)
+        self.assertEqual(result.reason, "BMS CCL is zero")
 
     def test_high_cell_voltage_is_a_hard_stop(self) -> None:
-        result = ChargeCeiling().evaluate(_battery(soc=90, voltage=54.0, max_cell=3.56, min_cell=3.40))
+        result = ChargeCeiling().evaluate(_battery(soc=90, voltage=54.0, max_cell=3.63, min_cell=3.56))
         self.assertEqual(result.ceiling_a, 0.0)
         self.assertIn("max cell", result.reason)
 
     def test_high_cell_delta_is_a_hard_stop(self) -> None:
-        result = ChargeCeiling().evaluate(_battery(soc=90, voltage=54.0, max_cell=3.51, min_cell=3.30))
+        result = ChargeCeiling().evaluate(_battery(soc=90, voltage=54.0, max_cell=3.56, min_cell=3.40))
         self.assertEqual(result.ceiling_a, 0.0)
         self.assertIn("delta", result.reason)
+
+    def test_cell_safety_stop_latches_until_cell_falls_below_soft_limit(self) -> None:
+        ceiling = ChargeCeiling()
+        tripped = ceiling.evaluate(_battery(soc=90, voltage=54.0, max_cell=3.63, min_cell=3.56))
+        self.assertEqual(tripped.ceiling_a, 0.0)
+        self.assertTrue(ceiling.cell_latched)
+
+        still_latched = ceiling.evaluate(_battery(ccl=40, soc=90, voltage=54.0, max_cell=3.57, min_cell=3.54))
+        self.assertEqual(still_latched.ceiling_a, 0.0)
+        self.assertIn("max cell", still_latched.reason)
+
+        cleared = ceiling.evaluate(_battery(ccl=40, soc=90, voltage=54.0, max_cell=3.54, min_cell=3.51))
+        self.assertFalse(ceiling.cell_latched)
+        self.assertEqual(cleared.ceiling_a, 20.0)
+        self.assertEqual(cleared.reason, "BMS CCL fraction")
 
     def test_full_charge_latch_holds_zero_until_pack_rests_low(self) -> None:
         ceiling = ChargeCeiling()
@@ -59,10 +107,10 @@ class ChargeCeilingTest(unittest.TestCase):
         latched = ceiling.evaluate(_battery(soc=96, voltage=54.5))
         self.assertEqual(latched.ceiling_a, 0.0)
         self.assertEqual(latched.reason, "full-charge latch")
-        # Rests below reset SOC and reset voltage -> latch clears, taper resumes.
+        # Rests below reset SOC and reset voltage -> latch clears, budget resumes.
         cleared = ceiling.evaluate(_battery(soc=96, voltage=53.9))
         self.assertFalse(ceiling.full_latched)
-        self.assertNotEqual(cleared.reason, "full-charge latch")
+        self.assertEqual(cleared.reason, "unconstrained")
 
 
 if __name__ == "__main__":
