@@ -207,6 +207,17 @@ read 0 V = floating, not ground). Baseline before: ~14-16/hr "no inverter packet
 noise was a contributor; no change means the framing loss is bus-timing/wiring,
 not noise.
 
+Result (2026-06-18, first overnight, matched hours to control for the
+overnight-is-noisier pattern): "no valid inverter packet" 51.9/hr -> 36.1/hr
+(~30% drop), "Failed to parse REMOTE" 6.3/hr -> 5.2/hr (~18% drop)
+(pre = Jun16 21:00-Jun17 06:30, post = Jun17 21:00-Jun18 06:30, 9.5h each). Both
+fell in the same direction -> the ground reference is a contributor; keep it.
+Caveats: single night-pair (n=1, some could be night-to-night variance), and the
+errors are far from eliminated (36/hr residual) so the bus is still marginal.
+Next levers: the tap's `120R` termination jumpers are unpopulated -- RS485
+termination is the likely highest-yield next experiment (reflections cause this
+same byte loss); then reroute the RS485 away from the PV runs / swap the adapter.
+
 ## Done
 
 - Item 1 (deploy.sh, watcher retired): e4444fc, a6f506f — verified with a
