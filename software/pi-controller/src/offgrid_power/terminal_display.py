@@ -381,13 +381,14 @@ def _allocation_limit_text(allocation: dict) -> str:
     allowance = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
     ccl = f"BMS CCL {_fmt_value(allocation.get('bms_ccl_a'), 0)}A"
     mechanism = _allocation_mechanisms_text(allocation)
+    prefix = "dry-run: " if mode == "dry-run" else ""
     if reason == "unconstrained":
-        return f"{mode}: not limiting ({ccl})"
+        return f"{prefix}not limiting ({ccl})"
     if allowance is None:
-        return f"{mode}: no action ({mechanism}; {ccl})"
+        return f"{prefix}no action ({mechanism}; {ccl})"
     if allowance <= 0:
-        return f"{mode}: stop ({mechanism}; {ccl})"
-    return f"{mode}: {_fmt_value(allowance, 0)}A net ({mechanism}; {ccl})"
+        return f"{prefix}stop ({mechanism}; {ccl})"
+    return f"{prefix}{_fmt_value(allowance, 0)}A net ({mechanism}; {ccl})"
 
 
 def _allocation_mechanisms_text(allocation: dict) -> str:

@@ -186,7 +186,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Charge Allocation", rendered)
-        self.assertIn("Limit                 live: 21A net (CCL taper; BMS CCL 100A)", rendered)
+        self.assertIn("Limit                 21A net (CCL taper; BMS CCL 100A)", rendered)
         self.assertIn("Budget                22A  (battery +5A, load 6A)", rendered)
         self.assertIn("split by pv_power", rendered)
         self.assertIn("Classic               11.0A limited  *", rendered)
@@ -222,10 +222,26 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         )
         rendered = "\n".join(lines)
 
-        self.assertIn("Limit                 live: not limiting (BMS CCL 200A)", rendered)
+        self.assertIn("Limit                 not limiting (BMS CCL 200A)", rendered)
         self.assertIn("Budget                200A  (battery -3A, load 4A)", rendered)
         self.assertIn("Classic               100.0A max", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)
+
+    def test_allocation_section_marks_dry_run_mode(self) -> None:
+        lines = _allocation_lines(
+            {
+                "mode": "dry-run",
+                "reason": "BMS CCL fraction",
+                "bms_ccl_a": 100.0,
+                "allowance_a": 50.0,
+                "budget_a": 49.0,
+                "battery_current_a": 0.0,
+                "load_allowance_a": 4.0,
+                "targets": {},
+            }
+        )
+
+        self.assertIn("Limit                 dry-run: 50A net (CCL taper; BMS CCL 100A)", "\n".join(lines))
 
     def test_allocation_section_precedes_temperatures_when_present(self) -> None:
         payload = {
