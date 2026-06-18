@@ -356,8 +356,9 @@ def _allocation_lines(allocation: dict) -> list[str]:
     mode = allocation.get("mode") or "?"
     reason = allocation.get("reason") or "?"
     lines.append(_row("Mode", f"{mode}  binding {_allocation_binding_label(allocation)}"))
+    lines.append(_row("Mechanisms", _allocation_mechanisms_text(allocation)))
     allowance = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
-    allowance_text = "--" if allowance is None else f"{_fmt_value(allowance, 0)}A"
+    allowance_text = "inactive" if allowance is None else f"{_fmt_value(allowance, 0)}A"
     lines.append(_row("Limits", f"CCL {_fmt_value(allocation.get('bms_ccl_a'), 0)}A  allowance {allowance_text}"))
     basis = allocation.get("weight_basis")
     basis_text = f"  split by {basis}" if basis else ""
@@ -365,7 +366,7 @@ def _allocation_lines(allocation: dict) -> list[str]:
         _row(
             "Budget",
             f"{_fmt_value(allocation.get('budget_a'), 0)}A  "
-            f"(charge {_fmt_value(allocation.get('battery_charge_a'), 0)}A, "
+            f"(battery {_fmt_signed_a(allocation.get('battery_current_a', allocation.get('battery_charge_a')))}, "
             f"load {_fmt_value(allocation.get('load_allowance_a'), 0)}A){basis_text}",
         )
     )
@@ -402,6 +403,32 @@ def _allocation_binding_label(allocation: dict) -> str:
     return str(reason or "?")
 
 
+def _allocation_mechanisms_text(allocation: dict) -> str:
+    reason = allocation.get("reason")
+    if reason == "unconstrained":
+        return "none"
+    if reason == "BMS CCL fraction":
+        return "CCL taper"
+    if reason == "feedback_clamp":
+        return "CCL taper, feedback clamp"
+    if reason == "BMS charge disabled":
+        return "charge disabled"
+    if reason == "BMS CCL is zero":
+        return "BMS CCL zero"
+    if reason == "full-charge latch":
+        return "full-charge latch"
+    if reason in {"cell safety latch", "charge_ceiling"}:
+        return "cell safety stop"
+    if isinstance(reason, str):
+        if reason.startswith("max cell "):
+            return "max-cell stop"
+        if reason.startswith("cell delta "):
+            return "cell-delta stop"
+        if reason.startswith("missing "):
+            return "no action: " + reason.removeprefix("missing ")
+    return str(reason or "?")
+
+
 def _allocation_target_text(target: dict, *, global_reason: str) -> str:
     reason = target.get("reason")
     target_a = target.get("target_a")
@@ -433,6 +460,16 @@ def _fmt_value(value, digits: int = 1) -> str:
     except (TypeError, ValueError):
         return str(value)
     return f"{number:.{digits}f}" if digits else f"{number:.0f}"
+
+
+def _fmt_signed_a(value) -> str:
+    if value is None:
+        return "--"
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return f"{value}A"
+    return f"{number:+.0f}A"
 
 
 def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:

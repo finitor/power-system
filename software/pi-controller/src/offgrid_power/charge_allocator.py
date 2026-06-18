@@ -62,6 +62,7 @@ class ChargeAllocationDecision:
     budget_a: float | None
     bms_ccl_a: float | None
     load_allowance_a: float
+    battery_current_a: float | None
     battery_charge_a: float | None
     reason: str
     targets: dict[str, ChargerAllocationTarget]
@@ -105,6 +106,7 @@ class ChargeCurrentAllocator:
                 budget_a=round(eligible_max_a, 1),
                 bms_ccl_a=bms_ccl_a,
                 load_allowance_a=round(max(load_current_a or 0.0, 0.0), 1),
+                battery_current_a=round(battery_current_a, 1),
                 battery_charge_a=max(battery_current_a, 0.0),
                 reason="unconstrained",
                 targets=targets,
@@ -136,6 +138,7 @@ class ChargeCurrentAllocator:
                 budget_a=round(eligible_max_a, 1),
                 bms_ccl_a=bms_ccl_a,
                 load_allowance_a=round(max(load_current_a or 0.0, 0.0), 1),
+                battery_current_a=round(battery_current_a, 1),
                 battery_charge_a=max(battery_current_a, 0.0),
                 reason="unconstrained",
                 targets=targets,
@@ -156,6 +159,7 @@ class ChargeCurrentAllocator:
             budget_a=round(budget_a, 1),
             bms_ccl_a=bms_ccl_a,
             load_allowance_a=round(load_allowance_a, 1),
+            battery_current_a=round(battery_current_a, 1),
             battery_charge_a=max(battery_current_a, 0.0),
             reason=reason,
             targets=targets,
@@ -292,6 +296,7 @@ class ChargeCurrentAllocator:
             budget_a=0.0,
             bms_ccl_a=bms_ccl_a,
             load_allowance_a=round(load_allowance_a, 1),
+            battery_current_a=None if battery_current_a is None else round(battery_current_a, 1),
             battery_charge_a=None if battery_current_a is None else max(battery_current_a, 0.0),
             reason=reason,
             targets={
@@ -314,6 +319,7 @@ class ChargeCurrentAllocator:
             budget_a=None,
             bms_ccl_a=bms_ccl_a,
             load_allowance_a=0.0,
+            battery_current_a=None if battery_current_a is None else round(battery_current_a, 1),
             battery_charge_a=None if battery_current_a is None else max(battery_current_a, 0.0),
             reason=reason,
             targets={charger.name: ChargerAllocationTarget(None, False, reason) for charger in chargers},
@@ -331,6 +337,7 @@ def allocation_detail(decision: ChargeAllocationDecision, *, dry_run: bool) -> d
         "charge_ceiling_a": decision.charge_ceiling_a,
         "budget_a": decision.budget_a,
         "load_allowance_a": decision.load_allowance_a,
+        "battery_current_a": decision.battery_current_a,
         "battery_charge_a": decision.battery_charge_a,
         "weight_basis": decision.weight_basis,
         "targets": {

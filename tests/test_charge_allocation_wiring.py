@@ -504,6 +504,7 @@ class DryRunRecordingTest(unittest.TestCase):
         detail = recorder.events[0].detail or {}
         self.assertEqual(detail["reason"], "BMS CCL fraction")
         self.assertEqual(detail["bms_ccl_a"], 40.0)
+        self.assertEqual(detail["battery_current_a"], 10.0)
         self.assertEqual(set(detail["targets"]), {"classic", "epever"})
 
     def test_no_logger_is_a_noop(self) -> None:

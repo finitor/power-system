@@ -402,6 +402,7 @@ class ChargeAllocationEventTest(unittest.TestCase):
         self.assertEqual(detail["mode"], "dry-run")
         self.assertEqual(detail["bms_ccl_a"], 40.0)
         self.assertEqual(detail["budget_a"], 27.0)
+        self.assertEqual(detail["battery_current_a"], 10.0)
         self.assertEqual(detail["reason"], "BMS CCL fraction")
         self.assertEqual(detail["weight_basis"], "actual_current")
         self.assertEqual(set(detail["targets"]), {"classic", "epever"})

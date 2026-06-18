@@ -232,6 +232,7 @@ Every actionable decision should be logged as a structured event:
   "allowance_a": 20.0,
   "budget_a": 33.0,
   "load_allowance_a": 18.0,
+  "battery_current_a": 16.0,
   "battery_charge_a": 16.0,
   "classic_actual_a": 30.0,
   "epever_actual_a": 24.0,

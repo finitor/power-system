@@ -163,6 +163,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "bms_ccl_a": 100.0,
                 "charge_ceiling_a": 21.0,
                 "budget_a": 22.0,
+                "battery_current_a": 5.0,
                 "battery_charge_a": 5.0,
                 "load_allowance_a": 6.0,
                 "weight_basis": "pv_power",
@@ -186,7 +187,9 @@ class ApiTerminalDisplayTest(unittest.TestCase):
 
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Mode                  live  binding CCL fraction", rendered)
+        self.assertIn("Mechanisms            CCL taper", rendered)
         self.assertIn("Limits                CCL 100A  allowance 21A", rendered)
+        self.assertIn("Budget                22A  (battery +5A, load 6A)", rendered)
         self.assertIn("split by pv_power", rendered)
         self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
@@ -199,6 +202,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "bms_ccl_a": 200.0,
                 "charge_ceiling_a": None,
                 "budget_a": 200.0,
+                "battery_current_a": -3.0,
                 "battery_charge_a": 5.0,
                 "load_allowance_a": 4.0,
                 "weight_basis": "pv_power",
@@ -221,6 +225,9 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Mode                  live  binding none", rendered)
+        self.assertIn("Mechanisms            none", rendered)
+        self.assertIn("Limits                CCL 200A  allowance inactive", rendered)
+        self.assertIn("Budget                200A  (battery -3A, load 4A)", rendered)
         self.assertIn("Classic               100.0A max", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)
 
@@ -235,6 +242,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "bms_ccl_a": 100.0,
                 "charge_ceiling_a": None,
                 "budget_a": 50.0,
+                "battery_current_a": 1.0,
                 "battery_charge_a": 1.0,
                 "load_allowance_a": 4.0,
                 "weight_basis": "pv_power",
