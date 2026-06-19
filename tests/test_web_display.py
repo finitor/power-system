@@ -315,6 +315,56 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("Production Today", html)
         self.assertNotIn("Rated", html)
 
+    def test_kindle_charge_controllers_render_allocation_rows(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(),
+            epever=make_epever_telemetry(),
+        )
+        allocation = {
+            "targets": {
+                "classic": {
+                    "target_a": 37.0,
+                    "disable": False,
+                    "should_write": True,
+                    "reason": "BMS CCL fraction",
+                },
+                "epever": {
+                    "target_a": 100.0,
+                    "disable": False,
+                    "should_write": False,
+                    "reason": "charger inactive",
+                },
+            }
+        }
+
+        html = render_kindle_snapshot(snapshot, allocation=allocation)
+
+        self.assertIn("<td>Allocation</td><td>limited 37.0A *</td>", html)
+        self.assertIn("<td>Allocation</td><td>released</td>", html)
+
+    def test_kindle_charge_controller_allocation_row_renders_hard_stop(self) -> None:
+        snapshot = make_snapshot(epever=make_epever_telemetry())
+
+        html = render_kindle_snapshot(
+            snapshot,
+            allocation={"targets": {"epever": {"target_a": 0.0, "disable": True, "should_write": True}}},
+        )
+
+        self.assertIn("<td>Allocation</td><td>off *</td>", html)
+
+    def test_routes_kindle_with_allocation_payload(self) -> None:
+        snapshot = make_snapshot(classic=make_classic_telemetry())
+
+        response = route_display_request(
+            snapshot,
+            "/kindle",
+            "Kindle/3.0",
+            allocation={"targets": {"classic": {"target_a": 80.0, "reason": "unconstrained"}}},
+        )
+
+        self.assertEqual(response.status.value, 200)
+        self.assertIn(b"<td>Allocation</td><td>released</td>", response.body)
+
     def test_renders_bms_protections_and_alarms(self) -> None:
         snapshot = make_snapshot(
             battery=PylonCanSnapshot(

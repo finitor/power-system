@@ -135,6 +135,7 @@ def render_kindle_snapshot(
     snapshot: SupervisorSnapshot,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     load_summary: LoadSummary | None = None,
+    allocation: dict | None = None,
 ) -> str:
     status = snapshot.status_text
     updated = format_kindle_time(snapshot.captured_at)
@@ -172,7 +173,7 @@ def render_kindle_snapshot(
     ]
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
-    lines.extend(_charge_controller_sections(snapshot))
+    lines.extend(_charge_controller_sections(snapshot, allocation=allocation))
     lines.extend(_inverter_charger_section(snapshot))
     lines.extend(_temperature_section(snapshot))
 
@@ -364,7 +365,7 @@ def route_display_request(
         html = render_kindle_weather(weather_api_payload(weather_report))
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
 
-    html = render_kindle_snapshot(snapshot, load_summary=load_summary)
+    html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
     content_type = "text/html; charset=utf-8"
     if parsed_path == "/kindle" or is_kindle_user_agent(user_agent):
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
@@ -1338,9 +1339,11 @@ def run_display_server(
             else:
                 load_summary = load_tracker.update(snapshot)
                 weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in {"/weather", "/api/v1/weather"} else None
+            allocation_path = urlparse(self.path).path
             allocation = (
                 allocation_provider()
-                if allocation_provider is not None and urlparse(self.path).path == "/api/v1/snapshot"
+                if allocation_provider is not None
+                and allocation_path in {"/", "/kindle", "/display", "/api/v1/snapshot"}
                 else None
             )
             response = route_display_request(
@@ -1397,7 +1400,7 @@ def run_display_server(
         server.serve_forever()
 
 
-def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
+def _charge_controller_sections(snapshot: SupervisorSnapshot, allocation: dict | None = None) -> list[str]:
     # Iterate the normalized controller collection: the renderer carries no
     # knowledge of which vendors or how many controllers exist. A new model
     # appears as its own group automatically once the API reports it.
@@ -1406,11 +1409,27 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot) -> list[str]:
         return ["<h2>Charge Controllers</h2>", "<table>", _row("State", "No data"), "</table>"]
     lines: list[str] = []
     for index, controller in enumerate(controllers):
-        lines.extend(_controller_section_lines(index, controller))
+        lines.extend(
+            _controller_section_lines(
+                index,
+                controller,
+                allocation_target=_allocation_target(controller, allocation),
+            )
+        )
     return lines
 
 
-def _controller_section_lines(index: int, controller: dict) -> list[str]:
+def _allocation_target(controller: dict, allocation: dict | None) -> dict | None:
+    targets = (allocation or {}).get("targets") or {}
+    controller_id = controller.get("id")
+    if isinstance(controller_id, str):
+        target = targets.get(controller_id.split(".", 1)[0])
+        if isinstance(target, dict):
+            return target
+    return None
+
+
+def _controller_section_lines(index: int, controller: dict, allocation_target: dict | None = None) -> list[str]:
     device = controller.get("device") or {}
     name = " ".join(part for part in [device.get("vendor"), device.get("model")] if part)
     title = f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
@@ -1437,6 +1456,10 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
 
     stage = NormalizedStage.from_dict(controller.get("charge_stage"))
     lines.append(_row("Charge Status", stage.render(controller.get("state"))))
+
+    allocation_text = _allocation_target_text(allocation_target)
+    if allocation_text is not None:
+        lines.append(_row("Allocation", allocation_text))
 
     if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
         parts = []
@@ -1475,6 +1498,24 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
 
     lines.append("</table>")
     return lines
+
+
+def _allocation_target_text(target: dict | None) -> str | None:
+    if target is None:
+        return None
+    reason = target.get("reason")
+    target_a = target.get("target_a")
+    if target.get("disable"):
+        text = "off"
+    elif reason in {"unconstrained", "charger inactive", "charger unavailable"}:
+        text = "released"
+    elif target_a is None:
+        text = "--"
+    else:
+        text = f"limited {_meas(target_a, 'A', 1)}"
+    if target.get("should_write"):
+        text += " *"
+    return text
 
 
 def _meas(value: object, suffix: str, decimals: int = 1) -> str:
