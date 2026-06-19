@@ -171,6 +171,7 @@ def render_kindle_snapshot(
         "</head>",
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
+        _page_turn_link("/weather", "left", "Weather"),
         _page_turn_link("/kindle/details", "right", "More Power Info"),
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
@@ -229,6 +230,7 @@ def render_kindle_details(
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle", "left", "Back to Power"),
+        _page_turn_link("/weather", "right", "Weather"),
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -286,11 +288,16 @@ def render_kindle_weather(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:46%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
+        ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn-left{left:0;}",
+        ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
         "</style>",
         "</head>",
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
+        _page_turn_link("/kindle/details", "left", "Power Details"),
+        _page_turn_link("/kindle", "right", "Power"),
     ]
     if too_stale:
         lines.extend(
@@ -1469,7 +1476,7 @@ def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
 def _status_summary_section(snapshot: SupervisorSnapshot) -> list[str]:
     conditions = list(snapshot.status_conditions)
     value = "; ".join(conditions) if conditions else "none"
-    return ["<table>", _row("Status Conditions", value), "</table>"]
+    return ["<h2>Status Conditions</h2>", "<table>", _full_row(value), "</table>"]
 
 
 def _charge_controller_settings_section(snapshot: SupervisorSnapshot) -> list[str]:
@@ -1868,6 +1875,10 @@ def render_snapshot_unavailable(exc: Exception, refresh_seconds: int = 10) -> st
 def _row(label: str, value: str, css_class: str = "") -> str:
     class_attr = f' class="{css_class}"' if css_class else ""
     return f"<tr><td>{escape(label)}</td><td{class_attr}>{escape(value)}</td></tr>"
+
+
+def _full_row(value: str) -> str:
+    return f'<tr><td colspan="2">{escape(value)}</td></tr>'
 
 
 def _battery_state(current_a: float) -> str:

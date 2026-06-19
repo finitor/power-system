@@ -185,9 +185,11 @@ class WebDisplayTest(unittest.TestCase):
             self.assertIn(f"<h2>{section}</h2>", html)
         self.assertNotIn("<h2>Inverter/Charger</h2>", html)
         self.assertNotIn("<h2>Temperatures</h2>", html)
-        self.assertIn("<td>Status Conditions</td><td>none</td>", html)
+        self.assertIn("<h2>Status Conditions</h2>", html)
+        self.assertIn('<td colspan="2">none</td>', html)
         self.assertNotIn("<td>State</td><td>none</td>", html)
         self.assertIn('href="/kindle/details">More Power Info...</a>', html)
+        self.assertIn('class="page-turn page-turn-left" href="/weather"', html)
         self.assertIn('class="page-turn page-turn-right" href="/kindle/details"', html)
         # Decoded values flow through to the page.
         self.assertIn("5.1A  272W", html)
@@ -204,6 +206,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn('href="/weather">Weather</a>', details_html)
         self.assertNotIn('href="/kindle">Back</a>', details_html)
         self.assertIn('class="page-turn page-turn-left" href="/kindle"', details_html)
+        self.assertIn('class="page-turn page-turn-right" href="/weather"', details_html)
 
     def test_kindle_snapshot_hides_untrusted_cc1_temperature_rows(self) -> None:
         snapshot = make_snapshot(
@@ -260,6 +263,8 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertIn("XMLHttpRequest", html)
         self.assertIn("offgrid-live", html)  # live page → slow cadence
+        self.assertIn('class="page-turn page-turn-left" href="/kindle/details"', html)
+        self.assertIn('class="page-turn page-turn-right" href="/kindle"', html)
         # Derived formatting: weather code text, wind direction, moon phase name.
         self.assertIn("Cabin: rain", html)
         self.assertIn("18km/h  32km/h gust  W", html)
@@ -419,18 +424,17 @@ class WebDisplayTest(unittest.TestCase):
         html = render_kindle_snapshot(snapshot)
 
         self.assertIn("Status: WARNING", html)
-        self.assertNotIn("<h2>Status Conditions</h2>", html)
+        self.assertIn("<h2>Status Conditions</h2>", html)
         self.assertIn(
-            "<td>Status Conditions</td><td>Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V; Battery temp low</td>",
+            '<td colspan="2">Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V; Battery temp low</td>',
             html,
         )
-        self.assertEqual(html.count("<td>Status Conditions</td>"), 1)
+        self.assertEqual(html.count("<h2>Status Conditions</h2>"), 1)
 
         details_html = render_kindle_details(snapshot)
         self.assertIn("Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V", details_html)
         self.assertIn("Battery temp low", details_html)
-        self.assertIn("<td>Status Conditions</td>", details_html)
-        self.assertNotIn("<h2>Status Conditions</h2>", details_html)
+        self.assertIn("<h2>Status Conditions</h2>", details_html)
 
     def test_routes_kindle_path(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()
