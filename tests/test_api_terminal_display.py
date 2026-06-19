@@ -249,6 +249,25 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Limit                 20A net (CCL taper, feedback clamp; BMS CCL 40A)", rendered)
         self.assertIn("Budget                1A  feedback: battery +46A > ceiling 20A  split by pv_power", rendered)
 
+    def test_allocation_section_names_low_temperature_stop(self) -> None:
+        lines = _allocation_lines(
+            {
+                "mode": "live",
+                "reason": "battery temp -0.2C <= 0.0C",
+                "bms_ccl_a": 200.0,
+                "charge_ceiling_a": 0.0,
+                "budget_a": 0.0,
+                "battery_current_a": 0.0,
+                "load_allowance_a": 4.0,
+                "targets": {},
+            }
+        )
+
+        self.assertIn(
+            "Limit                 stop (low-temperature stop; BMS CCL 200A)",
+            "\n".join(lines),
+        )
+
     def test_allocation_section_marks_dry_run_mode(self) -> None:
         lines = _allocation_lines(
             {

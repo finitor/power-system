@@ -69,6 +69,10 @@ hard stops:
   `high_delta_stop_mv` while max cell ≥ `high_cell_soft_limit_v`. Cell-safety
   stops latch until max cell falls below `high_cell_soft_limit_v`, preventing
   coil chatter around the hard threshold.
+- **Low-temperature stop → 0 A:** minimum reported cell temperature ≤
+  `low_temp_stop_c` (default 0 C). If minimum cell temperature is unavailable,
+  use the pack temperature from the ordinary BMS measurements frame. The stop
+  latches until that temperature reaches `low_temp_recover_c` (default 2 C).
 - **Full-charge latch → 0 A:** once SOC reaches `full_soc_percent`, hold zero
   until the pack rests (SOC < `full_reset_soc_percent` **and** voltage ≤
   `full_reset_voltage_v`). This is the one piece of carried state.
@@ -77,7 +81,8 @@ hard stops:
 
 Use one coherent supervisor snapshot per decision:
 
-- BMS CCL, charge-enable flag, pack current, cell voltage/delta alarms.
+- BMS CCL, charge-enable flag, pack current, cell voltage/delta, and battery
+  temperature.
 - Classic actual output current, present charge-current limit, stage/state.
 - EPEver actual output current, present charge-current limit, stage/state.
 - Estimated household load current.

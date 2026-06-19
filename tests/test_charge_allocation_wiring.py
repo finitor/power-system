@@ -51,12 +51,27 @@ def _battery_with_limits(*, ccl_a: float, charge_enable: bool, current_a: float 
     charge-enable request flag (0x35C) -- exercises the request_flags path."""
     ccl_raw = int(round(ccl_a * 10)) & 0xFFFF
     cur_raw = int(round(current_a * 10)) & 0xFFFF
+    temp_raw = int(round(20.0 * 10)) & 0xFFFF
     return decode_pylon_snapshot(
         [
             CanFrame(0x351, bytes([0x48, 0x02, ccl_raw & 0xFF, ccl_raw >> 8, 0, 0, 0, 0])),
             # 52.0 V: ordinary pack voltage; this test stays focused on the CCL
             # / charge-enable path.
-            CanFrame(0x356, bytes([0x08, 0x02, cur_raw & 0xFF, cur_raw >> 8, 0, 0, 0, 0])),
+            CanFrame(
+                0x356,
+                bytes(
+                    [
+                        0x08,
+                        0x02,
+                        cur_raw & 0xFF,
+                        cur_raw >> 8,
+                        temp_raw & 0xFF,
+                        temp_raw >> 8,
+                        0,
+                        0,
+                    ]
+                ),
+            ),
             CanFrame(0x35C, bytes([0x80 if charge_enable else 0x00, 0, 0, 0, 0, 0, 0, 0])),
             # Populate status too, so reusing the wrong attribute (status vs
             # request_flags) for charge-enable would throw and fail the test.

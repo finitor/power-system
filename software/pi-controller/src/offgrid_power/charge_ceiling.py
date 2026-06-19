@@ -17,6 +17,8 @@ class ChargeCeilingConfig:
     high_cell_stop_v: float = 3.62
     high_cell_soft_limit_v: float = 3.55
     high_delta_stop_mv: float = 150.0
+    low_temp_stop_c: float = 0.0
+    low_temp_recover_c: float = 2.0
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,8 @@ class ChargeCeiling:
         self._full_latched = False
         self._cell_latched = False
         self._cell_latch_reason: str | None = None
+        self._low_temp_latched = False
+        self._low_temp_latch_reason: str | None = None
 
     @property
     def full_latched(self) -> bool:
@@ -48,6 +52,10 @@ class ChargeCeiling:
     @property
     def cell_latched(self) -> bool:
         return self._cell_latched
+
+    @property
+    def low_temp_latched(self) -> bool:
+        return self._low_temp_latched
 
     def evaluate(
         self,
@@ -77,10 +85,29 @@ class ChargeCeiling:
         extended = battery.extended_measurements
         max_cell_v = extended.max_cell_voltage_v if extended is not None else None
         min_cell_v = extended.min_cell_voltage_v if extended is not None else None
+        min_temp_c = _minimum_battery_temperature_c(battery)
 
-        # Hard cell-safety stops first. These latch until the highest cell falls
-        # below the soft limit; otherwise the charger coil can chatter as the
-        # cell bobs across the hard threshold by a few millivolts.
+        # Hard safety stops first. These latch with separate recovery thresholds
+        # so charger coils do not chatter around the trip point.
+        low_temp_stop_reason = None
+        if min_temp_c is not None and min_temp_c <= config.low_temp_stop_c:
+            low_temp_stop_reason = f"battery temp {min_temp_c:.1f}C <= {config.low_temp_stop_c:.1f}C"
+        if low_temp_stop_reason is not None:
+            self._low_temp_latched = True
+            self._low_temp_latch_reason = low_temp_stop_reason
+        elif (
+            self._low_temp_latched
+            and min_temp_c is not None
+            and min_temp_c >= config.low_temp_recover_c
+        ):
+            self._low_temp_latched = False
+            self._low_temp_latch_reason = None
+        if self._low_temp_latched:
+            return ChargeCeilingResult(0.0, self._low_temp_latch_reason or "low temperature latch")
+
+        # Cell-voltage safety stops latch until the highest cell falls below the
+        # soft limit; otherwise the charger coil can chatter as the cell bobs
+        # across the hard threshold by a few millivolts.
         cell_stop_reason = None
         if max_cell_v is not None and max_cell_v >= config.high_cell_stop_v:
             cell_stop_reason = f"max cell {max_cell_v:.3f}V >= {config.high_cell_stop_v:.3f}V"
@@ -120,3 +147,19 @@ class ChargeCeiling:
             min(bms_ccl_a, bms_ccl_a * config.bms_ccl_budget_fraction),
         )
         return ChargeCeilingResult(round(allowance_a, 1), "BMS CCL fraction")
+
+
+def _minimum_battery_temperature_c(battery: PylonCanSnapshot) -> float | None:
+    """Most conservative charge-temperature signal available.
+
+    The extended CAN frames expose min/max cell temperature candidates. Use the
+    minimum cell temperature when present; fall back to the pack temperature from
+    the ordinary measurements frame so the guard still works if extended frames
+    are temporarily absent.
+    """
+    extended = battery.extended_measurements
+    if extended is not None and extended.min_cell_temperature_c is not None:
+        return extended.min_cell_temperature_c
+    if battery.measurements is not None:
+        return battery.measurements.temperature_c
+    return None

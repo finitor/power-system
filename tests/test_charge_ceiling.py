@@ -27,6 +27,8 @@ def _battery(
     voltage=None,
     max_cell=None,
     min_cell=None,
+    min_cell_temp=None,
+    pack_temp=20.0,
 ) -> PylonCanSnapshot:
     return PylonCanSnapshot(
         charge_limits=None
@@ -45,9 +47,11 @@ def _battery(
             full_charge_request=False,
         ),
         state_of_charge=None if soc is None else PylonStateOfCharge(soc_percent=soc, soh_percent=100),
-        measurements=None if voltage is None else PylonMeasurements(voltage_v=voltage, current_a=0.0, temperature_c=20.0),
+        measurements=None if voltage is None else PylonMeasurements(voltage_v=voltage, current_a=0.0, temperature_c=pack_temp),
         extended_measurements=PylonExtendedMeasurements(
-            min_cell_voltage_v=min_cell, max_cell_voltage_v=max_cell
+            min_cell_voltage_v=min_cell,
+            max_cell_voltage_v=max_cell,
+            min_cell_temperature_c=min_cell_temp,
         ),
     )
 
@@ -82,6 +86,31 @@ class ChargeCeilingTest(unittest.TestCase):
         result = ChargeCeiling().evaluate(_battery(soc=90, voltage=54.0, max_cell=3.56, min_cell=3.40))
         self.assertEqual(result.ceiling_a, 0.0)
         self.assertIn("delta", result.reason)
+
+    def test_low_cell_temperature_is_a_hard_stop(self) -> None:
+        result = ChargeCeiling().evaluate(_battery(soc=80, voltage=53.0, min_cell_temp=-0.2))
+        self.assertEqual(result.ceiling_a, 0.0)
+        self.assertIn("battery temp -0.2C", result.reason)
+
+    def test_low_temperature_falls_back_to_pack_temperature(self) -> None:
+        result = ChargeCeiling().evaluate(_battery(soc=80, voltage=53.0, pack_temp=-0.1))
+        self.assertEqual(result.ceiling_a, 0.0)
+        self.assertIn("battery temp -0.1C", result.reason)
+
+    def test_low_temperature_stop_latches_until_recovery_temperature(self) -> None:
+        ceiling = ChargeCeiling()
+        tripped = ceiling.evaluate(_battery(soc=80, voltage=53.0, min_cell_temp=-0.1))
+        self.assertEqual(tripped.ceiling_a, 0.0)
+        self.assertTrue(ceiling.low_temp_latched)
+
+        still_latched = ceiling.evaluate(_battery(soc=80, voltage=53.0, min_cell_temp=1.9))
+        self.assertEqual(still_latched.ceiling_a, 0.0)
+        self.assertIn("battery temp", still_latched.reason)
+
+        cleared = ceiling.evaluate(_battery(ccl=40, soc=80, voltage=53.0, min_cell_temp=2.0))
+        self.assertFalse(ceiling.low_temp_latched)
+        self.assertEqual(cleared.ceiling_a, 20.0)
+        self.assertEqual(cleared.reason, "BMS CCL fraction")
 
     def test_cell_safety_stop_latches_until_cell_falls_below_soft_limit(self) -> None:
         ceiling = ChargeCeiling()

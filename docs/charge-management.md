@@ -121,7 +121,7 @@ BMS CVL because those are static configuration mismatches. Dynamic current and
 cell-voltage conditions are handled in the allocator loop instead:
 
 1. `ChargeCeiling` resolves a net charge allowance from BMS CCL, charge-enable,
-   and cell guardrails.
+   cell guardrails, and low-temperature charge protection.
 2. `ChargeCurrentAllocator` distributes that allowance across the controllers.
 3. The live supervisor writes the resulting controller current limits and EPEver
    coil state when `--charge-allocation` is enabled.

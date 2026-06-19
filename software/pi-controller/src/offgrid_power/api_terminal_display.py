@@ -509,7 +509,11 @@ def _allocation_mechanisms_text(allocation: dict) -> str:
         return "full-charge latch"
     if reason in {"cell safety latch", "charge_ceiling"}:
         return "cell safety stop"
+    if reason == "low temperature latch":
+        return "low-temperature stop"
     if isinstance(reason, str):
+        if reason.startswith("battery temp "):
+            return "low-temperature stop"
         if reason.startswith("max cell "):
             return "max-cell stop"
         if reason.startswith("cell delta "):
