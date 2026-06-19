@@ -41,8 +41,8 @@ full-charge latch) lives in `ChargeCeiling`. The cycle resolves in this order:
    normal state for most of a sunny day.
 4. **Budget.** Otherwise `budget = allowance + max(load, 0) − reserve`,
    then the feedback clamp (see Budget).
-5. **Apportion** the budget across eligible controllers by PV-power weight
-   (water-fill with cap redistribution), quantized to whole amps.
+5. **Apportion** the budget evenly across eligible controllers (water-fill with
+   cap redistribution), quantized to whole amps.
 6. **Targets → writes.** Each target is capped at the controller's max and
    represented as a whole-amp limit. The logger then makes non-emergency targets
    sticky: changes inside `target_deadband_a` are held at the current controller
@@ -146,13 +146,13 @@ if measured_battery_charge_a > allowance_a + tolerance_a:
 The feedback clamp catches bad load estimates, stale controller output, and
 controller overshoot.
 
-The clamp is a unity-gain proportional correction, and `reserve_a` is its
-companion margin. If the load estimate is biased high by more than the reserve,
-the feed-forward over-allocates and the clamp pulls net battery current back down
-to exactly CCL in steady state — safe, just at the ceiling. So `reserve_a`
-absorbs load-estimate error in the safe direction and the clamp catches the
-unsafe direction; the clamp's "down" is effectively immediate (it's recomputed
-every cycle from the measured current).
+The clamp is a unity-gain proportional correction. `reserve_a` is available as
+an extra margin, but defaults to `0 A` because the upstream `ChargeCeiling`
+policy already uses a conservative fraction of the BMS CCL. If the load estimate
+is biased high, the feed-forward over-allocates and the clamp pulls net battery
+current back down to exactly CCL in steady state; the clamp's "down" is
+effectively immediate because it is recomputed every cycle from measured BMS
+current.
 
 **No rate-limiting on the limit writes.** A controller's current limit is a
 *ceiling*, not a setpoint: the controller still ramps its actual output via its
@@ -169,31 +169,22 @@ stops, and feedback-clamp decisions bypass this smoothing.
 
 ## Apportionment
 
-Eligible controllers receive a share of the budget by water-filling: weights set
-the proportional split, each target is capped at the controller's
-configured/operator maximum, and budget unused by a capped controller is
-redistributed to the rest. This naturally gives the larger or sunnier array more
-budget without hardcoding array sizes, while still letting the other participate.
+Eligible controllers receive an equal share of the budget by water-filling: each
+target is capped at the controller's configured/operator maximum, and budget
+unused by a capped controller is redistributed to the rest. This is intentionally
+simple and robust while the system is still being characterized.
 
 - Online, enabled, and *able-to-charge* controllers are eligible (see below).
 - Unavailable controllers get no target.
 
-### Weighting signal
+### Split signal
 
-The weight must reflect how much each array *could* deliver, not what it is
-currently delivering. Weighting by present output is a latch: throttle a
-controller down → its output falls → its weight falls → it stays throttled, even
-if its array now has the most sun. And this bites precisely when the budget is
-binding, which is the only time apportionment matters — when budget-bound, every
-controller sits at the target we set, so their outputs reflect our allocation,
-not their potential.
-
-So weight by **PV input power** (`pv_power_w`), which is independent of the limit
-we wrote. Fall back to actual output current only when PV power is unavailable,
-and pick one basis for the whole eligible set per decision — mixing watts and
-amps corrupts the ratios. A small floor on each weight keeps a not-yet-producing
-controller from being starved at sunrise. The chosen basis is recorded in the
-decision (`weight_basis`) so traces show which signal drove each split.
+The allocator currently uses an equal split across eligible chargers and records
+`weight_basis: "equal"` in decision traces. This replaced a PV-power-weighted
+experiment: field traces showed that a charger limited to `0 A` can report near
+zero PV input power and enter `Resting`, so PV weighting can latch that charger
+out of the allocation until the supervisor restarts or another disturbance
+reopens it. Equal split is less clever and much easier to reason about.
 
 ### Eligibility
 
@@ -235,23 +226,23 @@ Every actionable decision should be logged as a structured event:
 {
   "bms_ccl_a": 40.0,
   "allowance_a": 20.0,
-  "budget_a": 33.0,
+  "budget_a": 38.0,
   "load_allowance_a": 18.0,
   "battery_current_a": 16.0,
   "battery_charge_a": 16.0,
   "classic_actual_a": 30.0,
   "epever_actual_a": 24.0,
   "targets": {
-    "classic": {"target_a": 28.0, "disable": false},
-    "epever": {"target_a": 5.0, "disable": false}
+    "classic": {"target_a": 19.0, "disable": false},
+    "epever": {"target_a": 19.0, "disable": false}
   },
-  "weight_basis": "pv_power",
+  "weight_basis": "equal",
   "reason": "BMS CCL fraction"
 }
 ```
 
 Those records are how we tune reserve, deadband, rate limits, and apportionment
-weights from real sunny-day traces.
+policy from real sunny-day traces.
 
 ## Operator controls
 
@@ -290,13 +281,11 @@ Allocator (`CHARGE_ALLOC_…`):
 
 | env var | default | meaning |
 |---|---|---|
-| `CHARGE_ALLOC_RESERVE_A` | 5.0 | margin subtracted from the budget |
+| `CHARGE_ALLOC_RESERVE_A` | 0.0 | extra margin subtracted from the budget |
 | `CHARGE_ALLOC_FEEDBACK_TOLERANCE_A` | 1.0 | clamp deadband above the resolved allowance |
 | `CHARGE_ALLOC_MIN_WRITE_DELTA_A` | 1.0 | skip a write within this of the present limit |
 | `CHARGE_ALLOC_TARGET_DEADBAND_A` | 5.0 | hold non-emergency targets within this distance of the current controller setting |
 | `CHARGE_ALLOC_TARGET_QUANTUM_A` | 5.0 | snap larger non-emergency target moves to this amp bucket |
-| `CHARGE_ALLOC_MIN_ACTIVE_WEIGHT_A` | 1.0 | sunrise weight floor (output basis) |
-| `CHARGE_ALLOC_MIN_ACTIVE_WEIGHT_W` | 10.0 | sunrise weight floor (PV-power basis) |
 | `CHARGE_ALLOC_CLASSIC_MAX_A` | 80 | Classic hardware/operator ceiling |
 | `CHARGE_ALLOC_EPEVER_MAX_A` | 100 | EPEver hardware/operator ceiling |
 | `CHARGE_ALLOC_HEARTBEAT_S` | 300 | seconds between trace events when nothing changes |
@@ -388,8 +377,8 @@ These settings live in device registers, not version-controlled config.
   not remain OFF overnight.
 - Near-knee behavior: confirm 50% of BMS CCL is conservative without starving
   useful charge.
-- Apportionment fairness: current split is still PV-power weighted water-fill,
-  not a priority allocator. Revisit if EPEver stays underutilized in cloudy or
-  shaded conditions.
+- Apportionment fairness: current split is equal-share water-fill, not a
+  priority allocator. Revisit if one array is consistently underutilized in
+  cloudy or shaded conditions.
 - Legacy cleanup: remove `charger_taper.py`, old taper flags/env handling, and
   tests once rollback value is gone.

@@ -366,8 +366,7 @@ def _allocation_lines(allocation: dict) -> list[str]:
 
 
 def _allocation_budget_text(allocation: dict) -> str:
-    basis = allocation.get("weight_basis")
-    basis_text = f"  split by {basis}" if basis else ""
+    basis_text = _allocation_basis_text(allocation.get("weight_basis"))
     budget = f"{_fmt_value(allocation.get('budget_a'), 0)}A"
     reason = allocation.get("reason")
     ceiling = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
@@ -380,6 +379,12 @@ def _allocation_budget_text(allocation: dict) -> str:
     if reason == "BMS CCL fraction":
         return f"{budget}  includes load {_fmt_value(allocation.get('load_allowance_a'), 0)}A{basis_text}"
     return f"{budget}{basis_text}"
+
+
+def _allocation_basis_text(basis: str | None) -> str:
+    if basis == "equal":
+        return "  split equally"
+    return f"  split by {basis}" if basis else ""
 
 
 def _allocation_limit_text(allocation: dict) -> str:

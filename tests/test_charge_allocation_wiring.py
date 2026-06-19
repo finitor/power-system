@@ -265,23 +265,6 @@ class ConfigFromEnvTest(unittest.TestCase):
         self.assertEqual(config.bms_ccl_budget_fraction, 0.5)  # falls back to default
 
 
-class PvSmoothingTest(unittest.TestCase):
-    def test_pv_power_is_ema_smoothed_across_calls(self) -> None:
-        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), pv_smooth_alpha=0.5)
-        c = _charger("epever", actual=0.0, limit=10.0, max_=100.0)
-        c = type(c)(**{**c.__dict__, "pv_power_w": 100.0})
-        first = logger._smoothed(c)
-        self.assertEqual(first.pv_power_w, 100.0)  # seeds on first sample
-        c2 = type(c)(**{**c.__dict__, "pv_power_w": 0.0})
-        second = logger._smoothed(c2)
-        self.assertEqual(second.pv_power_w, 50.0)  # 0.5*0 + 0.5*100, a dip is damped
-
-    def test_smoothing_skips_none_pv(self) -> None:
-        logger = ChargeAllocationLogger(ChargeCurrentAllocator())
-        c = _charger("classic", actual=5.0, limit=80.0, max_=100.0)  # pv_power_w None
-        self.assertIs(logger._smoothed(c), c)
-
-
 class TargetStabilizationTest(unittest.TestCase):
     def test_holds_target_inside_deadband(self) -> None:
         logger = ChargeAllocationLogger(
@@ -305,6 +288,34 @@ class TargetStabilizationTest(unittest.TestCase):
         target = stabilized.targets["classic"]
         self.assertEqual(target.target_current_a, 17.0)
         self.assertFalse(target.should_write)
+
+    def test_equal_split_rebalances_stale_controller_spread(self) -> None:
+        logger = ChargeAllocationLogger(
+            ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)),
+            target_deadband_a=5.0,
+            target_quantum_a=5.0,
+        )
+        chargers = [
+            _charger("classic", actual=0.0, limit=10.0, max_=80.0),
+            _charger("epever", actual=0.0, limit=15.0, max_=100.0),
+        ]
+        decision = logger.allocator.decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=0.0,
+            load_current_a=4.0,
+            chargers=chargers,
+            charge_ceiling_a=20.0,
+            charge_ceiling_reason="BMS CCL fraction",
+        )
+
+        stabilized = logger._stabilized_decision(decision, chargers)
+
+        self.assertEqual(stabilized.weight_basis, "equal")
+        self.assertEqual(stabilized.targets["classic"].target_current_a, 12.0)
+        self.assertTrue(stabilized.targets["classic"].should_write)
+        self.assertEqual(stabilized.targets["epever"].target_current_a, 12.0)
+        self.assertTrue(stabilized.targets["epever"].should_write)
 
     def test_quantizes_large_target_changes(self) -> None:
         logger = ChargeAllocationLogger(

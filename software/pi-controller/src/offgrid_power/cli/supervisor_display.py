@@ -311,7 +311,6 @@ def main() -> int:
             live=args.charge_allocation,
             ceiling_config=_config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_"),
             heartbeat_s=_env_float("CHARGE_ALLOC_HEARTBEAT_S", 300.0),
-            pv_smooth_alpha=_env_float("CHARGE_ALLOC_PV_SMOOTH_ALPHA", 0.25),
             target_deadband_a=_env_float("CHARGE_ALLOC_TARGET_DEADBAND_A", 5.0),
             target_quantum_a=_env_float("CHARGE_ALLOC_TARGET_QUANTUM_A", 5.0),
             classic_sleep_debounce_s=_env_float("CHARGE_ALLOC_CLASSIC_SLEEP_DEBOUNCE_S", 180.0),
@@ -571,7 +570,6 @@ class ChargeAllocationLogger:
         supervisor: Supervisor | None = None,
         live: bool = False,
         ceiling_config: ChargeCeilingConfig | None = None,
-        pv_smooth_alpha: float = 0.25,
         target_deadband_a: float = 5.0,
         target_quantum_a: float = 5.0,
         classic_sleep_debounce_s: float = 180.0,
@@ -583,33 +581,16 @@ class ChargeAllocationLogger:
         self.live = live
         # Stateful (full-charge latch); evaluated once per cycle here.
         self.ceiling = ChargeCeiling(ceiling_config)
-        # EMA of each charger's PV power, to keep momentary PV swings from
-        # whipsawing the apportionment split (which set the limits cycling near
-        # full). 0 < alpha <= 1; smaller = smoother/slower.
-        self.pv_smooth_alpha = pv_smooth_alpha
         self.target_deadband_a = max(0.0, target_deadband_a)
         self.target_quantum_a = max(1.0, target_quantum_a)
         self._sleep_debounce_s = {
             "classic": classic_sleep_debounce_s,
             "epever": epever_sleep_debounce_s,
         }
-        self._pv_ema: dict[str, float] = {}
         self._last_signature: tuple | None = None
         self._last_logged_monotonic: float | None = None
         self._epever_charging_state: bool | None = None
         self._inactive_since: dict[str, datetime] = {}
-
-    def _smoothed(self, charger: ChargerAllocationInput) -> ChargerAllocationInput:
-        if charger.pv_power_w is None:
-            return charger
-        prev = self._pv_ema.get(charger.name)
-        ema = (
-            charger.pv_power_w
-            if prev is None
-            else self.pv_smooth_alpha * charger.pv_power_w + (1 - self.pv_smooth_alpha) * prev
-        )
-        self._pv_ema[charger.name] = ema
-        return dataclasses.replace(charger, pv_power_w=round(ema, 1))
 
     def _debounced_inputs(
         self, chargers: list[ChargerAllocationInput], captured_at: datetime
@@ -633,7 +614,7 @@ class ChargeAllocationLogger:
     def record(self, snapshot, recorder: MetricRecorder | None):
         try:
             chargers = self._debounced_inputs(
-                [self._smoothed(c) for c in _allocation_inputs(snapshot)],
+                _allocation_inputs(snapshot),
                 snapshot.captured_at,
             )
             if not chargers:
@@ -687,19 +668,48 @@ class ChargeAllocationLogger:
     ) -> ChargeAllocationDecision:
         charger_by_name = {charger.name: charger for charger in chargers}
         targets: dict[str, ChargerAllocationTarget] = {}
+        equal_rebalance = self._needs_equal_rebalance(decision, charger_by_name)
         for name, target in decision.targets.items():
             charger = charger_by_name.get(name)
             if charger is None:
                 targets[name] = target
                 continue
-            targets[name] = self._stabilized_target(decision.reason, charger, target)
+            targets[name] = self._stabilized_target(
+                decision.reason,
+                charger,
+                target,
+                bypass_deadband=equal_rebalance,
+            )
         return dataclasses.replace(decision, targets=targets)
+
+    def _needs_equal_rebalance(
+        self,
+        decision: ChargeAllocationDecision,
+        charger_by_name: dict[str, ChargerAllocationInput],
+    ) -> bool:
+        if decision.weight_basis != "equal":
+            return False
+        current_limits = [
+            charger.current_limit_a
+            for name, target in decision.targets.items()
+            if (
+                (charger := charger_by_name.get(name)) is not None
+                and charger.current_limit_a is not None
+                and target.target_current_a is not None
+                and not target.disable
+            )
+        ]
+        if len(current_limits) < 2:
+            return False
+        return max(current_limits) - min(current_limits) >= self.target_deadband_a
 
     def _stabilized_target(
         self,
         global_reason: str,
         charger: ChargerAllocationInput,
         target: ChargerAllocationTarget,
+        *,
+        bypass_deadband: bool = False,
     ) -> ChargerAllocationTarget:
         raw = target.target_current_a
         current = charger.current_limit_a
@@ -709,10 +719,10 @@ class ChargeAllocationLogger:
             return target
 
         stable = raw
-        if abs(raw - current) < self.target_deadband_a:
+        if not bypass_deadband and abs(raw - current) < self.target_deadband_a:
             stable = current
         else:
-            stable = self._quantized_target(raw, charger.min_current_a, charger.max_current_a)
+            stable = raw if bypass_deadband else self._quantized_target(raw, charger.min_current_a, charger.max_current_a)
 
         should_write = abs(current - stable) >= self.allocator.config.min_write_delta_a
         return dataclasses.replace(target, target_current_a=stable, should_write=should_write)

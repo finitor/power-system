@@ -32,12 +32,12 @@ class ChargeAllocatorTest(unittest.TestCase):
             charge_ceiling_reason="BMS CCL fraction",
         )
 
-        self.assertEqual(decision.budget_a, 27.0)  # 50% of 40A CCL + 12A load - 5A reserve
+        self.assertEqual(decision.budget_a, 32.0)  # 50% of 40A CCL + 12A load
         self.assertEqual(decision.reason, "BMS CCL fraction")
-        self.assertEqual(decision.targets["classic"].target_current_a, 14.0)
-        self.assertEqual(decision.targets["epever"].target_current_a, 13.0)
+        self.assertEqual(decision.targets["classic"].target_current_a, 16.0)
+        self.assertEqual(decision.targets["epever"].target_current_a, 16.0)
 
-    def test_apportions_by_recent_actual_output(self) -> None:
+    def test_apportions_evenly_across_eligible_chargers(self) -> None:
         decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=40.0,
             charge_enabled=True,
@@ -51,8 +51,29 @@ class ChargeAllocatorTest(unittest.TestCase):
             charge_ceiling_reason="BMS CCL fraction",
         )
 
-        self.assertEqual(decision.targets["classic"].target_current_a, 20.0)
-        self.assertEqual(decision.targets["epever"].target_current_a, 7.0)
+        self.assertEqual(decision.weight_basis, "equal")
+        self.assertEqual(decision.targets["classic"].target_current_a, 16.0)
+        self.assertEqual(decision.targets["epever"].target_current_a, 16.0)
+
+    def test_positive_budget_keeps_pv_starved_charger_open(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=0.0,
+            load_current_a=4.0,
+            chargers=[
+                _charger("classic", actual=0.0, limit=0.0, max_=80.0, pv_power_w=0.0),
+                _charger("epever", actual=3.8, limit=20.0, max_=100.0, pv_power_w=214.0),
+            ],
+            charge_ceiling_a=20.0,
+            charge_ceiling_reason="BMS CCL fraction",
+        )
+
+        self.assertEqual(decision.budget_a, 24.0)
+        self.assertEqual(decision.weight_basis, "equal")
+        self.assertEqual(decision.targets["classic"].target_current_a, 12.0)
+        self.assertEqual(decision.targets["epever"].target_current_a, 12.0)
+        self.assertTrue(decision.targets["classic"].should_write)
 
     def test_redistributes_budget_when_one_charger_hits_cap(self) -> None:
         decision = ChargeCurrentAllocator(
@@ -108,7 +129,7 @@ class ChargeAllocatorTest(unittest.TestCase):
         )
 
         self.assertEqual(decision.reason, "BMS CCL fraction")
-        self.assertEqual(decision.budget_a, 70.0)  # 50% of 150 - 5 reserve
+        self.assertEqual(decision.budget_a, 75.0)  # 50% of 150
         self.assertLess(decision.targets["classic"].target_current_a, 100.0)
 
     def test_resolved_charge_ceiling_sets_budget(self) -> None:
@@ -125,7 +146,7 @@ class ChargeAllocatorTest(unittest.TestCase):
             charge_ceiling_reason="BMS CCL fraction",
         )
 
-        self.assertEqual(decision.budget_a, 20.0)
+        self.assertEqual(decision.budget_a, 25.0)
         self.assertEqual(decision.reason, "BMS CCL fraction")
         self.assertEqual(decision.charge_ceiling_a, 20.0)
 
@@ -181,7 +202,7 @@ class ChargeAllocatorTest(unittest.TestCase):
         )
 
         self.assertEqual(decision.reason, "BMS CCL fraction")
-        self.assertEqual(decision.budget_a, 27.0)  # 50% of CCL + load - reserve
+        self.assertEqual(decision.budget_a, 32.0)  # 50% of CCL + load
         self.assertEqual(decision.charge_ceiling_a, 20.0)
 
     def test_feedback_clamps_budget_when_net_battery_charge_exceeds_ccl(self) -> None:
@@ -199,7 +220,7 @@ class ChargeAllocatorTest(unittest.TestCase):
         )
 
         self.assertEqual(decision.reason, "feedback_clamp")
-        self.assertEqual(decision.budget_a, 1.0)
+        self.assertEqual(decision.budget_a, 6.0)
 
     def test_stops_chargers_when_bms_disables_charge(self) -> None:
         decision = ChargeCurrentAllocator().decide(
@@ -234,7 +255,7 @@ class ChargeAllocatorTest(unittest.TestCase):
         self.assertFalse(decision.targets["classic"].should_write)
 
     def test_whole_amp_targets_do_not_write_sub_amp_changes(self) -> None:
-        decision = ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)).decide(
+        decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=39.0,
             charge_enabled=True,
             battery_current_a=10.0,
@@ -260,11 +281,8 @@ class ChargeAllocatorTest(unittest.TestCase):
         self.assertEqual(near.targets["classic"].target_current_a, 19.0)
         self.assertFalse(near.targets["classic"].should_write)
 
-    def test_weights_by_pv_power_not_throttled_output(self) -> None:
-        # classic is the sunnier array (more PV power) but is currently throttled
-        # to a lower output; weighting by output would starve it, weighting by PV
-        # power gives it the larger share.
-        decision = ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)).decide(
+    def test_equal_split_ignores_throttled_output_and_pv_power(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=40.0,
             charge_enabled=True,
             battery_current_a=10.0,
@@ -277,13 +295,12 @@ class ChargeAllocatorTest(unittest.TestCase):
             charge_ceiling_reason="BMS CCL fraction",
         )
 
-        self.assertEqual(decision.weight_basis, "pv_power")
-        # 20 A split 1500:500 -> 15 / 5, despite epever's higher present output.
-        self.assertEqual(decision.targets["classic"].target_current_a, 15.0)
-        self.assertEqual(decision.targets["epever"].target_current_a, 5.0)
+        self.assertEqual(decision.weight_basis, "equal")
+        self.assertEqual(decision.targets["classic"].target_current_a, 10.0)
+        self.assertEqual(decision.targets["epever"].target_current_a, 10.0)
 
-    def test_falls_back_to_output_basis_when_any_pv_power_missing(self) -> None:
-        decision = ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)).decide(
+    def test_equal_split_does_not_require_pv_power(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=40.0,
             charge_enabled=True,
             battery_current_a=10.0,
@@ -296,25 +313,24 @@ class ChargeAllocatorTest(unittest.TestCase):
             charge_ceiling_reason="BMS CCL fraction",
         )
 
-        # Mixed availability -> consistent output basis for both, not watts/amps.
-        self.assertEqual(decision.weight_basis, "actual_current")
-        self.assertEqual(decision.targets["classic"].target_current_a, 15.0)
-        self.assertEqual(decision.targets["epever"].target_current_a, 5.0)
+        self.assertEqual(decision.weight_basis, "equal")
+        self.assertEqual(decision.targets["classic"].target_current_a, 10.0)
+        self.assertEqual(decision.targets["epever"].target_current_a, 10.0)
 
     def test_sub_floor_apportionment_share_floors_to_min_current_not_disable(self) -> None:
         # epever's PV share rounds below its 1 A register floor. It is eligible
         # and producing, so it must keep charging at min_current, NOT be switched
         # off -- disabling on a lost split flaps the coil (the 2026-06-17 bug).
         decision = ChargeCurrentAllocator(ChargeAllocatorConfig(reserve_a=0.0)).decide(
-            bms_ccl_a=20.0,
+            bms_ccl_a=2.0,
             charge_enabled=True,
-            battery_current_a=15.0,
+            battery_current_a=0.0,
             load_current_a=0.0,
             chargers=[
                 _charger("classic", actual=20.0, limit=40.0, max_=80.0, pv_power_w=2000.0),
                 _charger("epever", actual=0.2, limit=10.0, max_=100.0, pv_power_w=5.0, min_current_a=1.0),
             ],
-            charge_ceiling_a=10.0,
+            charge_ceiling_a=1.0,
             charge_ceiling_reason="BMS CCL fraction",
         )
 
@@ -376,7 +392,7 @@ class ChargeAllocatorTest(unittest.TestCase):
         )
 
         self.assertIsNone(decision.targets["epever"].target_current_a)
-        self.assertEqual(decision.targets["classic"].target_current_a, 15.0)
+        self.assertEqual(decision.targets["classic"].target_current_a, 20.0)
 
 
 class ChargeAllocationEventTest(unittest.TestCase):
@@ -401,12 +417,12 @@ class ChargeAllocationEventTest(unittest.TestCase):
         detail = event.detail or {}
         self.assertEqual(detail["mode"], "dry-run")
         self.assertEqual(detail["bms_ccl_a"], 40.0)
-        self.assertEqual(detail["budget_a"], 27.0)
+        self.assertEqual(detail["budget_a"], 32.0)
         self.assertEqual(detail["battery_current_a"], 10.0)
         self.assertEqual(detail["reason"], "BMS CCL fraction")
-        self.assertEqual(detail["weight_basis"], "actual_current")
+        self.assertEqual(detail["weight_basis"], "equal")
         self.assertEqual(set(detail["targets"]), {"classic", "epever"})
-        self.assertEqual(detail["targets"]["classic"]["target_a"], 14.0)
+        self.assertEqual(detail["targets"]["classic"]["target_a"], 16.0)
         self.assertIn("disable", detail["targets"]["classic"])
         self.assertTrue(event.event_id())  # hashes without error
 

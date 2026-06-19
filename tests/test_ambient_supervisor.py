@@ -246,7 +246,7 @@ class SupervisorSemanticsTest(unittest.TestCase):
                 "battery_current_a": -2.0,
                 "battery_charge_a": 5.0,
                 "load_allowance_a": 4.0,
-                "weight_basis": "pv_power",
+                "weight_basis": "equal",
                 "targets": {
                     "classic": {
                         "target_a": 100.0,
@@ -266,7 +266,7 @@ class SupervisorSemanticsTest(unittest.TestCase):
 
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Limit:                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget:                200A  split by pv_power", rendered)
+        self.assertIn("Budget:                200A  split equally", rendered)
         self.assertNotIn("battery -2A", rendered)
         self.assertIn("Classic:               100.0A released", rendered)
         self.assertIn("Epever:                100.0A released  *", rendered)

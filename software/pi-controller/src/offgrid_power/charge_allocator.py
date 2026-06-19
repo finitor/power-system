@@ -11,13 +11,8 @@ from .metrics import TelemetryEvent
 
 @dataclass(frozen=True)
 class ChargeAllocatorConfig:
-    reserve_a: float = 5.0
+    reserve_a: float = 0.0
     feedback_tolerance_a: float = 1.0
-    # Sunrise floors so a not-yet-producing charger keeps a share of budget. One
-    # floor per weight basis (watts for PV-power weighting, amps for the output
-    # fallback) -- see ChargeCurrentAllocator._weights.
-    min_active_weight_a: float = 1.0
-    min_active_weight_w: float = 10.0
     min_write_delta_a: float = 1.0
 
 
@@ -27,10 +22,9 @@ class ChargerAllocationInput:
     actual_current_a: float
     current_limit_a: float | None
     max_current_a: float
-    # PV input power is the preferred apportionment weight: it reflects how much
-    # the array *could* deliver, independent of the limit we last wrote. Weighting
-    # by throttled output latches an allocation (throttle -> low output -> low
-    # weight -> stays throttled). None falls back to actual output.
+    # PV input power is retained for trace/debug context. It is deliberately not
+    # used for apportionment because controller input power can collapse when a
+    # prior current limit holds that controller near zero.
     pv_power_w: float | None = None
     # Smallest current the charger can actually hold. The EPEver register floors
     # at 1 A, so a sub-floor target maps to charge-disable rather than a limit
@@ -66,8 +60,8 @@ class ChargeAllocationDecision:
     battery_charge_a: float | None
     reason: str
     targets: dict[str, ChargerAllocationTarget]
-    # "pv_power" or "actual_current": which signal drove the apportionment split,
-    # for trace analysis. None when no budget was apportioned.
+    # "equal": the apportionment split used for trace analysis. None when no
+    # budget was apportioned.
     weight_basis: str | None = None
     # Resolved net charge-current allowance from ChargeCeiling. None means
     # unconstrained; 0 means stop.
@@ -182,15 +176,12 @@ class ChargeCurrentAllocator:
         eligible_names = {charger.name for charger in eligible}
 
         weights, weight_basis = self._weights(eligible)
-        raw_allocations = _waterfill_allocate(
-            budget_a,
-            weights,
-            {charger.name: charger.max_current_a for charger in eligible},
-        )
+        caps = {charger.name: charger.max_current_a for charger in eligible}
+        raw_allocations = _waterfill_allocate(budget_a, weights, caps)
         allocations = _whole_amp_allocations(
             raw_allocations,
             budget_a,
-            {charger.name: charger.max_current_a for charger in eligible},
+            caps,
         )
 
         for charger in chargers:
@@ -218,28 +209,14 @@ class ChargeCurrentAllocator:
     ) -> tuple[dict[str, float], str | None]:
         """Apportionment weights and the basis used.
 
-        Prefer PV input power for *every* eligible charger -- a resource signal
-        independent of the limit we wrote. If any eligible charger lacks it, fall
-        back to actual output for all of them so the basis stays consistent;
-        mixing watts and amps would corrupt the proportional ratios.
+        Split constrained charge budget evenly across eligible chargers. This is
+        intentionally simple: controller PV/input power can itself collapse when
+        a prior limit holds the controller near zero, so using it as the weight
+        can latch a charger out of the allocation.
         """
         if not eligible:
             return {}, None
-        if all(charger.pv_power_w is not None for charger in eligible):
-            return (
-                {
-                    charger.name: max(charger.pv_power_w, self.config.min_active_weight_w)
-                    for charger in eligible
-                },
-                "pv_power",
-            )
-        return (
-            {
-                charger.name: max(charger.actual_current_a, self.config.min_active_weight_a)
-                for charger in eligible
-            },
-            "actual_current",
-        )
+        return ({charger.name: 1.0 for charger in eligible}, "equal")
 
     def _target(
         self,
@@ -254,7 +231,7 @@ class ChargeCurrentAllocator:
         # allow_disable) commands the charger OFF. During
         # apportionment an eligible, producing charger that merely loses the split
         # keeps charging at its floor instead of being switched off -- otherwise a
-        # controller whose PV-power weight dips gets its coil flapped on/off.
+        # controller can get its coil flapped on/off by ordinary split changes.
         if allow_disable and (target <= 0.0 or target < charger.min_current_a):
             # write off if the charger might still be on (or its state is unknown);
             # the actuator is idempotent if already off.

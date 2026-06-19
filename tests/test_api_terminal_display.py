@@ -168,7 +168,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "battery_current_a": 5.0,
                 "battery_charge_a": 5.0,
                 "load_allowance_a": 6.0,
-                "weight_basis": "pv_power",
+                "weight_basis": "equal",
                 "targets": {
                     "classic": {
                         "target_a": 11.0,
@@ -190,7 +190,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Limit                 21A net (CCL taper; BMS CCL 100A)", rendered)
         self.assertIn("Budget                22A  includes load 6A", rendered)
-        self.assertIn("split by pv_power", rendered)
+        self.assertIn("split equally", rendered)
         self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
 
@@ -227,7 +227,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "battery_current_a": -3.0,
                 "battery_charge_a": 5.0,
                 "load_allowance_a": 4.0,
-                "weight_basis": "pv_power",
+                "weight_basis": "equal",
                 "targets": {
                     "classic": {
                         "target_a": 100.0,
@@ -247,7 +247,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Limit                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget                200A  split by pv_power", rendered)
+        self.assertIn("Budget                200A  split equally", rendered)
         self.assertNotIn("battery -3A", rendered)
         self.assertIn("Classic               100.0A released", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)
@@ -263,7 +263,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "battery_current_a": 46.0,
                 "battery_charge_a": 46.0,
                 "load_allowance_a": 12.0,
-                "weight_basis": "pv_power",
+                "weight_basis": "equal",
                 "targets": {},
             }
         )
@@ -271,7 +271,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Limit                 20A net (CCL taper, feedback clamp; BMS CCL 40A)", rendered)
-        self.assertIn("Budget                1A  feedback: battery +46A > ceiling 20A  split by pv_power", rendered)
+        self.assertIn("Budget                1A  feedback: battery +46A > ceiling 20A  split equally", rendered)
 
     def test_allocation_section_names_low_temperature_stop(self) -> None:
         lines = _allocation_lines(
@@ -323,7 +323,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "battery_current_a": 1.0,
                 "battery_charge_a": 1.0,
                 "load_allowance_a": 4.0,
-                "weight_basis": "pv_power",
+                "weight_basis": "equal",
                 "targets": {"classic": {"target_a": 25.0, "disable": False, "should_write": False}},
             },
             "ambient": {"temperature_c": 18.2},
