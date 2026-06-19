@@ -185,6 +185,8 @@ class WebDisplayTest(unittest.TestCase):
             self.assertIn(f"<h2>{section}</h2>", html)
         self.assertNotIn("<h2>Inverter/Charger</h2>", html)
         self.assertNotIn("<h2>Temperatures</h2>", html)
+        self.assertIn("<h2>Status Conditions</h2>", html)
+        self.assertIn("<td>State</td><td>none</td>", html)
         self.assertIn('href="/kindle/details">More Power Info...</a>', html)
         # Decoded values flow through to the page.
         self.assertIn("5.1A  272W", html)
@@ -406,14 +408,25 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_renders_status_conditions(self) -> None:
         snapshot = make_snapshot(
-            status_conditions=["Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V > 55.8V"],
+            status_conditions=[
+                "Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V > 55.8V",
+                "Battery temp low",
+            ],
         )
 
-        html = render_kindle_details(snapshot)
+        html = render_kindle_snapshot(snapshot)
 
         self.assertIn("Status: WARNING", html)
         self.assertIn("<h2>Status Conditions</h2>", html)
-        self.assertIn("Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V", html)
+        self.assertIn(
+            "Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V; Battery temp low",
+            html,
+        )
+        self.assertEqual(html.count("<h2>Status Conditions</h2>"), 1)
+
+        details_html = render_kindle_details(snapshot)
+        self.assertIn("Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V", details_html)
+        self.assertIn("Battery temp low", details_html)
 
     def test_routes_kindle_path(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()

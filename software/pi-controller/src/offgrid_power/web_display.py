@@ -175,6 +175,7 @@ def render_kindle_snapshot(
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
+    lines.extend(_status_summary_section(snapshot))
     lines.extend(_kindle_nav_button("/kindle/details", "More Power Info..."))
 
     lines.extend(
@@ -1458,6 +1459,12 @@ def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
     if not snapshot.errors and not snapshot.status_conditions:
         lines.extend(["<h2>Status Conditions</h2>", "<table>", _row("State", "none"), "</table>"])
     return lines
+
+
+def _status_summary_section(snapshot: SupervisorSnapshot) -> list[str]:
+    conditions = list(snapshot.status_conditions)
+    value = "; ".join(conditions) if conditions else "none"
+    return ["<h2>Status Conditions</h2>", "<table>", _row("State", value), "</table>"]
 
 
 def _charge_controller_settings_section(snapshot: SupervisorSnapshot) -> list[str]:
