@@ -163,11 +163,15 @@ def render_kindle_snapshot(
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
         ".bottom-link{font-size:19px;line-height:2.2;color:#000;text-decoration:none;border:1px solid #000;display:block;text-align:center;margin-top:8px;}",
+        ".page-turn{position:fixed;top:58px;bottom:52px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn-left{left:0;}",
+        ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
         "</style>",
         "</head>",
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
+        _page_turn_link("/kindle/details", "right", "More Power Info"),
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -216,11 +220,15 @@ def render_kindle_details(
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
         ".bottom-link{font-size:19px;line-height:2.2;color:#000;text-decoration:none;border:1px solid #000;display:block;text-align:center;margin-top:8px;}",
+        ".page-turn{position:fixed;top:58px;bottom:52px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn-left{left:0;}",
+        ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
         "</style>",
         "</head>",
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
+        _page_turn_link("/kindle", "left", "Back to Power"),
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -1442,6 +1450,10 @@ def _kindle_nav_button(href: str, label: str) -> list[str]:
     return [f'<a class="bottom-link" href="{escape(href)}">{escape(label)}</a>']
 
 
+def _page_turn_link(href: str, side: str, label: str) -> str:
+    return f'<a class="page-turn page-turn-{escape(side)}" href="{escape(href)}">{escape(label)}</a>'
+
+
 def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
     lines: list[str] = []
     if snapshot.errors:
@@ -1450,21 +1462,14 @@ def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
         for error in snapshot.errors:
             lines.append(f"<li>{escape(error)}</li>")
         lines.append("</ul>")
-    if snapshot.status_conditions:
-        lines.append("<h2>Status Conditions</h2>")
-        lines.append("<ul>")
-        for condition in snapshot.status_conditions:
-            lines.append(f"<li>{escape(condition)}</li>")
-        lines.append("</ul>")
-    if not snapshot.errors and not snapshot.status_conditions:
-        lines.extend(["<h2>Status Conditions</h2>", "<table>", _row("State", "none"), "</table>"])
+    lines.extend(_status_summary_section(snapshot))
     return lines
 
 
 def _status_summary_section(snapshot: SupervisorSnapshot) -> list[str]:
     conditions = list(snapshot.status_conditions)
     value = "; ".join(conditions) if conditions else "none"
-    return ["<h2>Status Conditions</h2>", "<table>", _row("State", value), "</table>"]
+    return ["<table>", _row("Status Conditions", value), "</table>"]
 
 
 def _charge_controller_settings_section(snapshot: SupervisorSnapshot) -> list[str]:
