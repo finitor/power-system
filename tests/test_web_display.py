@@ -189,6 +189,9 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn('<td colspan="2">none</td>', html)
         self.assertNotIn("<td>State</td><td>none</td>", html)
         self.assertIn('href="/kindle/details">More Power Info...</a>', html)
+        self.assertIn("padding-bottom:52px", html)
+        self.assertIn("position:fixed;left:4px;right:4px;bottom:4px;z-index:20", html)
+        self.assertIn("top:58px;bottom:58px", html)
         self.assertIn('class="page-turn page-turn-left" href="/weather"', html)
         self.assertIn('class="page-turn page-turn-right" href="/kindle/details"', html)
         # Decoded values flow through to the page.
