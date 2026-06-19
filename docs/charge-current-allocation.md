@@ -99,9 +99,12 @@ load current = known charge-controller output - BMS net battery current
 If one controller is offline and apparently disconnected from the bus, the
 remaining controller can still receive the full budget plus the observed load
 allowance. If a silent controller is secretly still producing, its hidden output
-shows up as higher BMS net charge current; the feedback clamp then reduces the
-next budget. If load is unavailable, the allocator falls back conservatively and
-prefers undercharging to exceeding CCL.
+shows up through BMS net current. While hidden production is less than household
+load, that reduces the estimated load allowance for the known controller. If
+hidden production pushes net battery charge above the resolved allowance, the
+measured-current feedback clamp reduces the next budget. If load is unavailable,
+the allocator falls back conservatively and prefers undercharging to exceeding
+CCL.
 
 ### Availability and nighttime release
 
