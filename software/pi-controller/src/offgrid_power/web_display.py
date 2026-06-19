@@ -12,6 +12,7 @@ from threading import Lock
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
+from .api_terminal_display import render_api_snapshot
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
 from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot
@@ -148,7 +149,7 @@ def render_kindle_snapshot(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power</title>",
         "<style>",
-        "body{font-family:serif;color:#000;background:#fff;margin:4px;padding-bottom:52px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        "body{font-family:serif;color:#000;background:#fff;margin:4px;padding-bottom:36px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -162,8 +163,8 @@ def render_kindle_snapshot(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        ".bottom-link{font-size:19px;line-height:2.2;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;position:fixed;left:4px;right:4px;bottom:4px;z-index:20;}",
-        ".page-turn{position:fixed;top:58px;bottom:58px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;position:fixed;left:4px;right:4px;bottom:2px;z-index:20;}",
+        ".page-turn{position:fixed;top:58px;bottom:40px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -207,7 +208,7 @@ def render_kindle_details(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power Details</title>",
         "<style>",
-        "body{font-family:serif;color:#000;background:#fff;margin:4px;padding-bottom:52px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        "body{font-family:serif;color:#000;background:#fff;margin:4px;padding-bottom:36px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -220,8 +221,8 @@ def render_kindle_details(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        ".bottom-link{font-size:19px;line-height:2.2;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;position:fixed;left:4px;right:4px;bottom:4px;z-index:20;}",
-        ".page-turn{position:fixed;top:58px;bottom:58px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;position:fixed;left:4px;right:4px;bottom:2px;z-index:20;}",
+        ".page-turn{position:fixed;top:58px;bottom:40px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -359,6 +360,34 @@ def render_kindle_weather(
     return "\n".join(lines)
 
 
+def render_browser_snapshot(
+    snapshot: SupervisorSnapshot,
+    load_summary: LoadSummary | None = None,
+    allocation: dict | None = None,
+) -> str:
+    rendered = render_api_snapshot(
+        snapshot_api_payload(snapshot, load_summary=load_summary, allocation=allocation)
+    )
+    return "\n".join(
+        [
+            "<!doctype html>",
+            "<html>",
+            "<head>",
+            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+            "<title>Off-Grid Power</title>",
+            "<style>",
+            "body{font-family:monospace;background:#111;color:#eee;margin:12px;}",
+            "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
+            "</style>",
+            "</head>",
+            "<body>",
+            f"<pre>{escape(rendered)}</pre>",
+            "</body>",
+            "</html>",
+        ]
+    )
+
+
 # Views whose ?refresh=1 queues an out-of-cycle poll of the local power
 # sources. Health is excluded so it stays a cheap liveness check.
 _SOURCE_REFRESH_PATHS = {"/api/v1/snapshot", "/", "/kindle", "/kindle/details", "/display"}
@@ -418,10 +447,11 @@ def route_display_request(
         html = render_kindle_details(snapshot, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
 
-    html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
     content_type = "text/html; charset=utf-8"
     if parsed_path == "/kindle" or is_kindle_user_agent(user_agent):
+        html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
+    html = render_browser_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
     return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
 
 

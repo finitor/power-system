@@ -189,9 +189,9 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn('<td colspan="2">none</td>', html)
         self.assertNotIn("<td>State</td><td>none</td>", html)
         self.assertIn('href="/kindle/details">More Power Info...</a>', html)
-        self.assertIn("padding-bottom:52px", html)
-        self.assertIn("position:fixed;left:4px;right:4px;bottom:4px;z-index:20", html)
-        self.assertIn("top:58px;bottom:58px", html)
+        self.assertIn("padding-bottom:36px", html)
+        self.assertIn("position:fixed;left:4px;right:4px;bottom:2px;z-index:20", html)
+        self.assertIn("top:58px;bottom:40px", html)
         self.assertIn('class="page-turn page-turn-left" href="/weather"', html)
         self.assertIn('class="page-turn page-turn-right" href="/kindle/details"', html)
         # Decoded values flow through to the page.
@@ -447,6 +447,23 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 200)
         self.assertEqual(response.content_type, "text/html; charset=utf-8")
         self.assertIn(b"Off-Grid Power", response.body)
+
+    def test_routes_regular_browser_to_terminal_style_full_snapshot(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(),
+            epever=make_epever_telemetry(),
+            magnum=make_magnum_snapshot(),
+        )
+
+        response = route_display_request(snapshot, "/", "Mozilla/5.0")
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(response.content_type, "text/html; charset=utf-8")
+        self.assertIn(b"<pre>", response.body)
+        self.assertIn(b"Charge Controller 0 (Classic)", response.body)
+        self.assertIn(b"Inverter/Charger", response.body)
+        self.assertIn(b"Temperatures", response.body)
+        self.assertNotIn(b"More Power Info", response.body)
 
     def test_routes_kindle_details_path(self) -> None:
         snapshot = make_snapshot(magnum=make_magnum_snapshot())
