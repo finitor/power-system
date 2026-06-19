@@ -51,7 +51,7 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
 
     if payload.get("allocation") is not None:
         lines.append("")
-        lines.extend(_allocation_lines(payload["allocation"]))
+        lines.extend(_allocation_lines(payload["allocation"], solar=payload.get("solar") or []))
 
     lines.append("")
     lines.extend(_temperature_lines(payload))
@@ -383,9 +383,16 @@ def _solar_lines(solar: list[dict]) -> list[str]:
 
 
 def _charge_controller_title(index: int, controller: dict) -> str:
-    device = controller.get("device") or {}
-    name = " ".join(part for part in [device.get("vendor"), device.get("model")] if part)
+    name = _charge_controller_short_name(controller)
     return f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
+
+
+def _charge_controller_short_name(controller: dict) -> str:
+    device = controller.get("device") or {}
+    short_name = str(device.get("short_name") or "").strip()
+    if short_name:
+        return short_name
+    return " ".join(str(part).strip() for part in [device.get("vendor"), device.get("model")] if part)
 
 
 def _inverter_charger_lines(inverter: dict | None) -> list[str]:
@@ -444,19 +451,33 @@ def _inverter_charger_lines(inverter: dict | None) -> list[str]:
     return lines
 
 
-def _allocation_lines(allocation: dict) -> list[str]:
+def _allocation_lines(allocation: dict, solar: list[dict] | None = None) -> list[str]:
     lines = ["Charge Allocation"]
     reason = allocation.get("reason") or "?"
     lines.append(_row("Limit", _allocation_limit_text(allocation)))
     lines.append(_row("Budget", _allocation_budget_text(allocation)))
     targets = allocation.get("targets") or {}
+    labels = _allocation_target_labels(solar or [])
     for name in sorted(targets):
         target = targets[name]
         value = _allocation_target_text(target, global_reason=reason)
         if target.get("should_write"):
             value += "  *"  # a write is pending/applied this cycle
-        lines.append(_row(name.capitalize(), value))
+        lines.append(_row(labels.get(name, name.capitalize()), value))
     return lines
+
+
+def _allocation_target_labels(solar: list[dict]) -> dict[str, str]:
+    labels: dict[str, str] = {}
+    for controller in solar:
+        controller_id = controller.get("id")
+        if not isinstance(controller_id, str):
+            continue
+        key = controller_id.split(".", 1)[0]
+        label = _charge_controller_short_name(controller)
+        if label:
+            labels[key] = label
+    return labels
 
 
 def _allocation_budget_text(allocation: dict) -> str:

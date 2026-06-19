@@ -1162,7 +1162,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
             "id": "classic.0",
             # Vendor/model identity lives in its own block so renderers display
             # any controller generically and never branch on which one it is.
-            "device": {"vendor": "MidNite", "model": "Classic 200"},
+            "device": {"vendor": "MidNite", "model": "Classic 200", "short_name": "Classic"},
             "conditions": conditions,
             "captured_at": classic.captured_at.isoformat(),
             "battery_voltage_v": classic.battery_voltage_v,
@@ -1205,7 +1205,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
         payload.append(
             {
                 "id": "epever.1",
-                "device": {"vendor": "EPEver", "model": "TEP10425"},
+                "device": {"vendor": "EPEver", "model": "TEP10425", "short_name": "Epever"},
                 "conditions": [],
                 "captured_at": epever.captured_at.isoformat(),
                 "battery_voltage_v": epever.battery_voltage_v,
@@ -1477,11 +1477,8 @@ def _charge_controller_settings_section(snapshot: SupervisorSnapshot) -> list[st
 
 
 def _charge_controller_settings_label(index: int, controller: dict) -> str:
-    device = controller.get("device") or {}
-    vendor = str(device.get("vendor") or "").strip()
-    if vendor.lower() == "epever":
-        vendor = "Epever"
-    return f"CC{index} ({vendor})" if vendor else f"CC{index}"
+    name = _charge_controller_short_name(controller)
+    return f"CC{index} ({name})" if name else f"CC{index}"
 
 
 def _charge_controller_sections(
@@ -1529,8 +1526,7 @@ def _controller_section_lines(
     include_live: bool = True,
     include_settings: bool = True,
 ) -> list[str]:
-    device = controller.get("device") or {}
-    name = " ".join(part for part in [device.get("vendor"), device.get("model")] if part)
+    name = _charge_controller_short_name(controller)
     title = f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
     lines = [f"<h2>{escape(title)}</h2>", "<table>"]
 
@@ -1584,6 +1580,14 @@ def _controller_section_lines(
 
     lines.append("</table>")
     return lines
+
+
+def _charge_controller_short_name(controller: dict) -> str:
+    device = controller.get("device") or {}
+    short_name = str(device.get("short_name") or "").strip()
+    if short_name:
+        return short_name
+    return " ".join(str(part).strip() for part in [device.get("vendor"), device.get("model")] if part)
 
 
 def _charge_controller_settings_text(settings: dict | None) -> str | None:

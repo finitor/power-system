@@ -315,7 +315,7 @@ class WebDisplayTest(unittest.TestCase):
 
         # Only an EPEver is present, so it is index 0 in the collection: the
         # renderer numbers by position, not by a fixed per-vendor slot.
-        self.assertIn("<h2>Charge Controller 0 (EPEver TEP10425)</h2>", html)
+        self.assertIn("<h2>Charge Controller 0 (Epever)</h2>", html)
         self.assertIn("53.1V  0.0A  0W", html)
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
         self.assertIn("Stage: Resting (No charging)", html)
@@ -467,8 +467,14 @@ class WebDisplayTest(unittest.TestCase):
         self.assertAlmostEqual(payload["battery"]["voltage_v"], 53.04)
         self.assertEqual([controller["id"] for controller in payload["solar"]], ["classic.0", "epever.1"])
         # Vendor/model identity is its own block, separate from the parameters.
-        self.assertEqual(payload["solar"][0]["device"], {"vendor": "MidNite", "model": "Classic 200"})
-        self.assertEqual(payload["solar"][1]["device"], {"vendor": "EPEver", "model": "TEP10425"})
+        self.assertEqual(
+            payload["solar"][0]["device"],
+            {"vendor": "MidNite", "model": "Classic 200", "short_name": "Classic"},
+        )
+        self.assertEqual(
+            payload["solar"][1]["device"],
+            {"vendor": "EPEver", "model": "TEP10425", "short_name": "Epever"},
+        )
         self.assertEqual(payload["solar"][0]["conditions"], [])
         self.assertEqual(payload["solar"][0]["daily_amp_hours_ah"], 108)
         self.assertIsNone(payload["solar"][0]["settings"])

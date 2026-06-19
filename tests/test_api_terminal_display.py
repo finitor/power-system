@@ -48,7 +48,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
             "solar": [
                 {
                     "id": "classic.0",
-                    "device": {"vendor": "MidNite", "model": "Classic 200"},
+                    "device": {"vendor": "MidNite", "model": "Classic 200", "short_name": "Classic"},
                     "conditions": [],
                     "pv_voltage_v": 91.2,
                     "pv_current_a": 4.5,
@@ -72,7 +72,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 },
                 {
                     "id": "epever.1",
-                    "device": {"vendor": "EPEver", "model": "TEP10425"},
+                    "device": {"vendor": "EPEver", "model": "TEP10425", "short_name": "Epever"},
                     "conditions": [],
                     "pv_voltage_v": 0.0,
                     "pv_current_a": 0.0,
@@ -131,8 +131,8 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         # EPEver block: canonical first, vendor word in parens, no vendor knowledge in renderer.
         self.assertIn("Charge Status         Stage: Resting (No charging)", rendered)
         self.assertIn("Charge Settings       Limit 80.0A Absorb 55.6V/32.5m Float 55.0V Max TCV 56.8V", rendered)
-        self.assertIn("Charge Controller 0 (MidNite Classic 200)\n", rendered)
-        self.assertIn("\n\nCharge Controller 1 (EPEver TEP10425)\n", rendered)
+        self.assertIn("Charge Controller 0 (Classic)\n", rendered)
+        self.assertIn("\n\nCharge Controller 1 (Epever)\n", rendered)
         # cc1 mirrors cc0: a "Production Today" line (energy only, no Ah from the
         # EPEver), and no static "Rated" line. Adaptive units: sub-1 kWh shows Wh
         # (EPEver 0.1 -> 100Wh), >=1 kWh shows kWh (Classic 5.8 -> 5.8kWh).
@@ -193,6 +193,28 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("split by pv_power", rendered)
         self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
+
+    def test_allocation_section_prefers_solar_short_names(self) -> None:
+        lines = _allocation_lines(
+            {
+                "mode": "live",
+                "reason": "unconstrained",
+                "bms_ccl_a": 200.0,
+                "budget_a": 180.0,
+                "targets": {
+                    "classic": {"target_a": 80.0, "disable": False, "reason": "unconstrained"},
+                    "epever": {"target_a": 100.0, "disable": False, "reason": "unconstrained"},
+                },
+            },
+            solar=[
+                {"id": "classic.0", "device": {"short_name": "Classic"}},
+                {"id": "epever.1", "device": {"short_name": "Epever"}},
+            ],
+        )
+        rendered = "\n".join(lines)
+
+        self.assertIn("Classic               80.0A released", rendered)
+        self.assertIn("Epever                100.0A released", rendered)
 
     def test_allocation_section_renders_per_controller_release_state(self) -> None:
         lines = _allocation_lines(
@@ -291,6 +313,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
             "captured_at": "2026-06-05T12:00:00+00:00",
             "status": {"ok": True, "severity": "OK", "errors": [], "conditions": []},
             "battery": {"soc_percent": 90, "voltage_v": 53.0, "current_a": 1.0},
+            "solar": [{"id": "classic.0", "device": {"short_name": "Classic"}}],
             "allocation": {
                 "mode": "live",
                 "reason": "normal_load_allowance",
@@ -307,6 +330,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         }
         rendered = render_api_snapshot(payload, now=datetime(2026, 6, 5, 12, 0, 2, tzinfo=timezone.utc))
         self.assertIn("Charge Allocation", rendered)
+        self.assertIn("Classic               25.0A limited", rendered)
         self.assertLess(rendered.index("Charge Allocation"), rendered.index("Temperatures"))
 
     def test_energy_text_switches_units_at_one_kwh(self) -> None:
