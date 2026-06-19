@@ -130,7 +130,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Charge Status         Stage: Float  State: MPPT or regulating voltage", rendered)
         # EPEver block: canonical first, vendor word in parens, no vendor knowledge in renderer.
         self.assertIn("Charge Status         Stage: Resting (No charging)", rendered)
-        self.assertIn("Charge Settings       Limit 80.0A Absorb 55.6V 32.5m Float 55.0V Max TCV 56.8V", rendered)
+        self.assertIn("Charge Settings       Limit 80.0A Absorb 55.6V/32.5m Float 55.0V Max TCV 56.8V", rendered)
         self.assertIn("Charge Controller 0 (MidNite Classic 200)\n", rendered)
         self.assertIn("\n\nCharge Controller 1 (EPEver TEP10425)\n", rendered)
         # cc1 mirrors cc0: a "Production Today" line (energy only, no Ah from the
@@ -139,7 +139,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Production Today      100Wh", rendered)
         self.assertIn("Production Today      5.8kWh  106Ah", rendered)
         self.assertNotIn("Rated", rendered)
-        self.assertIn("Charge Settings       Limit 80.0A Absorb 54.7V 120m Float 53.6V", rendered)
+        self.assertIn("Charge Settings       Limit 80.0A Absorb 54.7V/120m Float 53.6V", rendered)
         self.assertNotIn("EQ 54.7V", rendered)
         self.assertIn("\n\nInverter/Charger\n", rendered)
         self.assertIn("DC                    53.2V  4A  213W", rendered)

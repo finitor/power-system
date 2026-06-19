@@ -1346,14 +1346,14 @@ def _controller_section_lines(index: int, controller: dict) -> list[str]:
         if "current_limit_a" in settings:
             value = (
                 f"Limit {_meas(settings.get('current_limit_a'), 'A', 1)} "
-                f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)} {_minutes_text(settings.get('absorb_time_minutes'))} "
+                f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
                 f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
                 f"Max TCV {_meas(settings.get('max_temp_comp_voltage_v'), 'V', 1)}"
             )
         else:
             value = (
                 f"Limit {_meas(settings.get('max_charging_current_a'), 'A', 1)} "
-                f"Absorb {_meas(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 'V', 1)} {_minutes_text(settings.get('absorb_time_minutes'))} "
+                f"Absorb {_meas(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
                 f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
                 f"Recovery {_meas(_first_present(settings, 'bulk_recovery_voltage_v', 'boost_reconnect_voltage_v'), 'V', 1)}"
             )
