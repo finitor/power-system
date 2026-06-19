@@ -394,6 +394,8 @@ def route_api_request(
 
 
 def route_control_request(supervisor: Supervisor, path: str, payload: dict) -> DisplayResponse:
+    if path == "/api/v1/control/charge-controller/voltage":
+        return _control_charge_controller_voltage(supervisor, payload)
     if path == "/api/v1/control/classic/charge-settings":
         return _control_classic_charge_settings(supervisor, payload)
     if path == "/api/v1/control/epever/charge-settings":
@@ -405,6 +407,98 @@ def route_control_request(supervisor: Supervisor, path: str, payload: dict) -> D
     if path == "/api/v1/control/magnum/charge-settings":
         return _control_magnum_charge_settings(supervisor, payload)
     return _json_response(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
+
+
+def _control_charge_controller_voltage(supervisor: Supervisor, payload: dict) -> DisplayResponse:
+    try:
+        controller = _controller_number(payload)
+        voltage_v = _required_number(payload, "voltage_v")
+        dry_run = bool(payload.get("dry_run", False))
+        if not (0.0 < voltage_v <= 65.0):
+            raise ValueError(f"voltage_v out of range: {voltage_v}")
+
+        if controller == 0:
+            return _control_classic_scalar_voltage(supervisor, voltage_v, dry_run=dry_run)
+        if controller == 1:
+            return _control_epever_scalar_voltage(supervisor, voltage_v, dry_run=dry_run)
+        raise ValueError(f"unknown charge controller number: {controller}")
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
+
+
+def _control_classic_scalar_voltage(
+    supervisor: Supervisor,
+    voltage_v: float,
+    *,
+    dry_run: bool,
+) -> DisplayResponse:
+    planned = {
+        "absorb_voltage_v": round(voltage_v, 2),
+        "float_voltage_v": round(voltage_v - 0.1, 2),
+        "equalize_voltage_v": round(voltage_v, 2),
+        "max_temp_comp_voltage_v": round(voltage_v, 2),
+    }
+    _guard_voltage_targets_against_bms(supervisor.read_snapshot(), planned)
+    settings = None if dry_run else supervisor.write_classic_charge_settings(**planned)
+    return _json_response(
+        HTTPStatus.OK,
+        {
+            "ok": True,
+            "device": "classic",
+            "controller": 0,
+            "voltage_v": voltage_v,
+            "dry_run": dry_run,
+            "planned": planned,
+            "settings": _classic_settings_api_payload(settings),
+        },
+    )
+
+
+def _control_epever_scalar_voltage(
+    supervisor: Supervisor,
+    voltage_v: float,
+    *,
+    dry_run: bool,
+) -> DisplayResponse:
+    planned = {
+        "boost_voltage_v": round(voltage_v, 2),
+        "absorb_voltage_v": round(voltage_v, 2),
+        "float_voltage_v": round(voltage_v, 2),
+        "equalize_voltage_v": round(voltage_v, 2),
+        "boost_reconnect_voltage_v": round(voltage_v - 1.0, 2),
+        "bulk_recovery_voltage_v": round(voltage_v - 1.0, 2),
+    }
+    snapshot = supervisor.read_snapshot()
+    _guard_voltage_targets_against_bms(
+        snapshot,
+        {
+            "boost_voltage_v": planned["boost_voltage_v"],
+            "float_voltage_v": planned["float_voltage_v"],
+            "equalize_voltage_v": planned["equalize_voltage_v"],
+        },
+    )
+    settings = None
+    if not dry_run:
+        settings = supervisor.write_epever_charge_voltages(
+            boost_v=planned["boost_voltage_v"],
+            float_v=planned["float_voltage_v"],
+            equalize_v=planned["equalize_voltage_v"],
+            boost_reconnect_v=planned["boost_reconnect_voltage_v"],
+        )
+    return _json_response(
+        HTTPStatus.OK,
+        {
+            "ok": True,
+            "device": "epever",
+            "controller": 1,
+            "voltage_v": voltage_v,
+            "dry_run": dry_run,
+            "planned": planned,
+            "settings": _epever_settings_api_payload(settings),
+        },
+    )
 
 
 def _control_classic_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:
@@ -590,6 +684,26 @@ def _guard_voltage_targets_against_bms(snapshot: SupervisorSnapshot, targets: di
     exceeded = [f"{label} {value:.2f}V" for label, value in targets.items() if value > limit]
     if exceeded:
         raise ValueError(f"requested charge voltage exceeds BMS CVL: {', '.join(exceeded)} > {limit:.2f}V")
+
+
+def _controller_number(payload: dict) -> int:
+    for key in ("controller", "controller_number", "charge_controller_number"):
+        if key in payload and payload.get(key) is not None:
+            value = payload.get(key)
+            if isinstance(value, bool):
+                raise ValueError(f"{key} must be a charge controller number")
+            try:
+                return int(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} must be a charge controller number") from exc
+    raise ValueError("controller must be supplied")
+
+
+def _required_number(payload: dict, key: str) -> float:
+    value = _optional_number(payload, key)
+    if value is None:
+        raise ValueError(f"{key} must be supplied")
+    return value
 
 
 def _optional_number(payload: dict, key: str) -> float | None:

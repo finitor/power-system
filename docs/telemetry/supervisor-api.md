@@ -31,6 +31,8 @@ thread that performs polling, so reads and writes to a device cannot race.
 | `GET` | `/healthz` | Liveness probe (process up and producing snapshots) |
 | `GET` | `/api/v1/health` | Machine-readable health: degraded vs down, with per-device checks |
 | `GET` | `/api/v1/snapshot` | Complete latest display snapshot |
+| `POST` | `/api/v1/control/charge-controller/voltage` | Write one scalar charge voltage to Classic (`0`) or EPEver (`1`) |
+| `POST` | `/api/v1/control/classic/charge-settings` | Write Classic charge voltage/current/time settings |
 | `POST` | `/api/v1/control/epever/charge-settings` | Write EPEver boost/float/equalize voltage and/or max charge current |
 | `POST` | `/api/v1/control/epever/sync-from-classic` | Copy Classic charge targets to EPEver, with optional voltage offset |
 | `POST` | `/api/v1/control/epever/charging` | Enable/disable EPEver charging coil `0x0000` |
@@ -63,6 +65,30 @@ solar controller's `settings` object:
 - Classic: `absorb_time_minutes`.
 - EPEver: `absorb_time_minutes`; `equalize_time_minutes` is the
   equalize-stage duration.
+
+`POST /api/v1/control/charge-controller/voltage` accepts:
+
+```json
+{
+  "controller": 0,
+  "voltage_v": 56.3,
+  "dry_run": false
+}
+```
+
+`controller` is the displayed charge-controller number: `0` is the MidNite
+Classic and `1` is the EPEver. The endpoint implements the shared LiFePO4
+scalar-voltage policy:
+
+- Classic: absorb, equalize, and max temp-comp are set to `voltage_v`; float is
+  set to `voltage_v - 0.1` because the Classic requires float below absorb.
+- EPEver: boost/absorb, float, and equalize are set to `voltage_v`; boost
+  recovery / BVR is set to `voltage_v - 1.0`.
+
+All resulting charge voltages are guarded against the BMS-published CVL. Pass
+`"dry_run": true` to return the planned register-level values without writing.
+The aliases `controller_number` and `charge_controller_number` are also
+accepted for `controller`.
 
 `POST /api/v1/control/classic/charge-settings` accepts any subset of:
 

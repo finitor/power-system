@@ -46,6 +46,8 @@ class FakeControlSupervisor:
         self.charge_calls = []
         self.last_boost_reconnect_v = 53.6
         self.last_boost_v = 54.7
+        self.last_float_v = 53.6
+        self.last_equalize_v = 54.7
         self.last_current_a = None
 
     def read_snapshot(self):
@@ -67,8 +69,12 @@ class FakeControlSupervisor:
         self.voltage_calls.append(kwargs)
         self.last_boost_reconnect_v = kwargs.get("boost_reconnect_v", self.last_boost_reconnect_v)
         self.last_boost_v = kwargs.get("boost_v", self.last_boost_v)
+        self.last_float_v = kwargs.get("float_v", self.last_float_v)
+        self.last_equalize_v = kwargs.get("equalize_v", self.last_equalize_v)
         return make_epever_settings(
             boost_voltage_v=self.last_boost_v,
+            float_voltage_v=self.last_float_v,
+            equalize_voltage_v=self.last_equalize_v,
             boost_reconnect_voltage_v=self.last_boost_reconnect_v,
         )
 
@@ -605,6 +611,85 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertEqual(response.status.value, 400)
         self.assertEqual(supervisor.classic_calls, [])
+
+    def test_control_api_routes_scalar_voltage_to_classic(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "voltage_v": 56.3},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["device"], "classic")
+        self.assertEqual(
+            supervisor.classic_calls,
+            [
+                {
+                    "absorb_voltage_v": 56.3,
+                    "float_voltage_v": 56.2,
+                    "equalize_voltage_v": 56.3,
+                    "max_temp_comp_voltage_v": 56.3,
+                }
+            ],
+        )
+        self.assertEqual(payload["planned"]["float_voltage_v"], 56.2)
+        self.assertEqual(payload["settings"]["max_temp_comp_voltage_v"], 56.3)
+
+    def test_control_api_routes_scalar_voltage_to_epever(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"charge_controller_number": 1, "voltage_v": 56.4},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["device"], "epever")
+        self.assertEqual(
+            supervisor.voltage_calls,
+            [
+                {
+                    "boost_v": 56.4,
+                    "float_v": 56.4,
+                    "equalize_v": 56.4,
+                    "boost_reconnect_v": 55.4,
+                }
+            ],
+        )
+        self.assertEqual(payload["planned"]["bulk_recovery_voltage_v"], 55.4)
+        self.assertEqual(payload["settings"]["boost_reconnect_voltage_v"], 55.4)
+
+    def test_control_api_scalar_voltage_dry_run_does_not_write(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "voltage_v": 56.3, "dry_run": True},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["dry_run"])
+        self.assertEqual(supervisor.classic_calls, [])
+        self.assertIsNone(payload["settings"])
+
+    def test_control_api_rejects_unknown_charge_controller_number(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 2, "voltage_v": 56.3},
+        )
+
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("unknown charge controller number", json.loads(response.body)["error"])
 
     def test_control_api_routes_epever_charge_settings(self) -> None:
         supervisor = FakeControlSupervisor()
