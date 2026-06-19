@@ -277,7 +277,7 @@ def _charge_settings_line(settings: ClassicChargeSettings) -> str:
         f"Limit {settings.battery_current_limit_a:.1f}A  "
         f"Absorb {settings.absorb_voltage_v:.1f}V t={settings.absorb_time_s / 60:g}m  "
         f"Float {settings.float_voltage_v:.1f}V  "
-        f"EQ {settings.equalize_voltage_v:.1f}V",
+        f"Max TCV {settings.max_temp_comp_voltage_v:.1f}V",
     )
 
 
@@ -286,8 +286,7 @@ def _epever_charge_settings_line(settings: EpeverChargeSettings) -> str:
         "Charge Settings",
         f"Limit {_current_text(settings.max_charging_current_a)}  "
         f"Absorb {settings.boost_voltage_v:.1f}V t={_minutes_text(settings.boost_time_minutes)}  "
-        f"Float {settings.float_voltage_v:.1f}V  "
-        f"EQ {settings.equalize_voltage_v:.1f}V",
+        f"Float {settings.float_voltage_v:.1f}V",
     )
 
 

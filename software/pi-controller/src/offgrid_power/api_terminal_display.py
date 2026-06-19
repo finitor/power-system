@@ -369,14 +369,13 @@ def _solar_lines(solar: list[dict]) -> list[str]:
                     f"Limit {_fmt(settings.get('current_limit_a'), 1)}A  "
                     f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                     f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
-                    f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V"
+                    f"Max TCV {_fmt(settings.get('max_temp_comp_voltage_v'), 1)}V"
                 )
             else:
                 value = (
                     f"Limit {_measure(settings.get('max_charging_current_a'), 'A', 1) or '--A'}  "
                     f"Absorb {_fmt(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
                     f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
-                    f"EQ {_fmt(settings.get('equalize_voltage_v'), 1)}V  "
                     f"Recovery {_fmt(_first_present(settings, 'bulk_recovery_voltage_v', 'boost_reconnect_voltage_v'), 1)}V"
                 )
             lines.append(_row("Charge Settings", value))
