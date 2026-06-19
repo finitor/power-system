@@ -217,7 +217,7 @@ class LoadSampleBuffer:
 
 
 def estimate_load_current_a(snapshot: SupervisorSnapshot) -> float | None:
-    if snapshot.classic is None or snapshot.battery is None or snapshot.battery.measurements is None:
+    if snapshot.battery is None or snapshot.battery.measurements is None:
         return None
     # Total consumption by a bus energy balance:
     #   load = (charge into the bus) - (net into the battery)
@@ -227,9 +227,16 @@ def estimate_load_current_a(snapshot: SupervisorSnapshot) -> float | None:
     # the load reads low or negative whenever the EPEver array is also
     # contributing (its output is omitted from charge-in while its share of
     # the battery gain still lands in the BMS net).
-    charge_in_a = snapshot.classic.battery_current_a
+    charge_in_a = 0.0
+    charge_source_count = 0
+    if snapshot.classic is not None:
+        charge_in_a += snapshot.classic.battery_current_a
+        charge_source_count += 1
     if snapshot.epever is not None:
         charge_in_a += snapshot.epever.battery_current_a
+        charge_source_count += 1
+    if charge_source_count == 0:
+        return None
     # The Magnum is a third potential source, but only when the generator is
     # running and it is charging (inverter.charger_on). While inverting it is
     # the dominant *load*, and that draw is already reflected in the BMS net

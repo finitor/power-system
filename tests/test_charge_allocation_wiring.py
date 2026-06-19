@@ -616,6 +616,26 @@ class DryRunRecordingTest(unittest.TestCase):
         self.assertEqual(detail["battery_current_a"], 10.0)
         self.assertEqual(set(detail["targets"]), {"classic", "epever"})
 
+    def test_offline_classic_allows_epever_to_receive_whole_budget(self) -> None:
+        snapshot = make_snapshot(
+            battery=_battery_with_limits(ccl_a=40.0, charge_enable=True, current_a=0.0),
+            classic=None,
+            epever=make_epever_telemetry(
+                battery_current_a=4.0,
+                charging_status="Boost",
+            ),
+        )
+        recorder = _FakeRecorder()
+
+        ChargeAllocationLogger(ChargeCurrentAllocator()).record(snapshot, recorder)
+
+        detail = recorder.events[0].detail or {}
+        self.assertEqual(detail["reason"], "BMS CCL fraction")
+        self.assertEqual(detail["load_allowance_a"], 4.0)
+        self.assertEqual(detail["budget_a"], 24.0)
+        self.assertEqual(set(detail["targets"]), {"epever"})
+        self.assertEqual(detail["targets"]["epever"]["target_a"], 24.0)
+
     def test_no_logger_is_a_noop(self) -> None:
         recorder = _FakeRecorder()
         logger = ChargeAllocationLogger(ChargeCurrentAllocator())

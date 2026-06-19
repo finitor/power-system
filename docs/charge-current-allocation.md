@@ -27,8 +27,10 @@ change + a heartbeat), and — when live — writes the per-controller limits.
 only distributes that allowance across controllers. The one piece of state (the
 full-charge latch) lives in `ChargeCeiling`. The cycle resolves in this order:
 
-1. **Missing data → no action.** If BMS CCL or pack current is unreadable,
-   return no targets and write nothing (fail safe; never guess).
+1. **Missing BMS data → no action.** If BMS CCL or pack current is unreadable,
+   return no targets and write nothing (fail safe; never guess). Missing
+   charge-controller telemetry only removes that controller from the eligible
+   set.
 2. **Resolved allowance.** `ChargeCeiling.evaluate()` returns one of three
    states:
    - `None`: unconstrained, release controller limits to max.
@@ -87,14 +89,19 @@ Use one coherent supervisor snapshot per decision:
 - EPEver actual output current, present charge-current limit, stage/state.
 - Estimated household load current.
 
-The existing load estimator already uses the right bus balance:
+The existing load estimator already uses the right bus balance, summing whatever
+charge-controller telemetry is present:
 
 ```text
-load current = Classic output + EPEver output - BMS net battery current
+load current = known charge-controller output - BMS net battery current
 ```
 
-If load is unavailable, the allocator should fall back conservatively and
-prefer undercharging to exceeding CCL.
+If one controller is offline and apparently disconnected from the bus, the
+remaining controller can still receive the full budget plus the observed load
+allowance. If a silent controller is secretly still producing, its hidden output
+shows up as higher BMS net charge current; the feedback clamp then reduces the
+next budget. If load is unavailable, the allocator falls back conservatively and
+prefers undercharging to exceeding CCL.
 
 ### Availability and nighttime release
 
@@ -175,7 +182,8 @@ unused by a capped controller is redistributed to the rest. This is intentionall
 simple and robust while the system is still being characterized.
 
 - Online, enabled, and *able-to-charge* controllers are eligible (see below).
-- Unavailable controllers get no target.
+- Unavailable controllers get no target; the remaining eligible controller(s)
+  receive the whole budget.
 
 ### Split signal
 

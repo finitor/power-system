@@ -72,6 +72,17 @@ class LoadEstimateTest(unittest.TestCase):
         )
         self.assertAlmostEqual(estimate_load_current_a(snapshot), 4.71)
 
+    def test_estimates_load_current_when_classic_telemetry_is_offline(self) -> None:
+        # A silent/disconnected Classic should not make the whole bus balance
+        # unavailable when the EPEver and BMS still show enough to solve it.
+        snapshot = make_snapshot(
+            classic=None,
+            epever=make_epever_telemetry(battery_current_a=4.71),
+            battery=decode_pylon_snapshot([CanFrame(0x356, bytes.fromhex("0C15000000000000"))]),
+        )
+
+        self.assertAlmostEqual(estimate_load_current_a(snapshot), 4.71)
+
     def test_load_current_unavailable_without_battery_measurements(self) -> None:
         self.assertIsNone(estimate_load_current_a(make_snapshot()))
 
