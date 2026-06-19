@@ -274,9 +274,9 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
 def _charge_settings_line(settings: ClassicChargeSettings) -> str:
     return _row(
         "Charge Settings",
-        f"Limit {settings.battery_current_limit_a:.1f}A  "
-        f"Absorb {settings.absorb_voltage_v:.1f}V t={settings.absorb_time_s / 60:g}m  "
-        f"Float {settings.float_voltage_v:.1f}V  "
+        f"Limit {settings.battery_current_limit_a:.1f}A "
+        f"Absorb {settings.absorb_voltage_v:.1f}V {settings.absorb_time_s / 60:g}m "
+        f"Float {settings.float_voltage_v:.1f}V "
         f"Max TCV {settings.max_temp_comp_voltage_v:.1f}V",
     )
 
@@ -284,8 +284,8 @@ def _charge_settings_line(settings: ClassicChargeSettings) -> str:
 def _epever_charge_settings_line(settings: EpeverChargeSettings) -> str:
     return _row(
         "Charge Settings",
-        f"Limit {_current_text(settings.max_charging_current_a)}  "
-        f"Absorb {settings.boost_voltage_v:.1f}V t={_minutes_text(settings.boost_time_minutes)}  "
+        f"Limit {_current_text(settings.max_charging_current_a)} "
+        f"Absorb {settings.boost_voltage_v:.1f}V {_minutes_text(settings.boost_time_minutes)} "
         f"Float {settings.float_voltage_v:.1f}V",
     )
 
@@ -345,7 +345,7 @@ def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
     if inv.shore_amps is not None:
         settings_parts.append(f"Shore {inv.shore_amps}A")
     if settings_parts:
-        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
+        lines.append(_row("Charge Settings", " ".join(settings_parts)))
 
     return lines
 

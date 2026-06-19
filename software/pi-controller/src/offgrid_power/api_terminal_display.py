@@ -366,16 +366,16 @@ def _solar_lines(solar: list[dict]) -> list[str]:
         if settings is not None:
             if "current_limit_a" in settings:
                 value = (
-                    f"Limit {_fmt(settings.get('current_limit_a'), 1)}A  "
-                    f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
-                    f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
+                    f"Limit {_fmt(settings.get('current_limit_a'), 1)}A "
+                    f"Absorb {_fmt(settings.get('absorb_voltage_v'), 1)}V {_minutes_text(settings.get('absorb_time_minutes'))} "
+                    f"Float {_fmt(settings.get('float_voltage_v'), 1)}V "
                     f"Max TCV {_fmt(settings.get('max_temp_comp_voltage_v'), 1)}V"
                 )
             else:
                 value = (
-                    f"Limit {_measure(settings.get('max_charging_current_a'), 'A', 1) or '--A'}  "
-                    f"Absorb {_fmt(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 1)}V t={_minutes_text(settings.get('absorb_time_minutes'))}  "
-                    f"Float {_fmt(settings.get('float_voltage_v'), 1)}V  "
+                    f"Limit {_measure(settings.get('max_charging_current_a'), 'A', 1) or '--A'} "
+                    f"Absorb {_fmt(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 1)}V {_minutes_text(settings.get('absorb_time_minutes'))} "
+                    f"Float {_fmt(settings.get('float_voltage_v'), 1)}V "
                     f"Recovery {_fmt(_first_present(settings, 'bulk_recovery_voltage_v', 'boost_reconnect_voltage_v'), 1)}V"
                 )
             lines.append(_row("Charge Settings", value))
@@ -439,7 +439,7 @@ def _inverter_charger_lines(inverter: dict | None) -> list[str]:
     if settings.get("shore_amps") is not None:
         settings_parts.append(f"Shore {_fmt(settings.get('shore_amps'), 0)}A")
     if settings_parts:
-        lines.append(_row("Charge Settings", "  ".join(settings_parts)))
+        lines.append(_row("Charge Settings", " ".join(settings_parts)))
 
     return lines
 

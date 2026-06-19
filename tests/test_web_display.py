@@ -302,7 +302,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("53.1V  0.0A  0W", html)
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
         self.assertIn("Stage: Resting (No charging)", html)
-        self.assertIn("Limit 80.0A  Absorb 54.7V t=120m  Float 53.6V", html)
+        self.assertIn("Limit 80.0A Absorb 54.7V 120m Float 53.6V", html)
         self.assertNotIn("EQ 54.7V", html)
         # cc group mirrors the Classic: daily generation as "Production Today",
         # and no static "Rated" line.
