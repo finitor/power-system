@@ -149,7 +149,13 @@ def render_kindle_snapshot(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power</title>",
         "<style>",
-        "body{font-family:serif;color:#000;background:#fff;margin:4px;padding-bottom:36px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        "html,body{height:100%;}",
+        "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        ".kindle-page{display:table;width:100%;height:100%;min-height:640px;}",
+        ".kindle-content{display:table-row;}",
+        ".kindle-content-inner{display:table-cell;vertical-align:top;}",
+        ".kindle-footer{display:table-row;height:28px;}",
+        ".kindle-footer-cell{display:table-cell;vertical-align:bottom;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -163,8 +169,8 @@ def render_kindle_snapshot(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;position:fixed;left:4px;right:4px;bottom:2px;z-index:20;}",
-        ".page-turn{position:fixed;top:58px;bottom:40px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;}",
+        ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -174,6 +180,7 @@ def render_kindle_snapshot(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/weather", "left", "Weather"),
         _page_turn_link("/kindle/details", "right", "More Power Info"),
+        '<div class="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -182,7 +189,9 @@ def render_kindle_snapshot(
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
     lines.extend(_status_summary_section(snapshot))
+    lines.extend(["</div></div>"])
     lines.extend(_kindle_nav_button("/kindle/details", "More Power Info..."))
+    lines.extend(["</div>"])
 
     lines.extend(
         [
@@ -208,7 +217,13 @@ def render_kindle_details(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power Details</title>",
         "<style>",
-        "body{font-family:serif;color:#000;background:#fff;margin:4px;padding-bottom:36px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        "html,body{height:100%;}",
+        "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        ".kindle-page{display:table;width:100%;height:100%;min-height:640px;}",
+        ".kindle-content{display:table-row;}",
+        ".kindle-content-inner{display:table-cell;vertical-align:top;}",
+        ".kindle-footer{display:table-row;height:28px;}",
+        ".kindle-footer-cell{display:table-cell;vertical-align:bottom;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -221,8 +236,8 @@ def render_kindle_details(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;position:fixed;left:4px;right:4px;bottom:2px;z-index:20;}",
-        ".page-turn{position:fixed;top:58px;bottom:40px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;}",
+        ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -232,6 +247,7 @@ def render_kindle_details(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle", "left", "Back to Power"),
         _page_turn_link("/weather", "right", "Weather"),
+        '<div class="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -240,7 +256,9 @@ def render_kindle_details(
     lines.extend(_charge_controller_settings_section(snapshot))
     lines.extend(_temperature_section(snapshot))
     lines.extend(_status_detail_sections(snapshot))
+    lines.extend(["</div></div>"])
     lines.extend(_kindle_nav_button("/kindle", "Back to Power"))
+    lines.extend(["</div>"])
     lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
 
@@ -1484,7 +1502,11 @@ def run_display_server(
 
 
 def _kindle_nav_button(href: str, label: str) -> list[str]:
-    return [f'<a class="bottom-link" href="{escape(href)}">{escape(label)}</a>']
+    return [
+        '<div class="kindle-footer"><div class="kindle-footer-cell">',
+        f'<a class="bottom-link" href="{escape(href)}">{escape(label)}</a>',
+        "</div></div>",
+    ]
 
 
 def _page_turn_link(href: str, side: str, label: str) -> str:
