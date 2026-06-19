@@ -162,6 +162,7 @@ def render_kindle_snapshot(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
+        ".bottom-link{font-size:19px;line-height:2.2;color:#000;text-decoration:none;border:1px solid #000;display:block;text-align:center;margin-top:8px;}",
         ".small{font-size:13px;}",
         "</style>",
         "</head>",
@@ -173,22 +174,8 @@ def render_kindle_snapshot(
     ]
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
-    lines.extend(_charge_controller_sections(snapshot, allocation=allocation))
-    lines.extend(_inverter_charger_section(snapshot))
-    lines.extend(_temperature_section(snapshot))
-
-    if snapshot.errors:
-        lines.append("<h2>Errors</h2>")
-        lines.append("<ul>")
-        for error in snapshot.errors:
-            lines.append(f"<li>{escape(error)}</li>")
-        lines.append("</ul>")
-    if snapshot.status_conditions:
-        lines.append("<h2>Status Conditions</h2>")
-        lines.append("<ul>")
-        for condition in snapshot.status_conditions:
-            lines.append(f"<li>{escape(condition)}</li>")
-        lines.append("</ul>")
+    lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
+    lines.extend(_kindle_nav_button("/kindle/details", "More Power Info"))
 
     lines.extend(
         [
@@ -196,6 +183,53 @@ def render_kindle_snapshot(
             "</html>",
         ]
     )
+    return "\n".join(lines)
+
+
+def render_kindle_details(
+    snapshot: SupervisorSnapshot,
+    refresh_seconds: int = KINDLE_REFRESH_SECONDS,
+    allocation: dict | None = None,
+) -> str:
+    status = snapshot.status_text
+    updated = format_kindle_time(snapshot.captured_at)
+    lines = [
+        "<!doctype html>",
+        "<html>",
+        "<head>",
+        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        _kindle_refresh_script(refresh_seconds),
+        "<title>Off-Grid Power Details</title>",
+        "<style>",
+        "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+        "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
+        "ul{margin:0 0 4px 18px;padding:0;}",
+        "li{line-height:1.15;}",
+        "table{border-collapse:collapse;width:100%;}",
+        "td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
+        "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
+        ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
+        ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",
+        ".summary-table .soc-cell{font-size:30px;line-height:1;text-align:left;vertical-align:middle;width:32%;}",
+        ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
+        ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
+        ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
+        ".bottom-link{font-size:19px;line-height:2.2;color:#000;text-decoration:none;border:1px solid #000;display:block;text-align:center;margin-top:8px;}",
+        ".small{font-size:13px;}",
+        "</style>",
+        "</head>",
+        "<body>",
+        f"<!-- {KINDLE_LIVE_SENTINEL} -->",
+        '<table class="summary-table">',
+        f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle">Back</a></td></tr>',
+        "</table>",
+    ]
+    lines.extend(_inverter_charger_section(snapshot))
+    lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_live=False, include_settings=True))
+    lines.extend(_temperature_section(snapshot))
+    lines.extend(_status_detail_sections(snapshot))
+    lines.extend(_kindle_nav_button("/kindle", "Back to Power"))
+    lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
 
 
@@ -311,7 +345,7 @@ def render_kindle_weather(
 
 # Views whose ?refresh=1 queues an out-of-cycle poll of the local power
 # sources. Health is excluded so it stays a cheap liveness check.
-_SOURCE_REFRESH_PATHS = {"/api/v1/snapshot", "/", "/kindle", "/display"}
+_SOURCE_REFRESH_PATHS = {"/api/v1/snapshot", "/", "/kindle", "/kindle/details", "/display"}
 # Weather views whose ?refresh=1 queues a background re-fetch of the forecast.
 _WEATHER_REFRESH_PATHS = {"/api/v1/weather", "/weather"}
 
@@ -351,7 +385,7 @@ def route_display_request(
         return route_api_request(snapshot, parsed_path, load_summary=load_summary, allocation=allocation)
     if parsed_path == "/api/v1/weather":
         return _json_response(HTTPStatus.OK, weather_api_payload(weather_report))
-    if parsed_path not in {"/", "/kindle", "/display", "/weather", "/healthz"}:
+    if parsed_path not in {"/", "/kindle", "/kindle/details", "/display", "/weather", "/healthz"}:
         return DisplayResponse(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"not found\n")
     if parsed_path == "/healthz":
         # Liveness probe: reaching here means the supervisor produced a snapshot,
@@ -363,6 +397,9 @@ def route_display_request(
         return DisplayResponse(HTTPStatus.OK, "text/plain; charset=utf-8", b"ok\n")
     if parsed_path == "/weather":
         html = render_kindle_weather(weather_api_payload(weather_report))
+        return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
+    if parsed_path == "/kindle/details":
+        html = render_kindle_details(snapshot, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
 
     html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
@@ -1343,7 +1380,7 @@ def run_display_server(
             allocation = (
                 allocation_provider()
                 if allocation_provider is not None
-                and allocation_path in {"/", "/kindle", "/display", "/api/v1/snapshot"}
+                and allocation_path in {"/", "/kindle", "/kindle/details", "/display", "/api/v1/snapshot"}
                 else None
             )
             response = route_display_request(
@@ -1400,7 +1437,36 @@ def run_display_server(
         server.serve_forever()
 
 
-def _charge_controller_sections(snapshot: SupervisorSnapshot, allocation: dict | None = None) -> list[str]:
+def _kindle_nav_button(href: str, label: str) -> list[str]:
+    return [f'<a class="bottom-link" href="{escape(href)}">{escape(label)}</a>']
+
+
+def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
+    lines: list[str] = []
+    if snapshot.errors:
+        lines.append("<h2>Errors</h2>")
+        lines.append("<ul>")
+        for error in snapshot.errors:
+            lines.append(f"<li>{escape(error)}</li>")
+        lines.append("</ul>")
+    if snapshot.status_conditions:
+        lines.append("<h2>Status Conditions</h2>")
+        lines.append("<ul>")
+        for condition in snapshot.status_conditions:
+            lines.append(f"<li>{escape(condition)}</li>")
+        lines.append("</ul>")
+    if not snapshot.errors and not snapshot.status_conditions:
+        lines.extend(["<h2>Status Conditions</h2>", "<table>", _row("State", "none"), "</table>"])
+    return lines
+
+
+def _charge_controller_sections(
+    snapshot: SupervisorSnapshot,
+    allocation: dict | None = None,
+    *,
+    include_live: bool = True,
+    include_settings: bool = True,
+) -> list[str]:
     # Iterate the normalized controller collection: the renderer carries no
     # knowledge of which vendors or how many controllers exist. A new model
     # appears as its own group automatically once the API reports it.
@@ -1414,6 +1480,8 @@ def _charge_controller_sections(snapshot: SupervisorSnapshot, allocation: dict |
                 index,
                 controller,
                 allocation_target=_allocation_target(controller, allocation),
+                include_live=include_live,
+                include_settings=include_settings,
             )
         )
     return lines
@@ -1429,57 +1497,65 @@ def _allocation_target(controller: dict, allocation: dict | None) -> dict | None
     return None
 
 
-def _controller_section_lines(index: int, controller: dict, allocation_target: dict | None = None) -> list[str]:
+def _controller_section_lines(
+    index: int,
+    controller: dict,
+    allocation_target: dict | None = None,
+    *,
+    include_live: bool = True,
+    include_settings: bool = True,
+) -> list[str]:
     device = controller.get("device") or {}
     name = " ".join(part for part in [device.get("vendor"), device.get("model")] if part)
     title = f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
     lines = [f"<h2>{escape(title)}</h2>", "<table>"]
 
-    for condition in controller.get("conditions") or []:
-        lines.append(_row("Alert", condition))
+    if include_live:
+        for condition in controller.get("conditions") or []:
+            lines.append(_row("Alert", condition))
 
-    pv_parts = [_meas(controller.get("pv_voltage_v"), "V", 1), _meas(controller.get("pv_current_a"), "A", 1)]
-    if controller.get("last_voc_v") is not None:
-        pv_parts.append(f"Voc {_meas(controller.get('last_voc_v'), 'V', 1)}")
-    elif controller.get("pv_power_w") is not None:
-        pv_parts.append(_meas(controller.get("pv_power_w"), "W", 0))
-    lines.append(_row("PV", "  ".join(pv_parts)))
+        pv_parts = [_meas(controller.get("pv_voltage_v"), "V", 1), _meas(controller.get("pv_current_a"), "A", 1)]
+        if controller.get("last_voc_v") is not None:
+            pv_parts.append(f"Voc {_meas(controller.get('last_voc_v'), 'V', 1)}")
+        elif controller.get("pv_power_w") is not None:
+            pv_parts.append(_meas(controller.get("pv_power_w"), "W", 0))
+        lines.append(_row("PV", "  ".join(pv_parts)))
 
-    lines.append(
-        _row(
-            "Output",
-            f"{_meas(controller.get('battery_voltage_v'), 'V', 1)}  "
-            f"{_meas(controller.get('battery_current_a'), 'A', 1)}  "
-            f"{_meas(controller.get('battery_power_w'), 'W', 0)}",
-        )
-    )
-
-    stage = NormalizedStage.from_dict(controller.get("charge_stage"))
-    lines.append(_row("Charge Status", stage.render(controller.get("state"))))
-
-    allocation_text = _allocation_target_text(allocation_target)
-    if allocation_text is not None:
-        lines.append(_row("Allocation", allocation_text))
-
-    if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
-        parts = []
-        if controller.get("daily_energy_kwh") is not None:
-            parts.append(_energy_text(controller.get("daily_energy_kwh")))
-        if controller.get("daily_amp_hours_ah") is not None:
-            parts.append(_meas(controller.get("daily_amp_hours_ah"), "Ah", 0))
-        lines.append(_row("Production Today", "  ".join(parts)))
-
-    if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
         lines.append(
             _row(
-                "Rated",
-                f"{_meas(controller.get('rated_pv_voltage_v'), 'V', 0)} PV  "
-                f"{_meas(controller.get('rated_charging_current_a'), 'A', 0)} charge",
+                "Output",
+                f"{_meas(controller.get('battery_voltage_v'), 'V', 1)}  "
+                f"{_meas(controller.get('battery_current_a'), 'A', 1)}  "
+                f"{_meas(controller.get('battery_power_w'), 'W', 0)}",
             )
         )
 
+        stage = NormalizedStage.from_dict(controller.get("charge_stage"))
+        lines.append(_row("Charge Status", stage.render(controller.get("state"))))
+
+        allocation_text = _allocation_target_text(allocation_target)
+        if allocation_text is not None:
+            lines.append(_row("Allocation", allocation_text))
+
+        if controller.get("daily_energy_kwh") is not None or controller.get("daily_amp_hours_ah") is not None:
+            parts = []
+            if controller.get("daily_energy_kwh") is not None:
+                parts.append(_energy_text(controller.get("daily_energy_kwh")))
+            if controller.get("daily_amp_hours_ah") is not None:
+                parts.append(_meas(controller.get("daily_amp_hours_ah"), "Ah", 0))
+            lines.append(_row("Production Today", "  ".join(parts)))
+
+        if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
+            lines.append(
+                _row(
+                    "Rated",
+                    f"{_meas(controller.get('rated_pv_voltage_v'), 'V', 0)} PV  "
+                    f"{_meas(controller.get('rated_charging_current_a'), 'A', 0)} charge",
+                )
+            )
+
     settings = controller.get("settings")
-    if settings is not None:
+    if include_settings and settings is not None:
         if "current_limit_a" in settings:
             value = (
                 f"Limit {_meas(settings.get('current_limit_a'), 'A', 1)} "

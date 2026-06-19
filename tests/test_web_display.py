@@ -19,6 +19,7 @@ from offgrid_power.supervisor import STATUS_ERROR, Supervisor
 from offgrid_power.web_display import (
     SnapshotCache,
     is_kindle_user_agent,
+    render_kindle_details,
     render_kindle_snapshot,
     render_kindle_weather,
     render_snapshot_unavailable,
@@ -180,15 +181,23 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("SOC 97%", html)
         # This snapshot has no charge controllers, so the collection renders a
         # single empty group rather than hardcoded per-vendor sections.
-        for section in ("Load", "Battery Bank", "Charge Controllers", "Inverter/Charger", "Temperatures"):
+        for section in ("Load", "Battery Bank", "Charge Controllers"):
             self.assertIn(f"<h2>{section}</h2>", html)
+        self.assertNotIn("<h2>Inverter/Charger</h2>", html)
+        self.assertNotIn("<h2>Temperatures</h2>", html)
+        self.assertIn('href="/kindle/details">More Power Info</a>', html)
         # Decoded values flow through to the page.
         self.assertIn("5.1A  272W", html)
         self.assertIn("18.7h", html)
         self.assertIn("54.57V", html)
-        # Inverter/Charger telemetry renders.
-        self.assertIn("60.0Hz", html)
-        self.assertIn("Inverting", html)
+        # Details page carries lower-priority telemetry that otherwise pushes
+        # the Kindle into an awkward scroll state.
+        details_html = render_kindle_details(snapshot)
+        for section in ("Inverter/Charger", "Charge Controllers", "Temperatures"):
+            self.assertIn(f"<h2>{section}</h2>", details_html)
+        self.assertIn("60.0Hz", details_html)
+        self.assertIn("Inverting", details_html)
+        self.assertIn('href="/kindle">Back to Power</a>', details_html)
 
     def test_kindle_snapshot_hides_untrusted_cc1_temperature_rows(self) -> None:
         snapshot = make_snapshot(
@@ -196,7 +205,7 @@ class WebDisplayTest(unittest.TestCase):
             epever=make_epever_telemetry(battery_temp_c=0.0, device_temp_c=0.0),
         )
 
-        html = render_kindle_snapshot(snapshot)
+        html = render_kindle_details(snapshot)
 
         self.assertIn("Battery terminal", html)
         self.assertIn("CC0 FET", html)
@@ -211,7 +220,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("SOC --", empty_html)
         self.assertNotIn("SOC SOC", empty_html)
 
-        error_html = render_kindle_snapshot(make_snapshot(errors=["Battery CAN read failed: timeout"]))
+        error_html = render_kindle_details(make_snapshot(errors=["Battery CAN read failed: timeout"]))
         self.assertIn("<h2>Errors</h2>", error_html)
         self.assertIn("Battery CAN read failed: timeout", error_html)
 
@@ -308,12 +317,16 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("53.1V  0.0A  0W", html)
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
         self.assertIn("Stage: Resting (No charging)", html)
-        self.assertIn("Limit 80.0A Absorb 54.7V/120m Float 53.6V", html)
+        self.assertNotIn("Charge Settings", html)
         self.assertNotIn("EQ 54.7V", html)
         # cc group mirrors the Classic: daily generation as "Production Today",
         # and no static "Rated" line.
         self.assertIn("Production Today", html)
         self.assertNotIn("Rated", html)
+
+        details_html = render_kindle_details(snapshot)
+        self.assertIn("Limit 80.0A Absorb 54.7V/120m Float 53.6V", details_html)
+        self.assertNotIn("EQ 54.7V", details_html)
 
     def test_kindle_charge_controllers_render_allocation_rows(self) -> None:
         snapshot = make_snapshot(
@@ -382,7 +395,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("high cell voltage, charge over current", html)
 
     def test_escapes_error_text(self) -> None:
-        html = render_kindle_snapshot(make_snapshot(errors=["bad <device>"]))
+        html = render_kindle_details(make_snapshot(errors=["bad <device>"]))
 
         self.assertIn("bad &lt;device&gt;", html)
         self.assertNotIn("bad <device>", html)
@@ -392,7 +405,7 @@ class WebDisplayTest(unittest.TestCase):
             status_conditions=["Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V > 55.8V"],
         )
 
-        html = render_kindle_snapshot(snapshot)
+        html = render_kindle_details(snapshot)
 
         self.assertIn("Status: WARNING", html)
         self.assertIn("<h2>Status Conditions</h2>", html)
@@ -406,6 +419,17 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 200)
         self.assertEqual(response.content_type, "text/html; charset=utf-8")
         self.assertIn(b"Off-Grid Power", response.body)
+
+    def test_routes_kindle_details_path(self) -> None:
+        snapshot = make_snapshot(magnum=make_magnum_snapshot())
+
+        response = route_display_request(snapshot, "/kindle/details", "Kindle/3.0")
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(response.content_type, "text/html; charset=utf-8")
+        self.assertIn(b"Off-Grid Power Details", response.body)
+        self.assertIn(b"Inverter/Charger", response.body)
+        self.assertIn(b"Back to Power", response.body)
 
     def test_routes_api_snapshot_as_json(self) -> None:
         snapshot = make_snapshot(
@@ -506,6 +530,7 @@ class WebDisplayTest(unittest.TestCase):
     def test_wants_source_and_weather_refresh_paths(self) -> None:
         self.assertTrue(wants_source_refresh("/api/v1/snapshot?refresh=1"))
         self.assertTrue(wants_source_refresh("/kindle?refresh=1"))
+        self.assertTrue(wants_source_refresh("/kindle/details?refresh=1"))
         self.assertFalse(wants_source_refresh("/api/v1/snapshot"))
         self.assertFalse(wants_source_refresh("/api/v1/weather?refresh=1"))
         self.assertTrue(wants_weather_refresh("/api/v1/weather?refresh=1"))
