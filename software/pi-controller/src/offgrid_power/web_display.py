@@ -395,10 +395,13 @@ def render_browser_snapshot(
             "<title>Off-Grid Power</title>",
             "<style>",
             "body{font-family:monospace;background:#111;color:#eee;margin:12px;}",
+            "a{color:#9cf;}",
+            ".nav{font:16px/1.25 monospace;margin:0 0 12px 0;}",
             "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
             "</style>",
             "</head>",
             "<body>",
+            '<div class="nav"><a href="/weather">Weather</a></div>',
             f"<pre>{escape(rendered)}</pre>",
             "</body>",
             "</html>",
@@ -461,12 +464,13 @@ def route_display_request(
     if parsed_path == "/weather":
         html = render_kindle_weather(weather_api_payload(weather_report))
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
-    if parsed_path == "/kindle/details":
+    is_kindle = is_kindle_user_agent(user_agent)
+    if parsed_path == "/kindle/details" and is_kindle:
         html = render_kindle_details(snapshot, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
 
     content_type = "text/html; charset=utf-8"
-    if parsed_path == "/kindle" or is_kindle_user_agent(user_agent):
+    if is_kindle:
         html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     html = render_browser_snapshot(snapshot, load_summary=load_summary, allocation=allocation)

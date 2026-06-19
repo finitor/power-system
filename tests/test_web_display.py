@@ -465,7 +465,28 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"Charge Controller 0 (Classic)", response.body)
         self.assertIn(b"Inverter/Charger", response.body)
         self.assertIn(b"Temperatures", response.body)
+        self.assertIn(b'href="/weather">Weather</a>', response.body)
         self.assertNotIn(b"More Power Info", response.body)
+
+    def test_routes_regular_browser_from_kindle_paths_to_terminal_style_snapshot(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(),
+            epever=make_epever_telemetry(),
+            magnum=make_magnum_snapshot(),
+        )
+
+        for path in ("/kindle", "/kindle/details"):
+            with self.subTest(path=path):
+                response = route_display_request(snapshot, path, "Version/18.0 Mobile/15E148 Safari/604.1")
+
+                self.assertEqual(response.status.value, 200)
+                self.assertEqual(response.content_type, "text/html; charset=utf-8")
+                self.assertIn(b"<pre>", response.body)
+                self.assertIn(b"Charge Controller 0 (Classic)", response.body)
+                self.assertIn(b"Inverter/Charger", response.body)
+                self.assertIn(b'href="/weather">Weather</a>', response.body)
+                self.assertNotIn(b"More Power Info", response.body)
+                self.assertNotIn(b"Back to Power", response.body)
 
     def test_routes_kindle_details_path(self) -> None:
         snapshot = make_snapshot(magnum=make_magnum_snapshot())
