@@ -225,7 +225,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Limit                 not limiting (BMS CCL 200A)", rendered)
         self.assertIn("Budget                200A  split by pv_power", rendered)
         self.assertNotIn("battery -3A", rendered)
-        self.assertIn("Classic               100.0A max", rendered)
+        self.assertIn("Classic               100.0A released", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)
 
     def test_allocation_section_explains_feedback_clamp(self) -> None:

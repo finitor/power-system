@@ -531,10 +531,8 @@ def _allocation_target_text(target: dict, *, global_reason: str) -> str:
     if target_a is None:
         return _with_local_reason("--", reason, global_reason)
     value = f"{_fmt(target_a, 1)}A"
-    if reason in {"charger inactive", "charger unavailable"}:
+    if reason in {"unconstrained", "charger inactive", "charger unavailable"}:
         return f"{value} released"
-    if reason == "unconstrained":
-        return f"{value} max"
     if reason in {"charger offline", "missing BMS CCL", "missing battery current"}:
         return _with_local_reason(value, reason, global_reason)
     return f"{value} limited"
