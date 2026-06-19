@@ -19,6 +19,7 @@ from offgrid_power.supervisor import STATUS_ERROR, Supervisor
 from offgrid_power.web_display import (
     SnapshotCache,
     is_kindle_user_agent,
+    render_browser_weather,
     render_kindle_details,
     render_kindle_snapshot,
     render_kindle_weather,
@@ -291,6 +292,33 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("network unavailable", html)
         self.assertIn("XMLHttpRequest", html)
 
+    def test_renders_browser_weather_dark_table(self) -> None:
+        report = WeatherReport(
+            label="Cabin",
+            fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
+            data={
+                "current": {
+                    "temperature_2m": 12.4,
+                    "apparent_temperature": 11.8,
+                    "relative_humidity_2m": 70,
+                    "weather_code": 61,
+                    "wind_speed_10m": 18,
+                    "wind_gusts_10m": 32,
+                    "wind_direction_10m": 250,
+                }
+            },
+        )
+
+        html = render_browser_weather(weather_api_payload(report))
+
+        self.assertIn("background:#111", html)
+        self.assertIn("font-family:monospace", html)
+        self.assertIn('<a class="nav-button" href="/">Power</a>', html)
+        self.assertIn("<tr><th>Metric</th><th>Value</th></tr>", html)
+        self.assertIn("Cabin: rain", html)
+        self.assertIn("18km/h  32km/h gust  W", html)
+        self.assertNotIn("XMLHttpRequest", html)
+
     def test_hides_weather_details_after_stale_cutoff(self) -> None:
         fetched_at = datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc)
         report = WeatherReport(
@@ -487,6 +515,38 @@ class WebDisplayTest(unittest.TestCase):
                 self.assertIn(b'href="/weather">Weather</a>', response.body)
                 self.assertNotIn(b"More Power Info", response.body)
                 self.assertNotIn(b"Back to Power", response.body)
+
+    def test_routes_regular_browser_weather_to_dark_table_page(self) -> None:
+        snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
+        report = WeatherReport(
+            label="Cabin",
+            fetched_at=datetime(2026, 6, 13, 12, 30, tzinfo=timezone.utc),
+            data={"current": {"temperature_2m": 11.0, "weather_code": 3}},
+        )
+
+        response = route_display_request(snapshot, "/weather", "Mozilla/5.0", weather_report=report)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(response.content_type, "text/html; charset=utf-8")
+        self.assertIn(b"background:#111", response.body)
+        self.assertIn(b'<a class="nav-button" href="/">Power</a>', response.body)
+        self.assertIn(b"<tr><th>Metric</th><th>Value</th></tr>", response.body)
+        self.assertNotIn(b"page-turn", response.body)
+
+    def test_routes_kindle_weather_to_kindle_page(self) -> None:
+        snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
+        report = WeatherReport(
+            label="Cabin",
+            fetched_at=datetime(2026, 6, 13, 12, 30, tzinfo=timezone.utc),
+            data={"current": {"temperature_2m": 11.0, "weather_code": 3}},
+        )
+
+        response = route_display_request(snapshot, "/weather", "Kindle/3.0", weather_report=report)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertIn(b"offgrid-live", response.body)
+        self.assertIn(b'page-turn page-turn-left', response.body)
+        self.assertIn(b'href="/kindle">Power</a>', response.body)
 
     def test_routes_kindle_details_path(self) -> None:
         snapshot = make_snapshot(magnum=make_magnum_snapshot())

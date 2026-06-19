@@ -394,18 +394,107 @@ def render_browser_snapshot(
             '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
             "<title>Off-Grid Power</title>",
             "<style>",
-            "body{font-family:monospace;background:#111;color:#eee;margin:12px;}",
-            "a{color:#9cf;}",
-            ".nav{font:16px/1.25 monospace;margin:0 0 12px 0;}",
+            _browser_display_css(),
             "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
             "</style>",
             "</head>",
             "<body>",
-            '<div class="nav"><a href="/weather">Weather</a></div>',
+            '<div class="nav"><a class="nav-button" href="/weather">Weather</a></div>',
             f"<pre>{escape(rendered)}</pre>",
             "</body>",
             "</html>",
         ]
+    )
+
+
+def render_browser_weather(payload: dict | None) -> str:
+    payload = payload or {}
+    current = payload.get("current")
+    observed_at = _parse_payload_time(payload.get("observed_at"))
+    stale = bool(payload.get("stale"))
+    error = payload.get("error")
+    label = payload.get("label") or "Weather"
+    updated = format_time(observed_at) if observed_at is not None else "never"
+    status_text = "stale forecast" if stale and current else "forecast" if current else "Weather unavailable"
+    lines = [
+        "<!doctype html>",
+        "<html>",
+        "<head>",
+        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        "<title>Off-Grid Weather</title>",
+        "<style>",
+        _browser_display_css(),
+        "h1{font-size:24px;line-height:1.1;margin:0;}",
+        "h2{font-size:18px;line-height:1.25;margin:18px 0 4px 0;border-bottom:1px solid #666;}",
+        "table{border-collapse:collapse;width:100%;max-width:960px;}",
+        "th,td{font:16px/1.3 monospace;padding:3px 8px 3px 0;border-bottom:1px solid #333;text-align:left;vertical-align:top;}",
+        "th{color:#fff;border-bottom:1px solid #777;font-weight:bold;}",
+        "td:first-child{font-weight:bold;color:#ddd;width:32%;}",
+        ".summary-table{margin:0 0 12px 0;border-bottom:1px solid #777;}",
+        ".summary-table td{border-bottom:0;padding:0 12px 6px 0;font-weight:bold;vertical-align:middle;}",
+        ".summary-table .weather-cell{font-size:28px;line-height:1;width:30%;color:#fff;}",
+        ".summary-table .meta-cell{width:50%;}",
+        ".summary-table .button-cell{text-align:right;width:20%;padding-right:0;}",
+        ".small{font-size:13px;color:#bbb;}",
+        "</style>",
+        "</head>",
+        "<body>",
+    ]
+    if not current:
+        lines.extend(
+            [
+                '<table class="summary-table">',
+                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">As of: {escape(updated)}<br>{escape(status_text)}</td><td class="button-cell"><a class="nav-button" href="/">Power</a></td></tr>',
+                "</table>",
+                "<h2>Conditions</h2>",
+                "<table>",
+                "<tr><th>Metric</th><th>Value</th></tr>",
+                _weather_row("Status", "Weather unavailable"),
+                "</table>",
+            ]
+        )
+        if error:
+            lines.append(f'<p class="small">{escape(error)}</p>')
+    else:
+        temp = _format_number(current.get("temperature_c"), "C", decimals=1)
+        condition = (current.get("condition") or {}).get("text") or "unknown"
+        lines.extend(
+            [
+                '<table class="summary-table">',
+                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>As of: {escape(updated)}</td><td class="button-cell"><a class="nav-button" href="/">Power</a></td></tr>',
+                "</table>",
+                "<h2>Current</h2>",
+                "<table>",
+                "<tr><th>Metric</th><th>Value</th></tr>",
+                _weather_row("Forecast", status_text),
+                _weather_row("Feels Like", _format_number(current.get("apparent_temperature_c"), "C", decimals=1)),
+                _weather_row("Humidity", _format_number(current.get("humidity_pct"), "%", decimals=0)),
+                _weather_row("Cloud", _format_number(current.get("cloud_cover_pct"), "%", decimals=0)),
+                _weather_row("Wind", _wind_text(current.get("wind") or {})),
+                _weather_row("Precip Now", _precip_text(current)),
+                "</table>",
+            ]
+        )
+        lines.extend(_hourly_weather_section(payload.get("hourly") or []))
+        lines.extend(_daily_weather_section(payload.get("daily") or []))
+        lines.extend(_solar_irradiance_section(current.get("irradiance") or {}))
+        lines.extend(_astronomy_weather_section(payload.get("astronomy") or {}))
+        if stale:
+            lines.append('<p class="small">Using last cached weather. WAN fetch failed.</p>')
+        if error:
+            lines.append(f'<p class="small">{escape(error)}</p>')
+    lines.extend(["</body>", "</html>"])
+    return "\n".join(lines)
+
+
+def _browser_display_css() -> str:
+    return (
+        "body{font-family:monospace;background:#111;color:#eee;margin:12px;}"
+        "a{color:#9cf;}"
+        ".nav{font:16px/1.25 monospace;margin:0 0 12px 0;text-align:right;}"
+        ".nav-button{font:16px/1.25 monospace;color:#eee;text-decoration:none;border:1px solid #777;"
+        "background:#222;padding:5px 12px;display:inline-block;}"
+        ".nav-button:hover{background:#333;border-color:#aaa;}"
     )
 
 
@@ -461,10 +550,11 @@ def route_display_request(
         # "cannot produce a snapshot at all" case is handled upstream in the
         # server, which returns 503 before routing reaches here.
         return DisplayResponse(HTTPStatus.OK, "text/plain; charset=utf-8", b"ok\n")
-    if parsed_path == "/weather":
-        html = render_kindle_weather(weather_api_payload(weather_report))
-        return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
     is_kindle = is_kindle_user_agent(user_agent)
+    if parsed_path == "/weather":
+        payload = weather_api_payload(weather_report)
+        html = render_kindle_weather(payload) if is_kindle else render_browser_weather(payload)
+        return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
     if parsed_path == "/kindle/details" and is_kindle:
         html = render_kindle_details(snapshot, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
