@@ -185,7 +185,7 @@ class WebDisplayTest(unittest.TestCase):
             self.assertIn(f"<h2>{section}</h2>", html)
         self.assertNotIn("<h2>Inverter/Charger</h2>", html)
         self.assertNotIn("<h2>Temperatures</h2>", html)
-        self.assertIn('href="/kindle/details">More Power Info</a>', html)
+        self.assertIn('href="/kindle/details">More Power Info...</a>', html)
         # Decoded values flow through to the page.
         self.assertIn("5.1A  272W", html)
         self.assertIn("18.7h", html)
@@ -193,11 +193,13 @@ class WebDisplayTest(unittest.TestCase):
         # Details page carries lower-priority telemetry that otherwise pushes
         # the Kindle into an awkward scroll state.
         details_html = render_kindle_details(snapshot)
-        for section in ("Inverter/Charger", "Charge Controllers", "Temperatures"):
+        for section in ("Inverter/Charger", "Charge Controller Settings", "Temperatures"):
             self.assertIn(f"<h2>{section}</h2>", details_html)
         self.assertIn("60.0Hz", details_html)
         self.assertIn("Inverting", details_html)
         self.assertIn('href="/kindle">Back to Power</a>', details_html)
+        self.assertIn('href="/weather">Weather</a>', details_html)
+        self.assertNotIn('href="/kindle">Back</a>', details_html)
 
     def test_kindle_snapshot_hides_untrusted_cc1_temperature_rows(self) -> None:
         snapshot = make_snapshot(
@@ -325,6 +327,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertNotIn("Rated", html)
 
         details_html = render_kindle_details(snapshot)
+        self.assertIn("<h2>Charge Controller Settings</h2>", details_html)
+        self.assertIn("<td>CC0 (Epever)</td>", details_html)
         self.assertIn("Limit 80.0A Absorb 54.7V/120m Float 53.6V", details_html)
         self.assertNotIn("EQ 54.7V", details_html)
 
@@ -429,6 +433,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.content_type, "text/html; charset=utf-8")
         self.assertIn(b"Off-Grid Power Details", response.body)
         self.assertIn(b"Inverter/Charger", response.body)
+        self.assertIn(b"Weather", response.body)
         self.assertIn(b"Back to Power", response.body)
 
     def test_routes_api_snapshot_as_json(self) -> None:

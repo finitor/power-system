@@ -175,7 +175,7 @@ def render_kindle_snapshot(
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
-    lines.extend(_kindle_nav_button("/kindle/details", "More Power Info"))
+    lines.extend(_kindle_nav_button("/kindle/details", "More Power Info..."))
 
     lines.extend(
         [
@@ -221,11 +221,11 @@ def render_kindle_details(
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         '<table class="summary-table">',
-        f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle">Back</a></td></tr>',
+        f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
     ]
     lines.extend(_inverter_charger_section(snapshot))
-    lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_live=False, include_settings=True))
+    lines.extend(_charge_controller_settings_section(snapshot))
     lines.extend(_temperature_section(snapshot))
     lines.extend(_status_detail_sections(snapshot))
     lines.extend(_kindle_nav_button("/kindle", "Back to Power"))
@@ -1460,6 +1460,30 @@ def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
     return lines
 
 
+def _charge_controller_settings_section(snapshot: SupervisorSnapshot) -> list[str]:
+    controllers = _solar_api_payload(snapshot)
+    lines = ["<h2>Charge Controller Settings</h2>", "<table>"]
+    rendered = 0
+    for index, controller in enumerate(controllers):
+        settings_text = _charge_controller_settings_text(controller.get("settings"))
+        if settings_text is None:
+            continue
+        lines.append(_row(_charge_controller_settings_label(index, controller), settings_text))
+        rendered += 1
+    if rendered == 0:
+        lines.append(_row("State", "No data"))
+    lines.append("</table>")
+    return lines
+
+
+def _charge_controller_settings_label(index: int, controller: dict) -> str:
+    device = controller.get("device") or {}
+    vendor = str(device.get("vendor") or "").strip()
+    if vendor.lower() == "epever":
+        vendor = "Epever"
+    return f"CC{index} ({vendor})" if vendor else f"CC{index}"
+
+
 def _charge_controller_sections(
     snapshot: SupervisorSnapshot,
     allocation: dict | None = None,
@@ -1554,26 +1578,30 @@ def _controller_section_lines(
                 )
             )
 
-    settings = controller.get("settings")
-    if include_settings and settings is not None:
-        if "current_limit_a" in settings:
-            value = (
-                f"Limit {_meas(settings.get('current_limit_a'), 'A', 1)} "
-                f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
-                f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
-                f"Max TCV {_meas(settings.get('max_temp_comp_voltage_v'), 'V', 1)}"
-            )
-        else:
-            value = (
-                f"Limit {_meas(settings.get('max_charging_current_a'), 'A', 1)} "
-                f"Absorb {_meas(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
-                f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
-                f"Recovery {_meas(_first_present(settings, 'bulk_recovery_voltage_v', 'boost_reconnect_voltage_v'), 'V', 1)}"
-            )
-        lines.append(_row("Charge Settings", value))
+    settings_text = _charge_controller_settings_text(controller.get("settings"))
+    if include_settings and settings_text is not None:
+        lines.append(_row("Charge Settings", settings_text))
 
     lines.append("</table>")
     return lines
+
+
+def _charge_controller_settings_text(settings: dict | None) -> str | None:
+    if settings is None:
+        return None
+    if "current_limit_a" in settings:
+        return (
+            f"Limit {_meas(settings.get('current_limit_a'), 'A', 1)} "
+            f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
+            f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
+            f"Max TCV {_meas(settings.get('max_temp_comp_voltage_v'), 'V', 1)}"
+        )
+    return (
+        f"Limit {_meas(settings.get('max_charging_current_a'), 'A', 1)} "
+        f"Absorb {_meas(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
+        f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
+        f"Recovery {_meas(_first_present(settings, 'bulk_recovery_voltage_v', 'boost_reconnect_voltage_v'), 'V', 1)}"
+    )
 
 
 def _allocation_target_text(target: dict | None) -> str | None:
