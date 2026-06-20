@@ -326,7 +326,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertNotIn("<tr><th>Metric</th><th>Value</th></tr>", html)
         self.assertNotIn("Forecast        forecast", html)
         self.assertNotIn("td:first-child,th:first-child", html)
-        self.assertNotIn("XMLHttpRequest", html)
+        self.assertIn("var LIVE_MS = 300000, RETRY_MS = 5000;", html)
+        self.assertIn("XMLHttpRequest", html)
 
     def test_hides_weather_details_after_stale_cutoff(self) -> None:
         fetched_at = datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc)
@@ -506,6 +507,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b'<div class="meta-cell">Updated:', response.body)
         self.assertIn(b'<div class="button-cell"><a class="nav-button" href="/weather">Weather</a>', response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
+        self.assertIn(b"var LIVE_MS = 30000, RETRY_MS = 5000;", response.body)
+        self.assertIn(b"XMLHttpRequest", response.body)
         self.assertIn(b"<pre>", response.body)
         self.assertIn(b"Charge Controller 0 (Classic)", response.body)
         self.assertIn(b"Inverter/Charger", response.body)
@@ -551,6 +554,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b'<div class="primary-cell">11.0C</div>', response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
         self.assertIn(b'<a class="nav-button" href="/">Power</a>', response.body)
+        self.assertIn(b"var LIVE_MS = 300000, RETRY_MS = 5000;", response.body)
+        self.assertIn(b"XMLHttpRequest", response.body)
         self.assertIn(b"<pre>Current", response.body)
         self.assertIn(b"Condition", response.body)
         self.assertIn(b"Temperature", response.body)

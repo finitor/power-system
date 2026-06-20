@@ -23,6 +23,9 @@ from .weather import WeatherReport, weather_api_payload
 KINDLE_REFRESH_SECONDS = 60
 WEATHER_STALE_AFTER = timedelta(hours=1)
 BATTERY_IDLE_CURRENT_A = 0.5
+BROWSER_POWER_REFRESH_SECONDS = 30
+BROWSER_WEATHER_REFRESH_SECONDS = 300
+BROWSER_RETRY_SECONDS = 5
 
 
 @dataclass(frozen=True)
@@ -122,6 +125,38 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }\n"
         "      document.body.innerHTML = t.substring(i + 1, j);\n"
         "      schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);\n"
+        "    };\n"
+        "    x.onerror = function() { schedule(RETRY_MS); };\n"
+        "    x.send(null);\n"
+        "  }\n"
+        "  schedule(LIVE_MS);\n"
+        "})();\n"
+        "</script>"
+    )
+
+
+def _browser_refresh_script(refresh_seconds: int) -> str:
+    return (
+        '<script type="text/javascript">\n'
+        "(function() {\n"
+        f"  var LIVE_MS = {refresh_seconds * 1000}, RETRY_MS = {BROWSER_RETRY_SECONDS * 1000};\n"
+        "  function schedule(ms) { setTimeout(tick, ms); }\n"
+        "  function tick() {\n"
+        "    var x = new XMLHttpRequest();\n"
+        "    x.open('GET', window.location.pathname + '?k=' + (new Date()).getTime(), true);\n"
+        "    x.onreadystatechange = function() {\n"
+        "      if (x.readyState !== 4) { return; }\n"
+        "      if (x.status !== 200) { schedule(RETRY_MS); return; }\n"
+        "      var t = x.responseText;\n"
+        "      var bo = '<bo' + 'dy';\n"
+        "      var bc = '</bo' + 'dy>';\n"
+        "      var i = t.indexOf(bo);\n"
+        "      if (i < 0) { schedule(RETRY_MS); return; }\n"
+        "      i = t.indexOf('>', i);\n"
+        "      var j = t.lastIndexOf(bc);\n"
+        "      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }\n"
+        "      document.body.innerHTML = t.substring(i + 1, j);\n"
+        "      schedule(LIVE_MS);\n"
         "    };\n"
         "    x.onerror = function() { schedule(RETRY_MS); };\n"
         "    x.send(null);\n"
@@ -391,6 +426,7 @@ def render_browser_snapshot(
             "<html>",
             "<head>",
             '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+            _browser_refresh_script(BROWSER_POWER_REFRESH_SECONDS),
             "<title>Off-Grid Power</title>",
             "<style>",
             _browser_display_css(),
@@ -449,6 +485,7 @@ def render_browser_weather(payload: dict | None) -> str:
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        _browser_refresh_script(BROWSER_WEATHER_REFRESH_SECONDS),
         "<title>Off-Grid Weather</title>",
         "<style>",
         _browser_display_css(),
