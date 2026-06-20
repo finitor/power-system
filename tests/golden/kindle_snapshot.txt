@@ -33,6 +33,23 @@
   schedule(LIVE_MS);
 })();
 </script>
+<script type="text/javascript">
+(function() {
+  function fill() {
+    var el = document.getElementById('vp-diag');
+    if (el) {
+      var d = document.documentElement;
+      el.innerHTML = 'vp: innerH=' + (window.innerHeight || '?')
+        + ' clientH=' + ((d && d.clientHeight) || '?')
+        + ' bodyH=' + ((document.body && document.body.clientHeight) || '?')
+        + ' screenH=' + ((window.screen && window.screen.height) || '?')
+        + ' dpr=' + (window.devicePixelRatio || '?');
+    }
+    setTimeout(fill, 1500);
+  }
+  fill();
+})();
+</script>
 <title>Off-Grid Power</title>
 <style>
 html,body{height:100%;}
@@ -70,6 +87,7 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <table class="summary-table">
 <tr><td class="soc-cell">SOC 97%</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>
 </table>
+<div id="vp-diag" class="small">vp: measuring...</div>
 <h2>Load</h2>
 <table>
 <tr><td>Now</td><td>5.1A  272W</td></tr>

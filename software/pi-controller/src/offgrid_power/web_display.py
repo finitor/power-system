@@ -151,6 +151,36 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
     )
 
 
+def _kindle_viewport_diag_script() -> str:
+    """TEMPORARY: report the device's viewport metrics on the page.
+
+    The footer won't pin to the physical bottom because the Kindle browser gives
+    CSS no reliable screen-height reference. Before pinning the layout to the
+    device's real height we need to know what it actually reports. This runs in
+    the head (which survives the XHR body swaps) and refills the #vp-diag line, so
+    the numbers stay visible across refreshes. Remove once measured. ES3-only.
+    """
+    return (
+        '<script type="text/javascript">\n'
+        "(function() {\n"
+        "  function fill() {\n"
+        "    var el = document.getElementById('vp-diag');\n"
+        "    if (el) {\n"
+        "      var d = document.documentElement;\n"
+        "      el.innerHTML = 'vp: innerH=' + (window.innerHeight || '?')\n"
+        "        + ' clientH=' + ((d && d.clientHeight) || '?')\n"
+        "        + ' bodyH=' + ((document.body && document.body.clientHeight) || '?')\n"
+        "        + ' screenH=' + ((window.screen && window.screen.height) || '?')\n"
+        "        + ' dpr=' + (window.devicePixelRatio || '?');\n"
+        "    }\n"
+        "    setTimeout(fill, 1500);\n"
+        "  }\n"
+        "  fill();\n"
+        "})();\n"
+        "</script>"
+    )
+
+
 def _browser_refresh_script(refresh_seconds: int) -> str:
     return (
         '<script type="text/javascript">\n'
@@ -198,6 +228,7 @@ def render_kindle_snapshot(
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
         _kindle_refresh_script(refresh_seconds),
+        _kindle_viewport_diag_script(),  # TEMPORARY: remove after measuring (see fn docstring)
         "<title>Off-Grid Power</title>",
         "<style>",
         "html,body{height:100%;}",
@@ -235,6 +266,7 @@ def render_kindle_snapshot(
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
+        '<div id="vp-diag" class="small">vp: measuring...</div>',  # TEMPORARY: viewport diagnostic
     ]
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
