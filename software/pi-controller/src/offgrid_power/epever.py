@@ -61,6 +61,9 @@ class EpeverTelemetry:
     rated_pv_voltage_v: float
     generated_today_kwh: float | None = None
     generated_total_kwh: float | None = None
+    # Set on the display copy when "today" can't be derived (the raw register
+    # doesn't reset, so it must not be shown); carries the why-unavailable text.
+    generated_today_unavailable_reason: str | None = None
 
     @property
     def canonical_stage(self) -> ChargeStage:

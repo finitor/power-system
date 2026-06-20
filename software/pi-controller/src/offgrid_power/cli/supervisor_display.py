@@ -41,6 +41,7 @@ from offgrid_power.magnum import InverterEventTracker, MagnumClient
 from offgrid_power.config import load_config
 from offgrid_power.load import estimate_load_current_a, LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
+from offgrid_power.runtime_state import load_ccl_scaling_factor, save_ccl_scaling_factor
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
 from offgrid_power.weather import WeatherConfig, WeatherService
@@ -106,6 +107,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=60,
         help="Seconds between durable supervisor snapshot records",
+    )
+    parser.add_argument(
+        "--runtime-state-path",
+        default="",
+        help="JSON file persisting operator runtime overrides (CCL scaling factor) across restarts; "
+        "empty disables persistence (the env default is used each start)",
     )
     parser.add_argument(
         "--no-clear",
@@ -304,12 +311,21 @@ def main() -> int:
             "(--charger-current-taper / CHARGER_CURRENT_TAPER). The allocator is the "
             "sole current-limit writer; disable the taper first."
         )
+    # CCL scaling factor: a persisted operator override (if any) wins over the
+    # env default; the env default applies only when the JSON has no value.
+    state_path = args.runtime_state_path or None
+    ceiling_config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
+    persisted_scaling = load_ccl_scaling_factor(state_path)
+    if persisted_scaling is not None:
+        ceiling_config = dataclasses.replace(ceiling_config, bms_ccl_scaling_factor=persisted_scaling)
+    on_scaling_change = (lambda value: save_ccl_scaling_factor(state_path, value)) if state_path else None
     charge_allocation_logger = (
         ChargeAllocationLogger(
             ChargeCurrentAllocator(_config_from_env(ChargeAllocatorConfig, "CHARGE_ALLOC_")),
             supervisor=supervisor,
             live=args.charge_allocation,
-            ceiling_config=_config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_"),
+            ceiling_config=ceiling_config,
+            on_scaling_change=on_scaling_change,
             heartbeat_s=_env_float("CHARGE_ALLOC_HEARTBEAT_S", 300.0),
             target_deadband_a=_env_float("CHARGE_ALLOC_TARGET_DEADBAND_A", 5.0),
             target_quantum_a=_env_float("CHARGE_ALLOC_TARGET_QUANTUM_A", 5.0),
@@ -325,7 +341,7 @@ def main() -> int:
             supervisor,
             snapshot_cache,
             weather_service,
-            charge_budget=charge_allocation_logger.ceiling if charge_allocation_logger is not None else None,
+            charge_ceiling=charge_allocation_logger.ceiling if charge_allocation_logger is not None else None,
         )
     previous_poll_render: str | None = None
 
@@ -358,7 +374,7 @@ def main() -> int:
                     allocation_detail_payload = allocation_detail(
                         allocation_decision,
                         dry_run=not charge_allocation_logger.live,
-                        ccl_budget_fraction=charge_allocation_logger.ceiling.budget_fraction,
+                        ccl_scaling_factor=charge_allocation_logger.ceiling.scaling_factor,
                     )
             # Derive the EPEver "today" from its monotonic lifetime total (its own
             # daily register doesn't reset); the load cumulative needs it too, so
@@ -413,7 +429,7 @@ def start_web_display(
     supervisor: Supervisor,
     snapshot_cache: SnapshotCache,
     weather_service: WeatherService | None = None,
-    charge_budget: ChargeCeiling | None = None,
+    charge_ceiling: ChargeCeiling | None = None,
 ) -> None:
     thread = Thread(
         target=run_display_server,
@@ -426,7 +442,7 @@ def start_web_display(
             "allocation_provider": snapshot_cache.get_allocation,
             "weather_provider": None if weather_service is None else weather_service.get,
             "weather_refresh_hook": None if weather_service is None else weather_service.request_refresh,
-            "charge_budget": charge_budget,
+            "charge_ceiling": charge_ceiling,
         },
         daemon=True,
     )
@@ -580,6 +596,7 @@ class ChargeAllocationLogger:
         supervisor: Supervisor | None = None,
         live: bool = False,
         ceiling_config: ChargeCeilingConfig | None = None,
+        on_scaling_change=None,
         target_deadband_a: float = 5.0,
         target_quantum_a: float = 5.0,
         classic_sleep_debounce_s: float = 180.0,
@@ -590,7 +607,7 @@ class ChargeAllocationLogger:
         self.supervisor = supervisor
         self.live = live
         # Stateful (full-charge latch); evaluated once per cycle here.
-        self.ceiling = ChargeCeiling(ceiling_config)
+        self.ceiling = ChargeCeiling(ceiling_config, on_scaling_change=on_scaling_change)
         self.target_deadband_a = max(0.0, target_deadband_a)
         self.target_quantum_a = max(1.0, target_quantum_a)
         self._sleep_debounce_s = {
@@ -932,21 +949,37 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
     return chargers
 
 
+EPEVER_TODAY_UNAVAILABLE = "unavailable, midnight cumulative energy was not logged"
+
+
 def _with_derived_epever_today(snapshot, recorder: MetricRecorder | None):
     """Return a display copy of the snapshot whose EPEver generated-today is
     derived from its monotonic lifetime total minus the total at local midnight.
 
     The EPEver's own daily register does not reset reliably (RTC didn't stick),
-    so the field is replaced for display/API while the raw register is still
-    recorded. Returns the snapshot unchanged when the lifetime total or the
-    midnight baseline is unavailable (e.g. supervisor down over midnight)."""
+    so it must never be shown raw. When the lifetime total or the midnight
+    baseline is unavailable (e.g. supervisor down over midnight, or the baseline
+    sample was pruned), the derived value is set to None and flagged unavailable
+    rather than leaking the misleading raw register. The raw register is still
+    recorded separately for diagnosis."""
     epever = snapshot.epever
-    if epever is None or epever.generated_total_kwh is None or recorder is None:
+    if epever is None or recorder is None:
         return snapshot
     day = snapshot.captured_at.astimezone().date()
-    midnight_total = recorder.midnight_metric_value("epever.1", "generated_total", day)
-    if midnight_total is None:
-        return snapshot
+    midnight_total = (
+        recorder.midnight_metric_value("epever.1", "generated_total", day)
+        if epever.generated_total_kwh is not None
+        else None
+    )
+    if epever.generated_total_kwh is None or midnight_total is None:
+        return dataclasses.replace(
+            snapshot,
+            epever=dataclasses.replace(
+                epever,
+                generated_today_kwh=None,
+                generated_today_unavailable_reason=EPEVER_TODAY_UNAVAILABLE,
+            ),
+        )
     derived = round(max(0.0, epever.generated_total_kwh - midnight_total), 2)
     return dataclasses.replace(snapshot, epever=dataclasses.replace(epever, generated_today_kwh=derived))
 

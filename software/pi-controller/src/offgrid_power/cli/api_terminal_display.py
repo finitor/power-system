@@ -42,22 +42,23 @@ VIEW_WEATHER = "weather"
 SNAPSHOT_SUFFIX = "/api/v1/snapshot"
 WEATHER_SUFFIX = "/api/v1/weather"
 VOLTAGE_CONTROL_SUFFIX = "/api/v1/control/charge-controller/voltage"
-CCL_BUDGET_CONTROL_SUFFIX = "/api/v1/control/charge-budget/ccl-fraction"
+CCL_SCALING_CONTROL_SUFFIX = "/api/v1/control/ccl-scaling-factor"
 
 # Tune mode disarms after this long without a keypress so it's never left live.
 TUNE_IDLE_TIMEOUT_S = 20.0
 
 # Per-tunable knobs. Steps are what the operator cycles with [ / ]; the session
-# budget caps how far one tune session can wander from where it opened (re-arm
-# to go further). Controller voltages are in volts; the CCL budget is a fraction
-# (0-1) shown as a percent and stepped 5 points at a time.
+# limit caps how far one tune session can wander from where it opened (re-arm
+# to go further). Controller voltages are in volts; the CCL scaling is a fraction
+# (0-1) shown as a percent and stepped 10 points at a time by default — big
+# enough that a nudge clears the allocator's 5 A deadband near the knee.
 VOLTAGE_STEPS_V = (0.05, 0.1, 0.2)
 VOLTAGE_DEFAULT_STEP_INDEX = 1
 VOLTAGE_SESSION_BUDGET_V = 0.5
 
-BUDGET_STEPS = (0.01, 0.05, 0.1)
-BUDGET_DEFAULT_STEP_INDEX = 1
-BUDGET_SESSION_BUDGET = 0.25
+SCALING_STEPS = (0.05, 0.1, 0.2)
+SCALING_DEFAULT_STEP_INDEX = 1
+SCALING_SESSION_LIMIT = 0.25
 
 CONTROLLER_LABELS = {0: "Classic", 1: "EPEver"}
 
@@ -126,8 +127,8 @@ def resolve_tune_key(char: str) -> str | None:
         return "select:v0"
     if char == "1":
         return "select:v1"
-    if char in ("b", "B"):
-        return "select:budget"
+    if char in ("s", "S"):
+        return "select:scaling"
     if char == "\t":
         return "toggle"
     if char == "[":
@@ -148,7 +149,7 @@ class Tunable:
 
     key: str
     label: str
-    kind: str  # "voltage" | "budget"
+    kind: str  # "voltage" | "scaling"
     base: float
     pending: float
     steps: tuple[float, ...]
@@ -175,7 +176,7 @@ class Tunable:
         return f"{self.net:+.2f}" if self.kind == "voltage" else f"{self.net * 100:+.0f}"
 
 
-def build_tunables(scalars: dict[int, float], budget_fraction: float | None) -> list[Tunable]:
+def build_tunables(scalars: dict[int, float], scaling_factor: float | None) -> list[Tunable]:
     """Assemble the tune rows: each controller's scalar voltage, then the budget."""
     tunables: list[Tunable] = []
     for controller in sorted(scalars):
@@ -192,17 +193,17 @@ def build_tunables(scalars: dict[int, float], budget_fraction: float | None) -> 
                 controller=controller,
             )
         )
-    if budget_fraction is not None:
+    if scaling_factor is not None:
         tunables.append(
             Tunable(
-                key="budget",
-                label="CCL budget",
-                kind="budget",
-                base=round(budget_fraction, 4),
-                pending=round(budget_fraction, 4),
-                steps=BUDGET_STEPS,
-                step_index=BUDGET_DEFAULT_STEP_INDEX,
-                session_budget=BUDGET_SESSION_BUDGET,
+                key="scaling",
+                label="CCL scaling",
+                kind="scaling",
+                base=round(scaling_factor, 4),
+                pending=round(scaling_factor, 4),
+                steps=SCALING_STEPS,
+                step_index=SCALING_DEFAULT_STEP_INDEX,
+                session_budget=SCALING_SESSION_LIMIT,
             )
         )
     return tunables
@@ -288,8 +289,8 @@ def _tune_select_hint(tune: TuneState) -> str:
     for tunable in tune.tunables:
         if tunable.kind == "voltage" and tunable.controller is not None:
             keys.append(str(tunable.controller))
-        elif tunable.key == "budget":
-            keys.append("b")
+        elif tunable.key == "scaling":
+            keys.append("s")
     return "/".join(keys)
 
 
@@ -298,7 +299,7 @@ def tune_footer(tune: TuneState) -> str:
     lines = ["", "── TUNE charge ──────────────────────"]
     for tunable in tune.tunables:
         selected = ">" if tunable is tune.current else " "
-        tag = str(tunable.controller) if tunable.controller is not None else "b"
+        tag = str(tunable.controller) if tunable.controller is not None else "s"
         staged = f"  → {tunable.fmt(tunable.pending)} ({tunable.fmt_net()})" if tunable.dirty else ""
         lines.append(f" {selected} [{tag}] {tunable.label:<10} {tunable.fmt(tunable.base)}{staged}")
     current = tune.current
@@ -480,10 +481,10 @@ def main() -> int:
 def _enter_tune(args: argparse.Namespace) -> TuneState | None:
     """Fetch current setpoints and open tune mode, or return None if unavailable."""
     try:
-        scalars, budget_fraction = fetch_tune_inputs(args.url, timeout=args.timeout)
+        scalars, scaling_factor = fetch_tune_inputs(args.url, timeout=args.timeout)
     except (OSError, URLError, json.JSONDecodeError):
         return None
-    tunables = build_tunables(scalars, budget_fraction)
+    tunables = build_tunables(scalars, scaling_factor)
     if not tunables:
         return None
     return TuneState(tunables)
@@ -590,21 +591,21 @@ def _controller_index(controller_id) -> int | None:
     return None
 
 
-def budget_fraction_from_snapshot(payload: dict) -> float | None:
-    """Pull the live CCL budget fraction out of a snapshot's allocation block.
+def scaling_factor_from_snapshot(payload: dict) -> float | None:
+    """Pull the live CCL scaling factor out of a snapshot's allocation block.
 
     None when allocation isn't running (no allocation block) or the field is
     absent — in which case tune mode simply omits the budget row.
     """
-    value = (payload.get("allocation") or {}).get("ccl_budget_fraction")
+    value = (payload.get("allocation") or {}).get("ccl_scaling_factor")
     return round(float(value), 4) if isinstance(value, (int, float)) else None
 
 
 def fetch_tune_inputs(url: str, timeout: float = 5.0) -> tuple[dict[int, float], float | None]:
-    """GET the snapshot and return (scalar voltages, CCL budget fraction)."""
+    """GET the snapshot and return (scalar voltages, CCL scaling factor)."""
     with urlopen(url, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    return scalars_from_snapshot(payload), budget_fraction_from_snapshot(payload)
+    return scalars_from_snapshot(payload), scaling_factor_from_snapshot(payload)
 
 
 def _post_control(control_url: str, suffix: str, body: dict, timeout: float) -> dict:
@@ -634,9 +635,9 @@ def post_nudge(control_url: str, controller: int, delta_v: float, timeout: float
     )
 
 
-def post_budget_nudge(control_url: str, delta: float, timeout: float = 5.0) -> dict:
-    """POST a CCL budget-fraction delta to the supervisor and return its reply."""
-    return _post_control(control_url, CCL_BUDGET_CONTROL_SUFFIX, {"delta": round(delta, 4)}, timeout)
+def post_scaling_nudge(control_url: str, delta: float, timeout: float = 5.0) -> dict:
+    """POST a CCL scaling-fraction delta to the supervisor and return its reply."""
+    return _post_control(control_url, CCL_SCALING_CONTROL_SUFFIX, {"delta": round(delta, 4)}, timeout)
 
 
 def _commit_one(tunable: Tunable, control_url: str, timeout: float) -> str:
@@ -647,8 +648,8 @@ def _commit_one(tunable: Tunable, control_url: str, timeout: float) -> str:
     """
     delta = tunable.net
     try:
-        if tunable.kind == "budget":
-            reply = post_budget_nudge(control_url, delta, timeout=timeout)
+        if tunable.kind == "scaling":
+            reply = post_scaling_nudge(control_url, delta, timeout=timeout)
         else:
             reply = post_nudge(control_url, tunable.controller, delta, timeout=timeout)
     except (OSError, URLError, json.JSONDecodeError) as exc:
@@ -659,7 +660,7 @@ def _commit_one(tunable: Tunable, control_url: str, timeout: float) -> str:
         tunable.pending = tunable.base  # discard the rejected stage
         return f"{tunable.label} refused: {reply.get('error', 'unknown error')}"
 
-    if tunable.kind == "budget":
+    if tunable.kind == "scaling":
         achieved = round(float(reply.get("fraction", tunable.pending)), 4)
         tunable.base = tunable.pending = achieved
         return f"{tunable.label} {tunable.fmt(achieved)}"

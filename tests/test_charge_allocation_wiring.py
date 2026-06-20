@@ -241,28 +241,28 @@ class ConfigFromEnvTest(unittest.TestCase):
     def test_overrides_named_fields_and_keeps_defaults(self) -> None:
         import os
 
-        os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"] = "0.6"
+        os.environ["CHARGE_CEILING_BMS_CCL_SCALING_FACTOR"] = "0.6"
         os.environ["CHARGE_CEILING_HIGH_CELL_STOP_V"] = "3.54"
         os.environ.pop("CHARGE_CEILING_BMS_KNEE_CCL_BASELINE_A", None)
         try:
             config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
         finally:
-            del os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"]
+            del os.environ["CHARGE_CEILING_BMS_CCL_SCALING_FACTOR"]
             del os.environ["CHARGE_CEILING_HIGH_CELL_STOP_V"]
 
-        self.assertEqual(config.bms_ccl_budget_fraction, 0.6)  # overridden
+        self.assertEqual(config.bms_ccl_scaling_factor, 0.6)  # overridden
         self.assertEqual(config.high_cell_stop_v, 3.54)  # overridden
         self.assertEqual(config.bms_knee_ccl_baseline_a, 200.0)  # default preserved
 
     def test_non_numeric_value_is_ignored(self) -> None:
         import os
 
-        os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"] = "oops"
+        os.environ["CHARGE_CEILING_BMS_CCL_SCALING_FACTOR"] = "oops"
         try:
             config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
         finally:
-            del os.environ["CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION"]
-        self.assertEqual(config.bms_ccl_budget_fraction, 0.5)  # falls back to default
+            del os.environ["CHARGE_CEILING_BMS_CCL_SCALING_FACTOR"]
+        self.assertEqual(config.bms_ccl_scaling_factor, 0.5)  # falls back to default
 
 
 class TargetStabilizationTest(unittest.TestCase):
@@ -435,17 +435,24 @@ class DerivedEpeverTodayTest(unittest.TestCase):
         out = _with_derived_epever_today(snap, _FakeMidnightRecorder(3.51))
         self.assertAlmostEqual(out.epever.generated_today_kwh, 0.01)
 
-    def test_unchanged_without_midnight_baseline(self) -> None:
+    def test_today_unavailable_without_midnight_baseline(self) -> None:
+        # The raw register (9.9) is unreliable; without a baseline it must be
+        # suppressed and flagged, not shown.
         snap = make_snapshot(
             epever=make_epever_telemetry(generated_total_kwh=3.52, generated_today_kwh=9.9)
         )
         out = _with_derived_epever_today(snap, _FakeMidnightRecorder(None))
-        self.assertIs(out, snap)
+        self.assertIsNone(out.epever.generated_today_kwh)
+        self.assertEqual(
+            out.epever.generated_today_unavailable_reason,
+            "unavailable, midnight cumulative energy was not logged",
+        )
 
-    def test_unchanged_without_lifetime_total(self) -> None:
-        snap = make_snapshot(epever=make_epever_telemetry(generated_total_kwh=None))
+    def test_today_unavailable_without_lifetime_total(self) -> None:
+        snap = make_snapshot(epever=make_epever_telemetry(generated_total_kwh=None, generated_today_kwh=9.9))
         out = _with_derived_epever_today(snap, _FakeMidnightRecorder(3.0))
-        self.assertIs(out, snap)
+        self.assertIsNone(out.epever.generated_today_kwh)
+        self.assertIsNotNone(out.epever.generated_today_unavailable_reason)
 
 
 class EligibilityTest(unittest.TestCase):

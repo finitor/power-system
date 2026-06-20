@@ -35,17 +35,18 @@ mode** for nudging a controller's scalar charge voltage from the console.
 Tune mode is **staged-commit**: `+`/`-` stage a change to the selected row
 (shown as `→ target (Δ)` in the overlay) but send nothing; the change is applied
 only on `Enter`. The overlay has a row per controller voltage plus a **CCL
-budget** row. `0`/`1` select a controller, `b` selects the budget, Tab cycles
-through them; `[`/`]` cycle the step size (voltages: 0.05 / 0.1 / 0.2 V; budget:
-1 / 5 / 10 points), `Esc` (or `q`) cancels without sending. This keeps a stray
+scaling** row. `0`/`1` select a controller, `s` selects CCL scaling, Tab cycles
+through them; `[`/`]` cycle the step size (voltages: 0.05 / 0.1 / 0.2 V; scaling:
+5 / 10 / 20 points), `Esc` (or `q`) cancels without sending. This keeps a stray
 keypress from moving the system — applying a change always takes a deliberate
 Enter.
 
-The CCL budget row tunes the allocator's CCL budget fraction (in-memory; resets
-to the configured default on supervisor restart) — see
+The CCL scaling row tunes the allocator's CCL scaling factor — see
 [charge-current-allocation.md](../charge-current-allocation.md). It is shown and
-nudged as a percent (5 points at a time), committed via
-`POST /api/v1/control/charge-budget/ccl-fraction`.
+nudged as a percent (10 points at a time by default — big enough to clear the
+allocator's 5 A deadband near the knee), committed via
+`POST /api/v1/control/ccl-scaling-factor`. The committed value is persisted and
+survives a supervisor restart.
 
 Guard rails, outermost last:
 

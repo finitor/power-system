@@ -66,7 +66,7 @@ hard stops:
 - **BMS baseline → unconstrained:** if BMS CCL is still at/above
   `bms_knee_ccl_baseline_a` (default 200 A), return `None`.
 - **BMS knee → fractional allowance:** once BMS CCL drops below baseline, return
-  `BMS CCL × bms_ccl_budget_fraction` (default 50%).
+  `BMS CCL × bms_ccl_scaling_factor` (default 50%).
 - **Cell-safety stops → 0 A:** max cell ≥ `high_cell_stop_v`, or cell delta ≥
   `high_delta_stop_mv` while max cell ≥ `high_cell_soft_limit_v`. Cell-safety
   stops latch until max cell falls below `high_cell_soft_limit_v`, preventing
@@ -308,7 +308,7 @@ Charge budget resolver (`CHARGE_CEILING_…`):
 | env var | default | meaning |
 |---|---|---|
 | `CHARGE_CEILING_BMS_KNEE_CCL_BASELINE_A` | 200.0 | unconstrained while BMS CCL remains at/above this |
-| `CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION` | 0.5 | net-charge allowance after the BMS knee gate opens, as a fraction of BMS CCL |
+| `CHARGE_CEILING_BMS_CCL_SCALING_FACTOR` | 0.5 | net-charge allowance after the BMS knee gate opens, as a fraction of BMS CCL |
 | `CHARGE_CEILING_FULL_SOC_PERCENT` | 100 | full-charge latch trips at/above |
 | `CHARGE_CEILING_FULL_RESET_SOC_PERCENT` | 98 | latch clears below (with voltage) |
 | `CHARGE_CEILING_FULL_RESET_VOLTAGE_V` | 54.0 | latch-clear voltage |
@@ -316,25 +316,34 @@ Charge budget resolver (`CHARGE_CEILING_…`):
 | `CHARGE_CEILING_HIGH_CELL_SOFT_LIMIT_V` | 3.55 | recovery threshold and upper-cell zone for delta stop |
 | `CHARGE_CEILING_HIGH_DELTA_STOP_MV` | 150 | cell-delta stop in the upper-cell zone |
 
-### Nudging the CCL budget fraction live (no restart)
+### Nudging the CCL scaling factor live (no restart)
 
-`bms_ccl_budget_fraction` is the one ceiling knob with a live override, for
+`bms_ccl_scaling_factor` is the one ceiling knob with a live override, for
 walking the budget up or down while watching the taper near the knee. The env
 var above is the boot default; to change it in flight without a restart:
 
-- **Script:** `scripts/charge-budget.py --by +5` (percentage points), or
-  `scripts/charge-budget.py 60` to set 60%.
-- **Console:** tune mode (`t`) has a **CCL budget** row — `b` selects it,
-  `+`/`-` stage 5-point nudges, Enter applies (see
+- **Script:** `scripts/ccl-scaling.py --by +10` (percentage points), or
+  `scripts/ccl-scaling.py 60` to set 60%.
+- **Console:** tune mode (`t`) has a **CCL scaling** row — `s` selects it,
+  `+`/`-` stage 10-point nudges, Enter applies (see
   [display-services.md](subsystems/display-services.md#operator-controls-terminal-display)).
-- **API:** `POST /api/v1/control/charge-budget/ccl-fraction` (see
+- **API:** `POST /api/v1/control/ccl-scaling-factor` (see
   [supervisor-api.md](telemetry/supervisor-api.md)).
 
-The live value is **in-memory only** — it resets to
-`CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION` when the supervisor restarts. Make a
-change permanent by editing the env var. The override is clamped to 0.05–1.0 and
-only affects allocation below the BMS knee baseline. The current value is shown
-in the snapshot's `allocation.ccl_budget_fraction`.
+A live change is **persisted** to the runtime-state file
+(`--runtime-state-path`, default `/var/lib/offgrid/runtime-state.json`) and
+reloaded on the next start, so it survives a restart; the env var applies only
+when the state file has no value. (Delete that file to revert to the env
+default.) The override is clamped to 0.05–1.0 and only affects allocation below
+the BMS knee baseline. The current value is shown in the snapshot's
+`allocation.ccl_scaling_factor`.
+
+A nudge near the knee may not move the per-controller current limits: the
+allocator holds targets within a 5 A deadband and snaps to 5 A buckets
+(`CHARGE_ALLOC_TARGET_DEADBAND_A` / `CHARGE_ALLOC_TARGET_QUANTUM_A`), so a small
+change to the net allowance can leave the controller writes untouched even
+though the budget figure on the Limit line moves. The 10-point default step is
+sized to clear that deadband at typical knee CCLs.
 
 ### Reading what it's doing
 

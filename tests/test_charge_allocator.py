@@ -19,7 +19,7 @@ from offgrid_power.charge_allocator import (  # noqa: E402
 
 
 class AllocationDetailTest(unittest.TestCase):
-    def test_includes_ccl_budget_fraction_when_supplied(self) -> None:
+    def test_includes_ccl_scaling_factor_when_supplied(self) -> None:
         decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=40.0,
             charge_enabled=True,
@@ -29,10 +29,10 @@ class AllocationDetailTest(unittest.TestCase):
             charge_ceiling_a=20.0,
             charge_ceiling_reason="BMS CCL fraction",
         )
-        detail = allocation_detail(decision, dry_run=False, ccl_budget_fraction=0.55)
-        self.assertEqual(detail["ccl_budget_fraction"], 0.55)
+        detail = allocation_detail(decision, dry_run=False, ccl_scaling_factor=0.55)
+        self.assertEqual(detail["ccl_scaling_factor"], 0.55)
 
-    def test_ccl_budget_fraction_defaults_to_none(self) -> None:
+    def test_ccl_scaling_factor_defaults_to_none(self) -> None:
         decision = ChargeCurrentAllocator().decide(
             bms_ccl_a=40.0,
             charge_enabled=True,
@@ -42,7 +42,7 @@ class AllocationDetailTest(unittest.TestCase):
             charge_ceiling_a=20.0,
             charge_ceiling_reason="BMS CCL fraction",
         )
-        self.assertIsNone(allocation_detail(decision, dry_run=False)["ccl_budget_fraction"])
+        self.assertIsNone(allocation_detail(decision, dry_run=False)["ccl_scaling_factor"])
 
 
 class ChargeAllocatorTest(unittest.TestCase):

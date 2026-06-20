@@ -2,22 +2,23 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 import threading
 
 from .canbus import PylonCanSnapshot
 
-# The CCL budget fraction is an operator knob (it scales the BMS charge-current
+# The CCL scaling factor is an operator knob (it scales the BMS charge-current
 # limit down to a working budget near the taper knee). Keep it inside a sane
 # band: never starve charging to nothing, never claim more than the BMS allows.
-MIN_CCL_BUDGET_FRACTION = 0.05
-MAX_CCL_BUDGET_FRACTION = 1.0
+MIN_CCL_SCALING_FACTOR = 0.05
+MAX_CCL_SCALING_FACTOR = 1.0
 
 
 @dataclass(frozen=True)
 class ChargeCeilingConfig:
     bms_knee_ccl_baseline_a: float = 200.0
-    bms_ccl_budget_fraction: float = 0.5
+    bms_ccl_scaling_factor: float = 0.5
     full_soc_percent: float = 100.0
     full_reset_soc_percent: float = 98.0
     full_reset_voltage_v: float = 54.0
@@ -37,52 +38,66 @@ class ChargeCeilingResult:
 
 
 class ChargeCeiling:
-    """Stateful charge-budget resolver.
+    """Stateful charge-allowance resolver.
 
-    One calculation owns both the soft charge budget and hard stops:
+    One calculation owns both the soft charge allowance and hard stops:
     ``None`` releases constraints, positive amps constrain net battery charge,
     and 0 stops charging.
     """
 
-    def __init__(self, config: ChargeCeilingConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: ChargeCeilingConfig | None = None,
+        *,
+        on_scaling_change: Callable[[float], None] | None = None,
+    ) -> None:
         self.config = config or ChargeCeilingConfig()
         self._full_latched = False
         self._cell_latched = False
         self._cell_latch_reason: str | None = None
         self._low_temp_latched = False
         self._low_temp_latch_reason: str | None = None
-        # Serializes operator budget-fraction edits (HTTP handler threads)
+        # Serializes operator scaling-factor edits (HTTP handler threads)
         # against each other; evaluate() reads self.config, which is rebound
         # atomically, so the allocator loop never sees a torn value.
-        self._budget_lock = threading.Lock()
+        self._scaling_lock = threading.Lock()
+        # Called with the new factor after each successful edit, so the owner can
+        # persist it. Fired outside the lock so file I/O can't stall a nudge.
+        self._on_scaling_change = on_scaling_change
 
     @property
-    def budget_fraction(self) -> float:
-        return self.config.bms_ccl_budget_fraction
+    def scaling_factor(self) -> float:
+        return self.config.bms_ccl_scaling_factor
 
-    def set_budget_fraction(self, fraction: float) -> float:
-        """Set the CCL budget fraction to an absolute value; return what stuck.
+    def set_scaling_factor(self, fraction: float) -> float:
+        """Set the CCL scaling factor to an absolute value; return what stuck.
 
         Raises ValueError if the request is outside the allowed band rather than
         silently clamping, so a fat-fingered absolute set is refused, not masked.
         """
-        rounded = _validate_budget_fraction(fraction)
-        with self._budget_lock:
-            self.config = replace(self.config, bms_ccl_budget_fraction=rounded)
+        rounded = _validate_scaling_factor(fraction)
+        with self._scaling_lock:
+            self.config = replace(self.config, bms_ccl_scaling_factor=rounded)
+        self._notify_scaling_change(rounded)
         return rounded
 
-    def nudge_budget_fraction(self, delta: float) -> tuple[float, float]:
-        """Read-modify-write the CCL budget fraction by `delta`.
+    def nudge_scaling_factor(self, delta: float) -> tuple[float, float]:
+        """Read-modify-write the CCL scaling factor by `delta`.
 
         Returns ``(previous, new)``. Raises ValueError if the result would leave
         the allowed band. The read and write happen under one lock so concurrent
         nudges can't interleave.
         """
-        with self._budget_lock:
-            previous = self.config.bms_ccl_budget_fraction
-            new = _validate_budget_fraction(previous + delta)
-            self.config = replace(self.config, bms_ccl_budget_fraction=new)
+        with self._scaling_lock:
+            previous = self.config.bms_ccl_scaling_factor
+            new = _validate_scaling_factor(previous + delta)
+            self.config = replace(self.config, bms_ccl_scaling_factor=new)
+        self._notify_scaling_change(new)
         return round(previous, 4), new
+
+    def _notify_scaling_change(self, value: float) -> None:
+        if self._on_scaling_change is not None:
+            self._on_scaling_change(value)
 
     @property
     def full_latched(self) -> bool:
@@ -183,17 +198,17 @@ class ChargeCeiling:
 
         allowance_a = max(
             0.0,
-            min(bms_ccl_a, bms_ccl_a * config.bms_ccl_budget_fraction),
+            min(bms_ccl_a, bms_ccl_a * config.bms_ccl_scaling_factor),
         )
         return ChargeCeilingResult(round(allowance_a, 1), "BMS CCL fraction")
 
 
-def _validate_budget_fraction(fraction: float) -> float:
+def _validate_scaling_factor(fraction: float) -> float:
     rounded = round(fraction, 4)
-    if not (MIN_CCL_BUDGET_FRACTION <= rounded <= MAX_CCL_BUDGET_FRACTION):
+    if not (MIN_CCL_SCALING_FACTOR <= rounded <= MAX_CCL_SCALING_FACTOR):
         raise ValueError(
-            f"CCL budget fraction out of range: {rounded:.2f} "
-            f"(allowed {MIN_CCL_BUDGET_FRACTION:.2f}-{MAX_CCL_BUDGET_FRACTION:.2f})"
+            f"CCL scaling factor out of range: {rounded:.2f} "
+            f"(allowed {MIN_CCL_SCALING_FACTOR:.2f}-{MAX_CCL_SCALING_FACTOR:.2f})"
         )
     return rounded
 

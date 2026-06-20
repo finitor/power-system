@@ -354,6 +354,8 @@ def _solar_lines(solar: list[dict]) -> list[str]:
             if controller.get("daily_amp_hours_ah") is not None:
                 parts.append(f"{_fmt(controller.get('daily_amp_hours_ah'), 0)}Ah")
             lines.append(_row("Production Today", "  ".join(parts)))
+        elif controller.get("daily_energy_unavailable_reason"):
+            lines.append(_row("Production Today", str(controller.get("daily_energy_unavailable_reason"))))
         if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
             lines.append(
                 _row(
@@ -507,7 +509,7 @@ def _allocation_limit_text(allocation: dict) -> str:
     reason = allocation.get("reason")
     allowance = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
     ccl = f"BMS CCL {_fmt(allocation.get('bms_ccl_a'), 0)}A"
-    budget = _ccl_budget_fraction_text(allocation)
+    budget = _ccl_scaling_factor_text(allocation)
     mechanism = _allocation_mechanisms_text(allocation)
     prefix = "dry-run: " if mode == "dry-run" else ""
     if reason == "unconstrained":
@@ -519,10 +521,10 @@ def _allocation_limit_text(allocation: dict) -> str:
     return f"{prefix}{_fmt(allowance, 0)}A net ({mechanism}; {ccl}{budget})"
 
 
-def _ccl_budget_fraction_text(allocation: dict) -> str:
-    """The live CCL budget fraction as a '; budget NN%' segment, or '' if absent."""
-    fraction = allocation.get("ccl_budget_fraction")
-    return f"; budget {fraction * 100:.0f}%" if isinstance(fraction, (int, float)) else ""
+def _ccl_scaling_factor_text(allocation: dict) -> str:
+    """The live CCL scaling factor as a '; budget NN%' segment, or '' if absent."""
+    fraction = allocation.get("ccl_scaling_factor")
+    return f"; scaling {fraction * 100:.0f}%" if isinstance(fraction, (int, float)) else ""
 
 
 def _allocation_mechanisms_text(allocation: dict) -> str:

@@ -67,22 +67,33 @@ class ChargeCeilingTest(unittest.TestCase):
         self.assertEqual(result.reason, "BMS CCL fraction")
         self.assertEqual(result.ceiling_a, 20.0)
 
-    def test_nudge_budget_fraction_changes_the_fractional_budget(self) -> None:
+    def test_nudge_scaling_factor_changes_the_fractional_budget(self) -> None:
         ceiling = ChargeCeiling()
-        self.assertEqual(ceiling.budget_fraction, 0.5)
-        previous, new = ceiling.nudge_budget_fraction(0.05)
+        self.assertEqual(ceiling.scaling_factor, 0.5)
+        previous, new = ceiling.nudge_scaling_factor(0.05)
         self.assertEqual((previous, new), (0.5, 0.55))
         # 40 A CCL * 0.55 = 22 A budget, up from 20 A at the default fraction.
         result = ceiling.evaluate(_battery(ccl=40.0, soc=94, voltage=56.0))
         self.assertEqual(result.ceiling_a, 22.0)
 
-    def test_set_budget_fraction_rejects_out_of_range(self) -> None:
+    def test_set_scaling_factor_rejects_out_of_range(self) -> None:
         ceiling = ChargeCeiling()
         with self.assertRaises(ValueError):
-            ceiling.set_budget_fraction(1.5)
+            ceiling.set_scaling_factor(1.5)
         with self.assertRaises(ValueError):
-            ceiling.nudge_budget_fraction(-0.5)  # 0.5 - 0.5 = 0.0, below the 0.05 floor
-        self.assertEqual(ceiling.budget_fraction, 0.5)  # unchanged after both rejections
+            ceiling.nudge_scaling_factor(-0.5)  # 0.5 - 0.5 = 0.0, below the 0.05 floor
+        self.assertEqual(ceiling.scaling_factor, 0.5)  # unchanged after both rejections
+
+    def test_on_scaling_change_fires_with_new_value(self) -> None:
+        seen = []
+        ceiling = ChargeCeiling(on_scaling_change=seen.append)
+        ceiling.set_scaling_factor(0.6)
+        ceiling.nudge_scaling_factor(0.05)
+        self.assertEqual(seen, [0.6, 0.65])
+        # A rejected edit must not fire the persistence hook.
+        with self.assertRaises(ValueError):
+            ceiling.set_scaling_factor(2.0)
+        self.assertEqual(seen, [0.6, 0.65])
 
     def test_bms_charge_disabled_is_a_hard_stop(self) -> None:
         result = ChargeCeiling().evaluate(_battery(ccl=40.0), charge_enabled=False)

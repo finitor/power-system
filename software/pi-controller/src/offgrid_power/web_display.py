@@ -39,7 +39,7 @@ SCALAR_CONFIRM_TOLERANCE_V = 0.06
 
 # Largest single CCL-budget-fraction nudge the API will accept (0.25 = 25
 # percentage points). The operator terminal steps 5 points at a time.
-MAX_CCL_BUDGET_DELTA = 0.25
+MAX_CCL_SCALING_DELTA = 0.25
 
 logger = logging.getLogger(__name__)
 
@@ -647,10 +647,10 @@ def route_control_request(
     supervisor: Supervisor,
     path: str,
     payload: dict,
-    charge_budget=None,
+    charge_ceiling=None,
 ) -> DisplayResponse:
-    if path == "/api/v1/control/charge-budget/ccl-fraction":
-        return _control_charge_budget_ccl_fraction(charge_budget, payload)
+    if path == "/api/v1/control/ccl-scaling-factor":
+        return _control_ccl_scaling_factor(charge_ceiling, payload)
     if path == "/api/v1/control/charge-controller/voltage":
         return _control_charge_controller_voltage(supervisor, payload)
     if path == "/api/v1/control/classic/charge-settings":
@@ -691,42 +691,42 @@ def _control_charge_controller_voltage(supervisor: Supervisor, payload: dict) ->
         return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
 
 
-def _control_charge_budget_ccl_fraction(charge_budget, payload: dict) -> DisplayResponse:
-    """Set or nudge the CCL budget fraction (allocator policy, in-memory).
+def _control_ccl_scaling_factor(charge_ceiling, payload: dict) -> DisplayResponse:
+    """Set or nudge the CCL scaling factor (allocator policy).
 
-    `charge_budget` is the live ChargeCeiling; it is None when charge allocation
+    `charge_ceiling` is the live ChargeCeiling; it is None when charge allocation
     is not running, in which case the knob has no effect and the request is a
-    conflict. Accepts exactly one of `fraction` (absolute) or `delta`. The value
-    resets to the configured default on supervisor restart — this is a transient
-    operator knob, not a persisted setting.
+    conflict. Accepts exactly one of `factor` (absolute) or `delta`. A successful
+    write is persisted by the ceiling's on-change hook, so it survives a
+    supervisor restart.
     """
     try:
-        if charge_budget is None:
-            raise RuntimeError("charge allocation is not enabled; CCL budget fraction has no effect")
-        fraction = _optional_number(payload, "fraction")
+        if charge_ceiling is None:
+            raise RuntimeError("charge allocation is not enabled; CCL scaling factor has no effect")
+        factor = _optional_number(payload, "factor")
         delta = _optional_number(payload, "delta")
         dry_run = bool(payload.get("dry_run", False))
-        if (fraction is None) == (delta is None):
-            raise ValueError("exactly one of fraction or delta must be supplied")
-        if delta is not None and abs(delta) > MAX_CCL_BUDGET_DELTA:
+        if (factor is None) == (delta is None):
+            raise ValueError("exactly one of factor or delta must be supplied")
+        if delta is not None and abs(delta) > MAX_CCL_SCALING_DELTA:
             raise ValueError(
-                f"delta magnitude {delta:+.2f} exceeds the {MAX_CCL_BUDGET_DELTA:.2f} per-call cap"
+                f"delta magnitude {delta:+.2f} exceeds the {MAX_CCL_SCALING_DELTA:.2f} per-call cap"
             )
 
-        previous = round(charge_budget.budget_fraction, 4)
+        previous = round(charge_ceiling.scaling_factor, 4)
         if dry_run:
-            target = _validate_ccl_budget_dry_run(previous, fraction, delta)
+            target = _validate_ccl_scaling_dry_run(previous, factor, delta)
         elif delta is not None:
-            previous, target = charge_budget.nudge_budget_fraction(delta)
+            previous, target = charge_ceiling.nudge_scaling_factor(delta)
         else:
-            target = charge_budget.set_budget_fraction(fraction)
+            target = charge_ceiling.set_scaling_factor(factor)
     except ValueError as exc:
         return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
     except RuntimeError as exc:
         return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
     if not dry_run:
         logger.info(
-            "CCL budget fraction write: %.2f->%.2f%s",
+            "CCL scaling factor write: %.2f->%.2f%s",
             previous,
             target,
             f" (delta {delta:+.2f})" if delta is not None else "",
@@ -735,19 +735,19 @@ def _control_charge_budget_ccl_fraction(charge_budget, payload: dict) -> Display
         HTTPStatus.OK,
         {
             "ok": True,
-            "previous_fraction": previous,
-            "fraction": target,
+            "previous_factor": previous,
+            "factor": target,
             "delta": delta,
             "dry_run": dry_run,
         },
     )
 
 
-def _validate_ccl_budget_dry_run(previous: float, fraction: float | None, delta: float | None) -> float:
-    """Resolve and range-check the would-be CCL budget fraction without writing."""
-    from .charge_ceiling import _validate_budget_fraction  # local import avoids a module cycle
+def _validate_ccl_scaling_dry_run(previous: float, factor: float | None, delta: float | None) -> float:
+    """Resolve and range-check the would-be CCL scaling factor without writing."""
+    from .charge_ceiling import _validate_scaling_factor  # local import avoids a module cycle
 
-    return _validate_budget_fraction(previous + delta if delta is not None else fraction)
+    return _validate_scaling_factor(previous + delta if delta is not None else factor)
 
 
 def _resolve_scalar_target(voltage_v: float | None, delta_v: float | None, base_v: float) -> float:
@@ -1564,6 +1564,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 # as "Production Today", structured like the Classic group.
                 # (The rated PV/charge figures are static, so we drop them.)
                 "daily_energy_kwh": epever.generated_today_kwh,
+                "daily_energy_unavailable_reason": epever.generated_today_unavailable_reason,
                 "generated_total_kwh": epever.generated_total_kwh,
                 "temperatures_c": {
                     "battery": epever.battery_temp_c,
@@ -1669,7 +1670,7 @@ def run_display_server(
     refresh_hook: Callable[[], None] | None = None,
     weather_refresh_hook: Callable[[], None] | None = None,
     allocation_provider: Callable[[], dict | None] | None = None,
-    charge_budget=None,
+    charge_ceiling=None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
     refresh = refresh_hook or supervisor.request_refresh
@@ -1761,7 +1762,7 @@ def run_display_server(
                 response = _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
                 self._send_display_response(response)
                 return
-            response = route_control_request(supervisor, parsed_path, payload, charge_budget=charge_budget)
+            response = route_control_request(supervisor, parsed_path, payload, charge_ceiling=charge_ceiling)
             self._send_display_response(response)
 
         def _send_display_response(self, response: DisplayResponse) -> None:

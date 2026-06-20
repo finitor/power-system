@@ -32,7 +32,7 @@ thread that performs polling, so reads and writes to a device cannot race.
 | `GET` | `/api/v1/health` | Machine-readable health: degraded vs down, with per-device checks |
 | `GET` | `/api/v1/snapshot` | Complete latest display snapshot |
 | `POST` | `/api/v1/control/charge-controller/voltage` | Write one scalar charge voltage to Classic (`0`) or EPEver (`1`) |
-| `POST` | `/api/v1/control/charge-budget/ccl-fraction` | Set/nudge the CCL budget fraction (allocator policy, in-memory) |
+| `POST` | `/api/v1/control/ccl-scaling-factor` | Set/nudge the CCL scaling factor (allocator policy, in-memory) |
 | `POST` | `/api/v1/control/classic/charge-settings` | Write Classic charge voltage/current/time settings |
 | `POST` | `/api/v1/control/epever/charge-settings` | Write EPEver boost/float/equalize voltage and/or max charge current |
 | `POST` | `/api/v1/control/epever/sync-from-classic` | Copy Classic charge targets to EPEver, with optional voltage offset |
@@ -111,12 +111,12 @@ for an absolute set), the resolved `voltage_v`, the requested `delta_v`
 (`null` for an absolute set), and `confirmed` — `true` when the controller's
 readback matched the target, `null` on a dry run.
 
-`POST /api/v1/control/charge-budget/ccl-fraction` sets or nudges the **CCL
-budget fraction** — the allocator knob that scales the BMS charge-current limit
+`POST /api/v1/control/ccl-scaling-factor` sets or nudges the **CCL
+scaling factor** — the allocator knob that scales the BMS charge-current limit
 (CCL) down to a working charge budget. The default is `0.5` (50%), and it only
 bites near the taper knee, where the BMS CCL has dropped below
 `bms_knee_ccl_baseline_a`; above the baseline charging is unconstrained and the
-fraction has no effect. It accepts:
+factor has no effect. It accepts:
 
 ```json
 { "delta": 0.05, "dry_run": false }
@@ -125,20 +125,22 @@ fraction has no effect. It accepts:
 or an absolute value:
 
 ```json
-{ "fraction": 0.55 }
+{ "factor": 0.55 }
 ```
 
-Exactly one of `fraction` or `delta` must be supplied. A `delta` is a
-read-modify-write on the live allocator policy. The fraction is clamped to
+Exactly one of `factor` or `delta` must be supplied. A `delta` is a
+read-modify-write on the live allocator policy. The factor is clamped to
 `0.05`–`1.0`; a request resolving outside that band is a `400` (not silently
 clamped). `delta` magnitude is capped at `0.25` per call. The response is
-`{ "ok": true, "previous_fraction": 0.5, "fraction": 0.55, "delta": 0.05, "dry_run": false }`.
+`{ "ok": true, "previous_factor": 0.5, "factor": 0.55, "delta": 0.05, "dry_run": false }`.
 
-This is an **in-memory** knob: it is held by the running allocator and resets to
-the configured default (`CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION`, default `0.5`)
-when the supervisor restarts. It returns `409` when charge allocation is not
-running (the knob would have no effect). The current value is published under
-the snapshot's `allocation.ccl_budget_fraction`.
+A successful write is **persisted** to the supervisor's runtime-state file
+(`--runtime-state-path`, default `/var/lib/offgrid/runtime-state.json`) and
+reloaded on the next start, so it survives a restart; the env default
+(`CHARGE_CEILING_BMS_CCL_SCALING_FACTOR`, default `0.5`) applies only when the
+state file has no value. It returns `409` when charge allocation is not running
+(the knob would have no effect). The current value is published under the
+snapshot's `allocation.ccl_scaling_factor`.
 
 `POST /api/v1/control/classic/charge-settings` accepts any subset of:
 

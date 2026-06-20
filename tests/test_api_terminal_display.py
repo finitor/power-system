@@ -13,6 +13,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 from offgrid_power.api_terminal_display import (
     _allocation_lines,
     _energy_text,
+    _solar_lines,
     render_api_snapshot,
     render_api_unavailable,
     render_api_weather,
@@ -194,13 +195,30 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
 
-    def test_allocation_limit_line_shows_ccl_budget_fraction(self) -> None:
+    def test_epever_production_today_unavailable_message(self) -> None:
+        lines = _solar_lines(
+            [
+                {
+                    "id": "epever.1",
+                    "device": {"vendor": "EPEver", "model": "TEP10425", "short_name": "Epever"},
+                    "charge_stage": {"canonical": "Resting", "vendor": "No charging"},
+                    "daily_energy_kwh": None,
+                    "daily_energy_unavailable_reason": "unavailable, midnight cumulative energy was not logged",
+                }
+            ]
+        )
+        self.assertIn(
+            "Production Today      unavailable, midnight cumulative energy was not logged",
+            "\n".join(lines),
+        )
+
+    def test_allocation_limit_line_shows_ccl_scaling_factor(self) -> None:
         # Active taper: the fraction rides alongside the BMS CCL.
         active = _allocation_lines(
             {
                 "mode": "live",
                 "reason": "BMS CCL fraction",
-                "ccl_budget_fraction": 0.6,
+                "ccl_scaling_factor": 0.6,
                 "bms_ccl_a": 100.0,
                 "charge_ceiling_a": 60.0,
                 "budget_a": 60.0,
@@ -208,21 +226,21 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 "targets": {"classic": {"target_a": 30.0, "disable": False, "reason": "BMS CCL fraction"}},
             }
         )
-        self.assertIn("Limit                 60A net (CCL taper; BMS CCL 100A; budget 60%)", "\n".join(active))
+        self.assertIn("Limit                 60A net (CCL taper; BMS CCL 100A; scaling 60%)", "\n".join(active))
 
         # Unconstrained: still surfaced so a nudge can be confirmed off the knee.
         idle = _allocation_lines(
             {
                 "mode": "live",
                 "reason": "unconstrained",
-                "ccl_budget_fraction": 0.6,
+                "ccl_scaling_factor": 0.6,
                 "bms_ccl_a": 200.0,
                 "charge_ceiling_a": None,
                 "budget_a": 200.0,
                 "targets": {"classic": {"target_a": 80.0, "disable": False, "reason": "unconstrained"}},
             }
         )
-        self.assertIn("Limit                 not limiting (BMS CCL 200A; budget 60%)", "\n".join(idle))
+        self.assertIn("Limit                 not limiting (BMS CCL 200A; scaling 60%)", "\n".join(idle))
 
     def test_allocation_section_prefers_solar_short_names(self) -> None:
         lines = _allocation_lines(

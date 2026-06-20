@@ -1041,90 +1041,90 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 400)
         self.assertIn("per-call cap", json.loads(response.body)["error"])
 
-    def test_control_api_nudges_ccl_budget_fraction(self) -> None:
-        ceiling = ChargeCeiling()  # default budget fraction 0.5
+    def test_control_api_nudges_ccl_scaling_factor(self) -> None:
+        ceiling = ChargeCeiling()  # default scaling factor 0.5
 
         response = route_control_request(
             FakeControlSupervisor(),
-            "/api/v1/control/charge-budget/ccl-fraction",
+            "/api/v1/control/ccl-scaling-factor",
             {"delta": 0.05},
-            charge_budget=ceiling,
+            charge_ceiling=ceiling,
         )
         payload = json.loads(response.body)
 
         self.assertEqual(response.status.value, 200)
-        self.assertEqual(payload["previous_fraction"], 0.5)
-        self.assertEqual(payload["fraction"], 0.55)
+        self.assertEqual(payload["previous_factor"], 0.5)
+        self.assertEqual(payload["factor"], 0.55)
         self.assertEqual(payload["delta"], 0.05)
-        self.assertEqual(ceiling.budget_fraction, 0.55)
+        self.assertEqual(ceiling.scaling_factor, 0.55)
 
-    def test_control_api_sets_ccl_budget_fraction_absolute(self) -> None:
+    def test_control_api_sets_ccl_scaling_factor_absolute(self) -> None:
         ceiling = ChargeCeiling()
 
         response = route_control_request(
             FakeControlSupervisor(),
-            "/api/v1/control/charge-budget/ccl-fraction",
-            {"fraction": 0.6},
-            charge_budget=ceiling,
+            "/api/v1/control/ccl-scaling-factor",
+            {"factor": 0.6},
+            charge_ceiling=ceiling,
         )
         self.assertEqual(response.status.value, 200)
-        self.assertEqual(ceiling.budget_fraction, 0.6)
+        self.assertEqual(ceiling.scaling_factor, 0.6)
 
-    def test_control_api_ccl_budget_dry_run_does_not_write(self) -> None:
+    def test_control_api_ccl_scaling_dry_run_does_not_write(self) -> None:
         ceiling = ChargeCeiling()
 
         response = route_control_request(
             FakeControlSupervisor(),
-            "/api/v1/control/charge-budget/ccl-fraction",
+            "/api/v1/control/ccl-scaling-factor",
             {"delta": 0.05, "dry_run": True},
-            charge_budget=ceiling,
+            charge_ceiling=ceiling,
         )
         payload = json.loads(response.body)
 
         self.assertEqual(response.status.value, 200)
-        self.assertEqual(payload["fraction"], 0.55)
-        self.assertEqual(ceiling.budget_fraction, 0.5)  # unchanged
+        self.assertEqual(payload["factor"], 0.55)
+        self.assertEqual(ceiling.scaling_factor, 0.5)  # unchanged
 
-    def test_control_api_ccl_budget_rejects_out_of_range_result(self) -> None:
+    def test_control_api_ccl_scaling_rejects_out_of_range_result(self) -> None:
         ceiling = ChargeCeiling()
-        ceiling.set_budget_fraction(0.95)
+        ceiling.set_scaling_factor(0.95)
 
         response = route_control_request(
             FakeControlSupervisor(),
-            "/api/v1/control/charge-budget/ccl-fraction",
+            "/api/v1/control/ccl-scaling-factor",
             {"delta": 0.1},  # 0.95 + 0.1 = 1.05 > max 1.0
-            charge_budget=ceiling,
+            charge_ceiling=ceiling,
         )
         self.assertEqual(response.status.value, 400)
         self.assertIn("out of range", json.loads(response.body)["error"])
-        self.assertEqual(ceiling.budget_fraction, 0.95)  # unchanged
+        self.assertEqual(ceiling.scaling_factor, 0.95)  # unchanged
 
-    def test_control_api_ccl_budget_rejects_oversized_delta(self) -> None:
+    def test_control_api_ccl_scaling_rejects_oversized_delta(self) -> None:
         response = route_control_request(
             FakeControlSupervisor(),
-            "/api/v1/control/charge-budget/ccl-fraction",
+            "/api/v1/control/ccl-scaling-factor",
             {"delta": 0.3},
-            charge_budget=ChargeCeiling(),
+            charge_ceiling=ChargeCeiling(),
         )
         self.assertEqual(response.status.value, 400)
         self.assertIn("per-call cap", json.loads(response.body)["error"])
 
-    def test_control_api_ccl_budget_rejects_both_fraction_and_delta(self) -> None:
+    def test_control_api_ccl_scaling_rejects_both_fraction_and_delta(self) -> None:
         response = route_control_request(
             FakeControlSupervisor(),
-            "/api/v1/control/charge-budget/ccl-fraction",
-            {"fraction": 0.5, "delta": 0.05},
-            charge_budget=ChargeCeiling(),
+            "/api/v1/control/ccl-scaling-factor",
+            {"factor": 0.5, "delta": 0.05},
+            charge_ceiling=ChargeCeiling(),
         )
         self.assertEqual(response.status.value, 400)
         self.assertIn("exactly one of", json.loads(response.body)["error"])
 
-    def test_control_api_ccl_budget_conflict_when_allocation_disabled(self) -> None:
+    def test_control_api_ccl_scaling_conflict_when_allocation_disabled(self) -> None:
         response = route_control_request(
             FakeControlSupervisor(),
-            "/api/v1/control/charge-budget/ccl-fraction",
+            "/api/v1/control/ccl-scaling-factor",
             {"delta": 0.05},
-            charge_budget=None,
+            charge_ceiling=None,
         )
         self.assertEqual(response.status.value, 409)
         self.assertIn("not enabled", json.loads(response.body)["error"])
