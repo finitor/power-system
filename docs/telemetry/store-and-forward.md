@@ -4,10 +4,10 @@ The supervisor treats local SQLite as the authoritative telemetry log. WAN expor
 
 ## Current Direction
 
-Use S3-compatible object storage, such as Cloudflare R2 or Backblaze B2, as a durable object-storage mailbox:
+Use S3-compatible object storage (the live target is Backblaze B2) as a durable object-storage mailbox:
 
 1. `offgrid-supervisor` records flat metric samples and irregular events in `/srv/telemetry/data/metrics.sqlite` on the SSD-backed data volume.
-2. `offgrid-r2-export` reads unexported local rows from SQLite.
+2. `offgrid-object-store-export` reads unexported local rows from SQLite.
 3. The exporter writes bounded Parquet batches to the bucket.
 4. Only after the object store accepts the object should the exporter mark those rows exported.
 5. Downstream consumers are intentionally undecided. A future iOS app, importer, or dashboard can read batch objects and deduplicate by a stable exported record id.
@@ -99,25 +99,7 @@ SELECT captured_at, value FROM metrics.samples
 WHERE source = 'battery' AND metric = 'soc';
 ```
 
-The exporter is S3-generic: it accepts `R2_`, `B2_`, or `S3_` prefixed variables (first match wins per `env_first`). **The live deployment uses Backblaze B2** (bucket `magpie-metrics`, region `us-east-005`). The Cloudflare R2 block below is an equivalent alternative, not a second active target.
-
-## Cloudflare R2 Configuration
-
-Set these on the Pi for R2:
-
-```sh
-METRICS_DB_PATH=/srv/telemetry/data/metrics.sqlite
-R2_ACCOUNT_ID=...
-R2_ACCESS_KEY_ID=...
-R2_SECRET_ACCESS_KEY=...
-R2_BUCKET=...
-R2_SITE_ID=cabin
-R2_PREFIX=metrics
-R2_REGION=auto
-R2_EXPORT_LIMIT=5000
-R2_EXPORT_MAX_BATCHES=1
-R2_EXPORT_SLEEP_SECONDS=0
-```
+The exporter is S3-generic: it accepts `B2_` or `S3_` prefixed variables (first match wins per `env_first`). **The live deployment uses Backblaze B2** (bucket `magpie-metrics`, region `us-east-005`); set `S3_*` instead to point it at any other S3-compatible provider.
 
 ## Backblaze B2 Configuration
 

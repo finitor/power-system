@@ -319,7 +319,7 @@ Once `uname -m` reports `aarch64` and telemetry is healthy:
 
 - ~~**Parquet serializer swap**~~ **DONE 2026-06-16:** `pyarrow==24.0.0`
   added to the package deps (installs into the Pi venv on deploy);
-  `build_export_batch` (`offgrid_power/r2_export.py`) writes snappy Parquet
+  `build_export_batch` (`offgrid_power/object_store_export.py`) writes snappy Parquet
   (`.parquet` objects) under the unchanged hive layout. The old NDJSON
   archive objects were deleted rather than converted — operator chose a
   clean start, so the B2 bucket is now uniformly Parquet.

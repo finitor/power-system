@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 import time
 
-from offgrid_power.r2_export import R2Config, export_metrics_once
+from offgrid_power.object_store_export import ObjectStoreConfig, export_metrics_once
 
 
 def env_first(*names: str, default: str = "") -> str:
@@ -21,28 +21,27 @@ def env_first(*names: str, default: str = "") -> str:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Upload unexported metric samples to an S3-compatible bucket.")
     parser.add_argument("--metrics-db-path", default=os.getenv("METRICS_DB_PATH", "data/metrics.sqlite"))
-    parser.add_argument("--account-id", default=os.getenv("R2_ACCOUNT_ID", ""))
-    parser.add_argument("--access-key-id", default=env_first("R2_ACCESS_KEY_ID", "B2_APPLICATION_KEY_ID", "S3_ACCESS_KEY_ID"))
+    parser.add_argument("--access-key-id", default=env_first("B2_APPLICATION_KEY_ID", "S3_ACCESS_KEY_ID"))
     parser.add_argument(
         "--secret-access-key",
-        default=env_first("R2_SECRET_ACCESS_KEY", "B2_APPLICATION_KEY", "S3_SECRET_ACCESS_KEY"),
+        default=env_first("B2_APPLICATION_KEY", "S3_SECRET_ACCESS_KEY"),
     )
-    parser.add_argument("--bucket", default=env_first("R2_BUCKET", "B2_BUCKET", "S3_BUCKET"))
-    parser.add_argument("--site-id", default=env_first("R2_SITE_ID", "B2_SITE_ID", "S3_SITE_ID", default="cabin"))
-    parser.add_argument("--prefix", default=env_first("R2_PREFIX", "B2_PREFIX", "S3_PREFIX", default="metrics"))
-    parser.add_argument("--endpoint-url", default=env_first("R2_ENDPOINT_URL", "B2_ENDPOINT_URL", "S3_ENDPOINT_URL"))
-    parser.add_argument("--region", default=env_first("R2_REGION", "B2_REGION", "S3_REGION", default="auto"))
-    parser.add_argument("--limit", type=int, default=int(env_first("R2_EXPORT_LIMIT", "B2_EXPORT_LIMIT", "S3_EXPORT_LIMIT", default="5000")))
+    parser.add_argument("--bucket", default=env_first("B2_BUCKET", "S3_BUCKET"))
+    parser.add_argument("--site-id", default=env_first("B2_SITE_ID", "S3_SITE_ID", default="cabin"))
+    parser.add_argument("--prefix", default=env_first("B2_PREFIX", "S3_PREFIX", default="metrics"))
+    parser.add_argument("--endpoint-url", default=env_first("B2_ENDPOINT_URL", "S3_ENDPOINT_URL"))
+    parser.add_argument("--region", default=env_first("B2_REGION", "S3_REGION", default="auto"))
+    parser.add_argument("--limit", type=int, default=int(env_first("B2_EXPORT_LIMIT", "S3_EXPORT_LIMIT", default="5000")))
     parser.add_argument(
         "--max-batches",
         type=int,
-        default=int(env_first("R2_EXPORT_MAX_BATCHES", "B2_EXPORT_MAX_BATCHES", "S3_EXPORT_MAX_BATCHES", default="1")),
+        default=int(env_first("B2_EXPORT_MAX_BATCHES", "S3_EXPORT_MAX_BATCHES", default="1")),
         help="Upload up to this many batches before exiting; use 0 to run until the backlog is empty",
     )
     parser.add_argument(
         "--sleep-between-batches",
         type=float,
-        default=float(env_first("R2_EXPORT_SLEEP_SECONDS", "B2_EXPORT_SLEEP_SECONDS", "S3_EXPORT_SLEEP_SECONDS", default="0")),
+        default=float(env_first("B2_EXPORT_SLEEP_SECONDS", "S3_EXPORT_SLEEP_SECONDS", default="0")),
         help="Optional delay between successful batch uploads",
     )
     return parser.parse_args()
@@ -56,20 +55,19 @@ def main() -> int:
             ("access key id", args.access_key_id),
             ("secret access key", args.secret_access_key),
             ("bucket", args.bucket),
-            ("endpoint URL or R2 account id", args.endpoint_url or args.account_id),
+            ("endpoint URL", args.endpoint_url),
         ]
         if not value
     ]
     if missing:
-        print(f"Missing required R2 configuration: {', '.join(missing)}")
+        print(f"Missing required object-store configuration: {', '.join(missing)}")
         return 2
 
-    config = R2Config(
+    config = ObjectStoreConfig(
         access_key_id=args.access_key_id,
         secret_access_key=args.secret_access_key,
         bucket=args.bucket,
         site_id=args.site_id,
-        account_id=args.account_id,
         prefix=args.prefix,
         endpoint_url=args.endpoint_url or None,
         region=args.region,

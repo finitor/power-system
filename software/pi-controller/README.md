@@ -9,12 +9,12 @@ Read-only supervisory monitoring and future control orchestration for the Raspbe
 - `src/offgrid_power/canbus.py`: SocketCAN discovery and battery CAN decoding helpers.
 - `src/offgrid_power/supervisor.py`: combines adapter reads into a single snapshot.
 - `src/offgrid_power/metrics.py`: append-only SQLite metric storage.
-- `src/offgrid_power/r2_export.py`: store-and-forward metric batch export to R2/S3-compatible object storage.
+- `src/offgrid_power/object_store_export.py`: store-and-forward metric batch export to S3-compatible object storage (live target: Backblaze B2).
 - `src/offgrid_power/api_terminal_display.py`: terminal renderer for supervisor API snapshots.
 - `src/offgrid_power/terminal_display.py`: renders a compact terminal status view.
 - `src/offgrid_power/web_display.py`: renders and serves primitive HTML status pages.
 - `src/offgrid_power/cli/can_decode.py`: live or log-based battery CAN decoder.
-- `src/offgrid_power/cli/r2_export.py`: uploads unexported SQLite metric batches to R2.
+- `src/offgrid_power/cli/object_store_export.py`: uploads unexported SQLite metric batches to the object store.
 - `src/offgrid_power/cli/api_terminal_display.py`: read-only terminal display client for `/api/v1/snapshot`.
 - `src/offgrid_power/cli/supervisor_display.py`: production entry point for hardware polling, metrics, and web/API serving.
 - `src/offgrid_power/cli/web_display.py`: local HTTP display server for wall displays.

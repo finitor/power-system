@@ -26,10 +26,10 @@ from offgrid_power.metrics import (
     _insert_samples,
     initialize_metrics_db,
 )
-from offgrid_power.r2_export import build_export_batch, mark_batch_exported
+from offgrid_power.object_store_export import build_export_batch, mark_batch_exported
 
 
-class R2ExportTest(unittest.TestCase):
+class ObjectStoreExportTest(unittest.TestCase):
     def test_batches_are_single_table_and_date_partitioned(self) -> None:
         with sqlite3.connect(":memory:") as connection:
             initialize_metrics_db(connection)

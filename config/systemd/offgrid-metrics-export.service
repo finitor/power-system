@@ -22,5 +22,5 @@ ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 RestrictRealtime=yes
 LockPersonality=yes
-ExecStart=@PROJECT_DIR@/.venv/bin/python -m offgrid_power.cli.r2_export --max-batches 0
+ExecStart=@PROJECT_DIR@/.venv/bin/python -m offgrid_power.cli.object_store_export --max-batches 0
 TimeoutStartSec=20min

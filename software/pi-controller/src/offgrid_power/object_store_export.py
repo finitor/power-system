@@ -1,9 +1,10 @@
 """Store-and-forward metric export to an S3-compatible object store.
 
-Batches serialize to Apache Parquet via pyarrow. The exporter shipped
-gzipped NDJSON while the Pi ran 32-bit armv7l (no pyarrow/duckdb wheels
-existed for that platform); on the 64-bit OS the serializer is Parquet,
-which is what the DuckDB analysis side reads natively.
+Provider-agnostic: any S3-compatible endpoint works (the live deployment is
+Backblaze B2). Batches serialize to Apache Parquet via pyarrow. The exporter
+shipped gzipped NDJSON while the Pi ran 32-bit armv7l (no pyarrow/duckdb
+wheels existed for that platform); on the 64-bit OS the serializer is
+Parquet, which is what the DuckDB analysis side reads natively.
 """
 
 from __future__ import annotations
@@ -28,23 +29,20 @@ from .metrics import initialize_metrics_db
 
 
 @dataclass(frozen=True)
-class R2Config:
+class ObjectStoreConfig:
     access_key_id: str
     secret_access_key: str
     bucket: str
     site_id: str
-    account_id: str = ""
     prefix: str = "metrics"
     endpoint_url: str | None = None
     region: str = "auto"
 
     @property
     def endpoint(self) -> str:
-        if self.endpoint_url:
-            return self.endpoint_url.rstrip("/")
-        if not self.account_id:
-            raise ValueError("R2 account id or S3-compatible endpoint URL is required")
-        return f"https://{self.account_id}.r2.cloudflarestorage.com"
+        if not self.endpoint_url:
+            raise ValueError("S3-compatible endpoint URL is required")
+        return self.endpoint_url.rstrip("/")
 
 
 @dataclass(frozen=True)
@@ -67,8 +65,8 @@ class ExportResult:
     uploaded: bool
 
 
-class R2PutClient:
-    def __init__(self, config: R2Config) -> None:
+class ObjectStorePutClient:
+    def __init__(self, config: ObjectStoreConfig) -> None:
         self.config = config
 
     def put_object(self, key: str, body: bytes, content_type: str) -> None:
@@ -148,7 +146,7 @@ class R2PutClient:
         )
 
 
-def export_metrics_once(db_path: str | Path, config: R2Config, limit: int = 5000) -> ExportResult:
+def export_metrics_once(db_path: str | Path, config: ObjectStoreConfig, limit: int = 5000) -> ExportResult:
     with sqlite3.connect(db_path, timeout=60) as connection:
         connection.execute("PRAGMA busy_timeout = 60000")
         initialize_metrics_db(connection)
@@ -156,7 +154,7 @@ def export_metrics_once(db_path: str | Path, config: R2Config, limit: int = 5000
         if batch is None:
             return ExportResult(batch_id=None, object_key=None, row_count=0, uploaded=False)
 
-    R2PutClient(config).put_object(batch.object_key, batch.body, "application/vnd.apache.parquet")
+    ObjectStorePutClient(config).put_object(batch.object_key, batch.body, "application/vnd.apache.parquet")
 
     uploaded_at = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(db_path, timeout=60) as connection:
