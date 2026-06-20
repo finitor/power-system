@@ -394,11 +394,6 @@ def render_browser_snapshot(
             "<title>Off-Grid Power</title>",
             "<style>",
             _browser_display_css(),
-            ".power-summary{border-collapse:collapse;width:100%;margin:0 0 12px 0;border-bottom:1px solid #777;}",
-            ".power-summary td{font:16px/1.15 monospace;font-weight:bold;border-bottom:0;padding:0 12px 6px 0;vertical-align:middle;}",
-            ".power-summary .soc-cell{font-size:36px;line-height:1;width:23ch;color:#fff;}",
-            ".power-summary .meta-cell{text-align:left;}",
-            ".power-summary .button-cell{text-align:right;width:1%;padding-right:0;white-space:nowrap;}",
             "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
             "</style>",
             "</head>",
@@ -420,11 +415,11 @@ def _browser_snapshot_header(payload: dict) -> str:
     updated = format_updated_time(captured_at) if captured_at is not None else "unavailable"
     severity = status.get("severity") or ("OK" if status.get("ok") else "ERROR")
     return (
-        '<table class="power-summary">'
-        f'<tr><td class="soc-cell">SOC {escape(str(soc_text))}</td>'
-        f'<td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(str(severity))}</td>'
-        '<td class="button-cell"><a class="nav-button" href="/weather">Weather</a></td></tr>'
-        "</table>"
+        '<div class="browser-summary power-summary">'
+        f'<div class="primary-cell">SOC {escape(str(soc_text))}</div>'
+        f'<div class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(str(severity))}</div>'
+        '<div class="button-cell"><a class="nav-button" href="/weather">Weather</a></div>'
+        "</div>"
     )
 
 
@@ -442,7 +437,7 @@ def render_browser_weather(payload: dict | None) -> str:
     stale = bool(payload.get("stale"))
     error = payload.get("error")
     label = payload.get("label") or "Weather"
-    updated = format_time(observed_at) if observed_at is not None else "never"
+    updated = format_updated_time(observed_at) if observed_at is not None else "unavailable"
     status_text = "stale forecast" if stale and current else "forecast" if current else "Weather unavailable"
     lines = [
         "<!doctype html>",
@@ -452,17 +447,10 @@ def render_browser_weather(payload: dict | None) -> str:
         "<title>Off-Grid Weather</title>",
         "<style>",
         _browser_display_css(),
-        "h1{font-size:24px;line-height:1.1;margin:0;}",
         "h2{font-size:18px;line-height:1.25;margin:18px 0 4px 0;border-bottom:1px solid #666;}",
-        "table{border-collapse:collapse;width:100%;max-width:960px;}",
         "th,td{font:16px/1.3 monospace;padding:3px 8px 3px 0;border-bottom:1px solid #333;text-align:left;vertical-align:top;}",
         "th{color:#fff;border-bottom:1px solid #777;font-weight:bold;}",
-        "td:first-child{font-weight:bold;color:#ddd;width:32%;}",
-        ".summary-table{margin:0 0 12px 0;border-bottom:1px solid #777;}",
-        ".summary-table td{border-bottom:0;padding:0 12px 6px 0;font-weight:bold;vertical-align:middle;}",
-        ".summary-table .weather-cell{font-size:28px;line-height:1;width:30%;color:#fff;}",
-        ".summary-table .meta-cell{width:50%;}",
-        ".summary-table .button-cell{text-align:right;width:20%;padding-right:0;}",
+        "td:first-child,th:first-child{font-weight:bold;color:#ddd;width:24ch;}",
         ".small{font-size:13px;color:#bbb;}",
         "</style>",
         "</head>",
@@ -471,9 +459,7 @@ def render_browser_weather(payload: dict | None) -> str:
     if not current:
         lines.extend(
             [
-                '<table class="summary-table">',
-                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">As of: {escape(updated)}<br>{escape(status_text)}</td><td class="button-cell"><a class="nav-button" href="/">Power</a></td></tr>',
-                "</table>",
+                _browser_weather_header("Weather", updated, status_text, "/"),
                 "<h2>Conditions</h2>",
                 "<table>",
                 "<tr><th>Metric</th><th>Value</th></tr>",
@@ -488,9 +474,7 @@ def render_browser_weather(payload: dict | None) -> str:
         condition = (current.get("condition") or {}).get("text") or "unknown"
         lines.extend(
             [
-                '<table class="summary-table">',
-                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>As of: {escape(updated)}</td><td class="button-cell"><a class="nav-button" href="/">Power</a></td></tr>',
-                "</table>",
+                _browser_weather_header(temp or "--", updated, f"{label}: {condition}", "/"),
                 "<h2>Current</h2>",
                 "<table>",
                 "<tr><th>Metric</th><th>Value</th></tr>",
@@ -515,6 +499,16 @@ def render_browser_weather(payload: dict | None) -> str:
     return "\n".join(lines)
 
 
+def _browser_weather_header(primary: str, updated: str, status: str, power_href: str) -> str:
+    return (
+        '<div class="browser-summary weather-summary">'
+        f'<div class="primary-cell">{escape(primary)}</div>'
+        f'<div class="meta-cell">As of: {escape(updated)}<br>{escape(status)}</div>'
+        f'<div class="button-cell"><a class="nav-button" href="{escape(power_href)}">Power</a></div>'
+        "</div>"
+    )
+
+
 def _browser_display_css() -> str:
     return (
         "body{font-family:monospace;background:#111;color:#eee;margin:12px;}"
@@ -523,6 +517,12 @@ def _browser_display_css() -> str:
         ".nav-button{font:16px/1.25 monospace;color:#eee;text-decoration:none;border:1px solid #777;"
         "background:#222;padding:5px 12px;display:inline-block;}"
         ".nav-button:hover{background:#333;border-color:#aaa;}"
+        ".browser-summary{display:grid;grid-template-columns:24ch minmax(0,1fr) auto;align-items:center;"
+        "font:16px/1.15 monospace;font-weight:bold;border-bottom:1px solid #777;margin:0 0 12px 0;padding:0 0 6px 0;}"
+        ".browser-summary .primary-cell{font-size:36px;line-height:1;color:#fff;white-space:nowrap;}"
+        ".browser-summary .meta-cell{text-align:left;}"
+        ".browser-summary .button-cell{text-align:right;white-space:nowrap;}"
+        "table{border-collapse:collapse;width:100%;}"
     )
 
 
