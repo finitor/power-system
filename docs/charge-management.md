@@ -2,6 +2,8 @@
 
 This system treats the battery BMS as the authority on the battery's safe operating envelope, and treats charge controllers as actuators that must stay inside that envelope. The supervisor can automatically allocate charge-controller current limits when charge allocation is enabled; otherwise it reports telemetry and write-time guard failures.
 
+For the electrical fundamentals beneath this policy — why charge current is set by voltage difference rather than by current limits, and how to tune voltage/current to reach full capacity — see [Charge Mechanics and Tuning to Full](charge-mechanics.md).
+
 ## BMS Negotiation Signals
 
 The Eco-Worthy rack batteries expose Pylon-style CAN telemetry. The most important charging constraints are:

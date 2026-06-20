@@ -17,6 +17,10 @@ net battery charge current <= BMS CCL
 
 Controller limits are only the actuators used to maintain that invariant.
 
+For why these current limits are ceilings rather than drivers — and how voltage
+setpoints, not current limits, decide how full the pack gets — see
+[Charge Mechanics and Tuning to Full](charge-mechanics.md).
+
 ## Algorithm (as implemented)
 
 Once per supervisor cycle the allocation logger builds a `ChargerAllocationInput`
