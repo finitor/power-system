@@ -194,6 +194,36 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
 
+    def test_allocation_limit_line_shows_ccl_budget_fraction(self) -> None:
+        # Active taper: the fraction rides alongside the BMS CCL.
+        active = _allocation_lines(
+            {
+                "mode": "live",
+                "reason": "BMS CCL fraction",
+                "ccl_budget_fraction": 0.6,
+                "bms_ccl_a": 100.0,
+                "charge_ceiling_a": 60.0,
+                "budget_a": 60.0,
+                "weight_basis": "equal",
+                "targets": {"classic": {"target_a": 30.0, "disable": False, "reason": "BMS CCL fraction"}},
+            }
+        )
+        self.assertIn("Limit                 60A net (CCL taper; BMS CCL 100A; budget 60%)", "\n".join(active))
+
+        # Unconstrained: still surfaced so a nudge can be confirmed off the knee.
+        idle = _allocation_lines(
+            {
+                "mode": "live",
+                "reason": "unconstrained",
+                "ccl_budget_fraction": 0.6,
+                "bms_ccl_a": 200.0,
+                "charge_ceiling_a": None,
+                "budget_a": 200.0,
+                "targets": {"classic": {"target_a": 80.0, "disable": False, "reason": "unconstrained"}},
+            }
+        )
+        self.assertIn("Limit                 not limiting (BMS CCL 200A; budget 60%)", "\n".join(idle))
+
     def test_allocation_section_prefers_solar_short_names(self) -> None:
         lines = _allocation_lines(
             {

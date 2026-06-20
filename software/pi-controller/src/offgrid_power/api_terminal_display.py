@@ -507,15 +507,22 @@ def _allocation_limit_text(allocation: dict) -> str:
     reason = allocation.get("reason")
     allowance = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
     ccl = f"BMS CCL {_fmt(allocation.get('bms_ccl_a'), 0)}A"
+    budget = _ccl_budget_fraction_text(allocation)
     mechanism = _allocation_mechanisms_text(allocation)
     prefix = "dry-run: " if mode == "dry-run" else ""
     if reason == "unconstrained":
-        return f"{prefix}not limiting ({ccl})"
+        return f"{prefix}not limiting ({ccl}{budget})"
     if allowance is None:
         return f"{prefix}no action ({mechanism}; {ccl})"
     if allowance <= 0:
         return f"{prefix}stop ({mechanism}; {ccl})"
-    return f"{prefix}{_fmt(allowance, 0)}A net ({mechanism}; {ccl})"
+    return f"{prefix}{_fmt(allowance, 0)}A net ({mechanism}; {ccl}{budget})"
+
+
+def _ccl_budget_fraction_text(allocation: dict) -> str:
+    """The live CCL budget fraction as a '; budget NN%' segment, or '' if absent."""
+    fraction = allocation.get("ccl_budget_fraction")
+    return f"; budget {fraction * 100:.0f}%" if isinstance(fraction, (int, float)) else ""
 
 
 def _allocation_mechanisms_text(allocation: dict) -> str:
