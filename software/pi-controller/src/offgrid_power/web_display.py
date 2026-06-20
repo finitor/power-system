@@ -121,22 +121,24 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "(function() {\n"
         f"  var LIVE_MS = {refresh_seconds * 1000}, RETRY_MS = {KINDLE_RETRY_SECONDS * 1000};\n"
         f"  var SENTINEL = '{KINDLE_LIVE_SENTINEL}';\n"
-        "  // Pin the footer by computed pixel offset from the measured viewport.\n"
-        "  // This browser ignores min-height/height on the page box (table and\n"
-        "  // block alike) and mishandles position:fixed, so CSS can't place it.\n"
-        "  // Absolute top in px doesn't depend on the container height, so it\n"
-        "  // survives those quirks. Re-run after every body swap.\n"
+        "  // Push the in-flow footer to the screen bottom by padding the content\n"
+        "  // area. This browser ignores min-height/height on the page box and\n"
+        "  // mishandles fixed/absolute positioning, but it honors padding, so we\n"
+        "  // grow the content's bottom padding by the measured gap. Reset first so\n"
+        "  // the measurement is the page's natural height. Re-run after each swap.\n"
         "  function positionFooter() {\n"
         "    var f = document.getElementById('kindle-footer');\n"
+        "    var ci = document.getElementById('kindle-content-inner');\n"
         "    var d = document.documentElement;\n"
-        "    if (!f || !d || !d.clientHeight) { return; }\n"
-        "    var top = (d.clientHeight - 8) - f.offsetHeight;\n"  # 8 = body's 4px top+bottom margins
-        "    if (top > 0) { f.style.position = 'absolute'; f.style.bottom = 'auto'; f.style.top = top + 'px'; }\n"
+        "    if (!f || !ci || !d || !d.clientHeight) { return; }\n"
+        "    ci.style.paddingBottom = '0px';\n"
+        "    var fh = f.offsetHeight;\n"
+        "    var natTop = f.offsetTop;\n"  # footer's natural top (offsetParent = body content origin, viewport y=4)
+        "    var gap = (d.clientHeight - 8 - fh) - natTop;\n"  # 8 = body's 4px top+bottom margins
+        "    if (gap > 0) { ci.style.paddingBottom = gap + 'px'; }\n"
         "    var dg = document.getElementById('vp2');\n"
         "    if (dg) {\n"
-        "      var kp = document.getElementById('kindle-page');\n"
-        "      dg.innerHTML = 'vp2: vh=' + d.clientHeight + ' footH=' + f.offsetHeight\n"
-        "        + ' top=' + top + ' pageH=' + (kp ? kp.offsetHeight : '?');\n"
+        "      dg.innerHTML = 'vp2: vh=' + d.clientHeight + ' fh=' + fh + ' footTop=' + natTop + ' gap=' + gap;\n"
         "    }\n"
         "  }\n"
         "  function schedule(ms) { setTimeout(tick, ms); }\n"
@@ -223,17 +225,12 @@ def render_kindle_snapshot(
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        # Pin the footer to the bottom with absolute positioning inside a
-        # min-height block. min-height is the measured usable viewport (Kindle
-        # Touch: documentElement.clientHeight 700px, dpr 1, minus 8px body
-        # margins). NB: the earlier display:table approach failed because this
-        # 2011 WebKit ignores min-height on table boxes, so the page collapsed to
-        # content height and the footer floated. Absolute positioning inside a
-        # min-height block is plain CSS2 and is honored (unlike table min-height,
-        # position:fixed, and vh on this browser).
-        ".kindle-page{position:relative;width:100%;min-height:692px;}",
-        ".kindle-content-inner{padding-bottom:44px;}",
-        ".kindle-footer{position:absolute;left:0;right:0;bottom:0;}",
+        # The footer is positioned by JS (see _kindle_refresh_script). This 2011
+        # Kindle WebKit ignores min-height/height on the page box and mishandles
+        # fixed/absolute positioning, but it DOES honor padding — so JS pads the
+        # content area to push the in-flow footer to the screen bottom when the
+        # page is shorter than the viewport. Pure CSS can't do it on this browser.
+        ".kindle-page{width:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -262,7 +259,7 @@ def render_kindle_snapshot(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/weather", "left", "Weather"),
         _page_turn_link("/kindle/details", "right", "More Power Info"),
-        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
+        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner" id="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -302,17 +299,12 @@ def render_kindle_details(
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        # Pin the footer to the bottom with absolute positioning inside a
-        # min-height block. min-height is the measured usable viewport (Kindle
-        # Touch: documentElement.clientHeight 700px, dpr 1, minus 8px body
-        # margins). NB: the earlier display:table approach failed because this
-        # 2011 WebKit ignores min-height on table boxes, so the page collapsed to
-        # content height and the footer floated. Absolute positioning inside a
-        # min-height block is plain CSS2 and is honored (unlike table min-height,
-        # position:fixed, and vh on this browser).
-        ".kindle-page{position:relative;width:100%;min-height:692px;}",
-        ".kindle-content-inner{padding-bottom:44px;}",
-        ".kindle-footer{position:absolute;left:0;right:0;bottom:0;}",
+        # The footer is positioned by JS (see _kindle_refresh_script). This 2011
+        # Kindle WebKit ignores min-height/height on the page box and mishandles
+        # fixed/absolute positioning, but it DOES honor padding — so JS pads the
+        # content area to push the in-flow footer to the screen bottom when the
+        # page is shorter than the viewport. Pure CSS can't do it on this browser.
+        ".kindle-page{width:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -340,7 +332,7 @@ def render_kindle_details(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle", "left", "Back to Power"),
         _page_turn_link("/weather", "right", "Weather"),
-        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
+        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner" id="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
