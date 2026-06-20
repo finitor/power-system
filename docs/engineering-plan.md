@@ -243,7 +243,7 @@ taper knee, added 2026-06-20 (0a7eb3a, 90b684b, 342a1a1, c0c52cf).
 - Guard rails: staged-commit (explicit Enter), session budget, idle auto-disarm,
   BMS-CVL backstop, per-call delta caps. Default scaling step is 10 points so a
   nudge clears the allocator's 5 A deadband; the Limit line surfaces the live
-  factor. See [docs/journal/2026-06-20.md](journal/2026-06-20.md) and
+  factor. See [docs/journal/2026-06-20-a.md](journal/2026-06-20-a.md) and
   [charge-current-allocation.md](charge-current-allocation.md).
 
 ## Done

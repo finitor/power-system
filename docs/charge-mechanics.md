@@ -71,7 +71,12 @@ right up to meet the bus — closing the gap that was driving the current.
 The same steepness is why cell-to-cell imbalance becomes visible (and matters)
 only near the top, and why the guardrails watch cell delta as a function of
 max-cell voltage rather than absolutely — see
-[Threshold Theory](charge-management.md#threshold-theory).
+[Threshold Theory](charge-management.md#threshold-theory). It is also why passive
+balancing only makes progress in this high-voltage window (the BMS bleeds the
+high cells only above its balance threshold, and only here are the per-cell
+voltage differences large enough to act on): a pack that never charges into and
+dwells in the knee stays imbalanced, while periodically reaching and holding the
+top is what keeps the cells in line.
 
 ## Charging stages mapped to the model
 
