@@ -292,7 +292,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("network unavailable", html)
         self.assertIn("XMLHttpRequest", html)
 
-    def test_renders_browser_weather_dark_table(self) -> None:
+    def test_renders_browser_weather_dark_terminal_flow(self) -> None:
         report = WeatherReport(
             label="Cabin",
             fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
@@ -318,10 +318,14 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn('<div class="primary-cell">12.4C</div>', html)
         self.assertIn('<div class="meta-cell">As of:', html)
         self.assertIn('<a class="nav-button" href="/">Power</a>', html)
-        self.assertIn("<tr><th>Metric</th><th>Value</th></tr>", html)
-        self.assertIn("td:first-child,th:first-child{font-weight:bold;color:#ddd;width:24ch;}", html)
         self.assertIn("Cabin: rain", html)
+        self.assertIn("<pre>Current", html)
+        self.assertIn("Condition", html)
+        self.assertIn("Temperature", html)
         self.assertIn("18km/h  32km/h gust  W", html)
+        self.assertNotIn("<tr><th>Metric</th><th>Value</th></tr>", html)
+        self.assertNotIn("Forecast        forecast", html)
+        self.assertNotIn("td:first-child,th:first-child", html)
         self.assertNotIn("XMLHttpRequest", html)
 
     def test_hides_weather_details_after_stale_cutoff(self) -> None:
@@ -530,7 +534,7 @@ class WebDisplayTest(unittest.TestCase):
                 self.assertNotIn(b"More Power Info", response.body)
                 self.assertNotIn(b"Back to Power", response.body)
 
-    def test_routes_regular_browser_weather_to_dark_table_page(self) -> None:
+    def test_routes_regular_browser_weather_to_dark_terminal_page(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
         report = WeatherReport(
             label="Cabin",
@@ -547,7 +551,11 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b'<div class="primary-cell">11.0C</div>', response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
         self.assertIn(b'<a class="nav-button" href="/">Power</a>', response.body)
-        self.assertIn(b"<tr><th>Metric</th><th>Value</th></tr>", response.body)
+        self.assertIn(b"<pre>Current", response.body)
+        self.assertIn(b"Condition", response.body)
+        self.assertIn(b"Temperature", response.body)
+        self.assertNotIn(b"<tr><th>Metric</th><th>Value</th></tr>", response.body)
+        self.assertNotIn(b"Forecast        forecast", response.body)
         self.assertNotIn(b"page-turn", response.body)
 
     def test_routes_kindle_weather_to_kindle_page(self) -> None:

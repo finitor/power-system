@@ -12,7 +12,7 @@ from threading import Lock
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
-from .api_terminal_display import render_api_snapshot
+from .api_terminal_display import render_api_snapshot, render_api_weather
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
 from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot
@@ -435,10 +435,15 @@ def render_browser_weather(payload: dict | None) -> str:
     current = payload.get("current")
     observed_at = _parse_payload_time(payload.get("observed_at"))
     stale = bool(payload.get("stale"))
-    error = payload.get("error")
     label = payload.get("label") or "Weather"
     updated = format_updated_time(observed_at) if observed_at is not None else "unavailable"
     status_text = "stale forecast" if stale and current else "forecast" if current else "Weather unavailable"
+    primary = "Weather"
+    if current:
+        primary = _format_number(current.get("temperature_c"), "C", decimals=1) or "--"
+        condition = (current.get("condition") or {}).get("text") or "unknown"
+        status_text = f"{label}: {condition}"
+    rendered = _trim_browser_weather_header(render_api_weather(payload))
     lines = [
         "<!doctype html>",
         "<html>",
@@ -447,55 +452,15 @@ def render_browser_weather(payload: dict | None) -> str:
         "<title>Off-Grid Weather</title>",
         "<style>",
         _browser_display_css(),
-        "h2{font-size:18px;line-height:1.25;margin:18px 0 4px 0;border-bottom:1px solid #666;}",
-        "th,td{font:16px/1.3 monospace;padding:3px 8px 3px 0;border-bottom:1px solid #333;text-align:left;vertical-align:top;}",
-        "th{color:#fff;border-bottom:1px solid #777;font-weight:bold;}",
-        "td:first-child,th:first-child{font-weight:bold;color:#ddd;width:24ch;}",
-        ".small{font-size:13px;color:#bbb;}",
+        "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
         "</style>",
         "</head>",
         "<body>",
+        _browser_weather_header(primary, updated, status_text, "/"),
+        f"<pre>{escape(rendered)}</pre>",
+        "</body>",
+        "</html>",
     ]
-    if not current:
-        lines.extend(
-            [
-                _browser_weather_header("Weather", updated, status_text, "/"),
-                "<h2>Conditions</h2>",
-                "<table>",
-                "<tr><th>Metric</th><th>Value</th></tr>",
-                _weather_row("Status", "Weather unavailable"),
-                "</table>",
-            ]
-        )
-        if error:
-            lines.append(f'<p class="small">{escape(error)}</p>')
-    else:
-        temp = _format_number(current.get("temperature_c"), "C", decimals=1)
-        condition = (current.get("condition") or {}).get("text") or "unknown"
-        lines.extend(
-            [
-                _browser_weather_header(temp or "--", updated, f"{label}: {condition}", "/"),
-                "<h2>Current</h2>",
-                "<table>",
-                "<tr><th>Metric</th><th>Value</th></tr>",
-                _weather_row("Forecast", status_text),
-                _weather_row("Feels Like", _format_number(current.get("apparent_temperature_c"), "C", decimals=1)),
-                _weather_row("Humidity", _format_number(current.get("humidity_pct"), "%", decimals=0)),
-                _weather_row("Cloud", _format_number(current.get("cloud_cover_pct"), "%", decimals=0)),
-                _weather_row("Wind", _wind_text(current.get("wind") or {})),
-                _weather_row("Precip Now", _precip_text(current)),
-                "</table>",
-            ]
-        )
-        lines.extend(_hourly_weather_section(payload.get("hourly") or []))
-        lines.extend(_daily_weather_section(payload.get("daily") or []))
-        lines.extend(_solar_irradiance_section(current.get("irradiance") or {}))
-        lines.extend(_astronomy_weather_section(payload.get("astronomy") or {}))
-        if stale:
-            lines.append('<p class="small">Using last cached weather. WAN fetch failed.</p>')
-        if error:
-            lines.append(f'<p class="small">{escape(error)}</p>')
-    lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
 
 
@@ -507,6 +472,14 @@ def _browser_weather_header(primary: str, updated: str, status: str, power_href:
         f'<div class="button-cell"><a class="nav-button" href="{escape(power_href)}">Power</a></div>'
         "</div>"
     )
+
+
+def _trim_browser_weather_header(rendered: str) -> str:
+    lines = rendered.splitlines()
+    for index, line in enumerate(lines):
+        if line == "":
+            return "\n".join(lines[index + 1 :])
+    return rendered
 
 
 def _browser_display_css() -> str:
