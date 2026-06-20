@@ -33,6 +33,7 @@ from offgrid_power.web_display import (
 )
 from offgrid_power.weather import WeatherReport, weather_api_payload
 from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_epever_settings, make_epever_telemetry, make_magnum_snapshot, make_snapshot
+from golden import check_golden
 
 
 class FakeControlSupervisor:
@@ -176,48 +177,22 @@ class WebDisplayTest(unittest.TestCase):
             ),
         )
 
-        # The in-place XHR refresher keeps the Kindle wall display alive:
-        # it never navigates, so a Pi reboot can't strand the browser on a
-        # native error page.
+        details_html = render_kindle_details(snapshot)
+
+        # Page layout, styling, sectioning, and decoded values live in the golden
+        # frames; re-bless with UPDATE_GOLDEN=1 on an intended change.
+        check_golden(self, "kindle_snapshot", html)
+        check_golden(self, "kindle_details", details_html)
+
+        # Behavioral invariants kept explicit so a golden re-bless can't lose
+        # them: the wall display refreshes in place (never navigates) on an
+        # adaptive cadence, and the page-turn links wire the Kindle's buttons.
         self.assertIn("XMLHttpRequest", html)
-        # Adaptive cadence: slow when live, fast-retry otherwise.
         self.assertIn("LIVE_MS = 60000", html)
         self.assertIn("RETRY_MS = 5000", html)
         self.assertNotIn('http-equiv="refresh"', html)
-        # Live-page sentinel drives the slow cadence (and recovery detection).
-        self.assertIn("offgrid-live", html)
-        self.assertIn("SOC 97%", html)
-        # This snapshot has no charge controllers, so the collection renders a
-        # single empty group rather than hardcoded per-vendor sections.
-        for section in ("Load", "Battery Bank", "Charge Controllers"):
-            self.assertIn(f"<h2>{section}</h2>", html)
-        self.assertNotIn("<h2>Inverter/Charger</h2>", html)
-        self.assertNotIn("<h2>Temperatures</h2>", html)
-        self.assertIn("<h2>Status Conditions</h2>", html)
-        self.assertIn('<td colspan="2">none</td>', html)
-        self.assertNotIn("<td>State</td><td>none</td>", html)
-        self.assertIn('href="/kindle/details">More Power Info...</a>', html)
-        self.assertIn(".kindle-page{display:table;width:100%;height:100%;min-height:640px;}", html)
-        self.assertIn('<div class="kindle-footer"><div class="kindle-footer-cell">', html)
-        self.assertIn(".bottom-link{font-size:17px;line-height:1.55", html)
-        self.assertNotIn("position:fixed;left:4px;right:4px", html)
-        self.assertIn("top:58px;bottom:0", html)
         self.assertIn('class="page-turn page-turn-left" href="/weather"', html)
         self.assertIn('class="page-turn page-turn-right" href="/kindle/details"', html)
-        # Decoded values flow through to the page.
-        self.assertIn("5.1A  272W", html)
-        self.assertIn("18.7h", html)
-        self.assertIn("54.57V", html)
-        # Details page carries lower-priority telemetry that otherwise pushes
-        # the Kindle into an awkward scroll state.
-        details_html = render_kindle_details(snapshot)
-        for section in ("Inverter/Charger", "Charge Controller Settings", "Temperatures"):
-            self.assertIn(f"<h2>{section}</h2>", details_html)
-        self.assertIn("60.0Hz", details_html)
-        self.assertIn("Inverting", details_html)
-        self.assertIn('href="/kindle">Back to Power</a>', details_html)
-        self.assertIn('href="/weather">Weather</a>', details_html)
-        self.assertNotIn('href="/kindle">Back</a>', details_html)
         self.assertIn('class="page-turn page-turn-left" href="/kindle"', details_html)
         self.assertIn('class="page-turn page-turn-right" href="/weather"', details_html)
 
@@ -272,17 +247,18 @@ class WebDisplayTest(unittest.TestCase):
             },
         )
 
-        html = render_kindle_weather(weather_api_payload(report))
+        # Fixed now so the staleness-dependent render is deterministic.
+        html = render_kindle_weather(
+            weather_api_payload(report), now=datetime(2026, 6, 6, 14, 31, tzinfo=timezone.utc)
+        )
 
+        # Layout + derived formatting (code→text, wind direction, moon name) in
+        # the golden; behavioral cadence/nav kept explicit.
+        check_golden(self, "kindle_weather", html)
         self.assertIn("XMLHttpRequest", html)
         self.assertIn("offgrid-live", html)  # live page → slow cadence
         self.assertIn('class="page-turn page-turn-left" href="/kindle/details"', html)
         self.assertIn('class="page-turn page-turn-right" href="/kindle"', html)
-        # Derived formatting: weather code text, wind direction, moon phase name.
-        self.assertIn("Cabin: rain", html)
-        self.assertIn("18km/h  32km/h gust  W", html)
-        self.assertIn("rise 05:39  set 21:37", html)
-        self.assertIn("last quarter (0.72)", html)
 
     def test_renders_weather_unavailable_with_retry(self) -> None:
         report = WeatherReport(
@@ -318,23 +294,15 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_browser_weather(weather_api_payload(report))
 
-        self.assertIn("background:#111", html)
-        self.assertIn("font-family:monospace", html)
-        self.assertIn('class="browser-summary weather-summary"', html)
-        self.assertIn('grid-template-columns:24ch minmax(0,1fr) auto', html)
-        self.assertIn('<div class="primary-cell">12.4C</div>', html)
-        self.assertIn('<div class="meta-cell">As of:', html)
-        self.assertIn('<a class="nav-button" href="/">Power</a>', html)
-        self.assertIn("Cabin: rain", html)
-        self.assertIn("<pre>Current", html)
-        self.assertIn("Condition", html)
-        self.assertIn("Temperature", html)
-        self.assertIn("18km/h  32km/h gust  W", html)
-        self.assertNotIn("<tr><th>Metric</th><th>Value</th></tr>", html)
-        self.assertNotIn("Forecast        forecast", html)
-        self.assertNotIn("td:first-child,th:first-child", html)
+        # Dark-terminal layout/styling/values in the golden.
+        check_golden(self, "browser_weather", html)
+
+        # Behavioral: the browser page refreshes in place on the slow live
+        # cadence and uses the <pre> terminal style, not the old table markup.
         self.assertIn("var LIVE_MS = 300000, RETRY_MS = 5000;", html)
         self.assertIn("XMLHttpRequest", html)
+        self.assertIn("<pre>Current", html)
+        self.assertNotIn("<tr><th>Metric</th><th>Value</th></tr>", html)
 
     def test_hides_weather_details_after_stale_cutoff(self) -> None:
         fetched_at = datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc)

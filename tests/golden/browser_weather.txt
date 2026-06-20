@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script type="text/javascript">
+(function() {
+  var LIVE_MS = 300000, RETRY_MS = 5000;
+  function schedule(ms) { setTimeout(tick, ms); }
+  function tick() {
+    var x = new XMLHttpRequest();
+    x.open('GET', window.location.pathname + '?k=' + (new Date()).getTime(), true);
+    x.onreadystatechange = function() {
+      if (x.readyState !== 4) { return; }
+      if (x.status !== 200) { schedule(RETRY_MS); return; }
+      var t = x.responseText;
+      var bo = '<bo' + 'dy';
+      var bc = '</bo' + 'dy>';
+      var i = t.indexOf(bo);
+      if (i < 0) { schedule(RETRY_MS); return; }
+      i = t.indexOf('>', i);
+      var j = t.lastIndexOf(bc);
+      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }
+      document.body.innerHTML = t.substring(i + 1, j);
+      schedule(LIVE_MS);
+    };
+    x.onerror = function() { schedule(RETRY_MS); };
+    x.send(null);
+  }
+  schedule(LIVE_MS);
+})();
+</script>
+<title>Off-Grid Weather</title>
+<style>
+body{font-family:monospace;background:#111;color:#eee;margin:12px;}a{color:#9cf;}.nav{font:16px/1.25 monospace;margin:0 0 12px 0;text-align:right;}.nav-button{font:16px/1.25 monospace;color:#eee;text-decoration:none;border:1px solid #777;background:#222;padding:5px 12px;display:inline-block;}.nav-button:hover{background:#333;border-color:#aaa;}.browser-summary{display:grid;grid-template-columns:24ch minmax(0,1fr) auto;align-items:center;font:16px/1.15 monospace;font-weight:bold;border-bottom:1px solid #777;margin:0 0 12px 0;padding:0 0 6px 0;}.browser-summary .primary-cell{font-size:36px;line-height:1;color:#fff;white-space:nowrap;}.browser-summary .meta-cell{text-align:left;}.browser-summary .button-cell{text-align:right;white-space:nowrap;}table{border-collapse:collapse;width:100%;}
+pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}
+</style>
+</head>
+<body>
+<div class="browser-summary weather-summary"><div class="primary-cell">12.4C</div><div class="meta-cell">As of: 10:30:00 EDT<br>Cabin: rain</div><div class="button-cell"><a class="nav-button" href="/">Power</a></div></div>
+<pre>Current
+  Condition             rain
+  Temperature           12.4C
+  Feels Like            11.8C
+  Humidity              70%
+  Wind                  18km/h  32km/h gust  W
+
+Solar Irradiance
+  Global Horizontal     --
+  Direct Radiation      --
+  Diffuse Radiation     --
+  Direct Normal         --
+
+Astronomy</pre>
+</body>
+</html>

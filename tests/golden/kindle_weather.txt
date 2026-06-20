@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<script type="text/javascript">
+(function() {
+  var LIVE_MS = 60000, RETRY_MS = 5000;
+  var SENTINEL = 'offgrid-live';
+  function schedule(ms) { setTimeout(tick, ms); }
+  function tick() {
+    var x = new XMLHttpRequest();
+    var url = window.location.pathname + '?k=' + (new Date()).getTime();
+    x.open('GET', url, true);
+    x.onreadystatechange = function() {
+      if (x.readyState !== 4) { return; }
+      if (x.status !== 200) { schedule(RETRY_MS); return; }
+      var t = x.responseText;
+      // Markers built by concatenation so this script's own source
+      // can never match them (it lives in the fetched head).
+      var bo = '<bo' + 'dy';
+      var bc = '</bo' + 'dy>';
+      var i = t.indexOf(bo);
+      if (i < 0) { schedule(RETRY_MS); return; }
+      i = t.indexOf('>', i);
+      var j = t.lastIndexOf(bc);
+      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }
+      document.body.innerHTML = t.substring(i + 1, j);
+      schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);
+    };
+    x.onerror = function() { schedule(RETRY_MS); };
+    x.send(null);
+  }
+  schedule(LIVE_MS);
+})();
+</script>
+<title>Off-Grid Weather</title>
+<style>
+body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}
+table{border-collapse:collapse;width:100%;}
+td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}
+td:first-child{font-size:17px;font-weight:bold;width:38%;}
+.summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}
+.summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}
+.summary-table .weather-cell{font-size:30px;line-height:1;text-align:left;vertical-align:middle;width:38%;}
+.summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:46%;}
+.summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}
+.top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}
+.page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
+.page-turn-left{left:0;}
+.page-turn-right{right:0;}
+.small{font-size:13px;}
+</style>
+</head>
+<body>
+<!-- offgrid-live -->
+<a class="page-turn page-turn-left" href="/kindle/details">Power Details</a>
+<a class="page-turn page-turn-right" href="/kindle">Power</a>
+<table class="summary-table">
+<tr><td class="weather-cell">12.4C</td><td class="meta-cell">Cabin: rain<br>As of: 10:30:00 EDT</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>
+</table>
+<h2>Current</h2>
+<table>
+<tr><td>Feels Like</td><td>--</td></tr>
+<tr><td>Humidity</td><td>--</td></tr>
+<tr><td>Cloud</td><td>--</td></tr>
+<tr><td>Wind</td><td>18km/h  32km/h gust  W</td></tr>
+<tr><td>Precip Now</td><td>--</td></tr>
+</table>
+<h2>Forecast</h2>
+<table>
+<tr><td>Sat 06/06</td><td>rain  8.2C-14.8C  70% precip  3.4mm</td></tr>
+</table>
+<h2>Solar Irradiance</h2>
+<table>
+<tr><td>Global Horizontal (GHI)</td><td>--</td></tr>
+<tr><td>Direct Radiation</td><td>--</td></tr>
+<tr><td>Diffuse Radiation</td><td>--</td></tr>
+<tr><td>Direct Normal (DNI)</td><td>--</td></tr>
+</table>
+<h2>Astronomy</h2>
+<table>
+<tr><td>Sun</td><td>rise 05:39  set 21:37</td></tr>
+<tr><td>Moon</td><td>last quarter (0.72)</td></tr>
+<tr><td>Aurora</td><td>--</td></tr>
+</table>
+</body>
+</html>

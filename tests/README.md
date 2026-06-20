@@ -37,6 +37,27 @@ Not worth testing:
 - CSS rules, exact tag structure, column spacing, section ordering, or any
   assertion that fails when the display is intentionally restyled.
 
+## Golden Frames
+
+Whole rendered frames (the terminal snapshot/weather views, the Kindle and
+browser pages) are pinned with golden files in `tests/golden/` via
+`golden.check_golden(self, name, rendered)` instead of line-by-line assertions.
+This keeps a single regression tripwire for layout without making every restyle
+a multi-assertion edit — the exact churn the 2026-06-09 pruning was reacting to.
+On an intended layout change, re-bless in one command:
+
+```sh
+UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests/test_api_terminal_display.py tests/test_web_display.py
+```
+
+Goldens are line-end normalized so terminal-width padding stays portable; renders
+that depend on wall-clock time must be given a fixed `now=` so the frame is
+deterministic. This does **not** replace behavioral tests: HTML escaping, the
+never-navigate/refresh-cadence invariants, page-turn routing, degraded-state
+rendering, and deliberate row suppressions stay as explicit value assertions
+next to the golden check, because a golden re-bless could otherwise reintroduce
+them silently.
+
 ## Snapshot Factories
 
 `snapshot_helpers.py` provides `make_snapshot()`, `make_classic_telemetry()`,

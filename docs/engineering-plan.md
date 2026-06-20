@@ -228,6 +228,24 @@ Next levers: the tap's `120R` termination jumpers are unpopulated -- RS485
 termination is the likely highest-yield next experiment (reflections cause this
 same byte loss); then reroute the RS485 away from the PV runs / swap the adapter.
 
+## 13. Operator live-tuning controls — DONE
+
+Live, on-console operator control of the two knobs that shape charging near the
+taper knee, added 2026-06-20 (0a7eb3a, 90b684b, 342a1a1, c0c52cf).
+
+- **Scalar charge voltage** per controller: `delta_v` on the scalar-voltage API
+  (read-modify-write + readback confirm), `scripts/charge-controller-voltage.py
+  --by`, and a staged-commit **tune mode** (`t`) in the terminal display.
+- **CCL scaling factor** (the allocator's fraction of BMS CCL near the knee;
+  renamed from "budget fraction" to free up "budget" for limit+load): same API /
+  script / tune-row treatment, persisted across restarts in
+  `/var/lib/offgrid/runtime-state.json` (env default applies only when absent).
+- Guard rails: staged-commit (explicit Enter), session budget, idle auto-disarm,
+  BMS-CVL backstop, per-call delta caps. Default scaling step is 10 points so a
+  nudge clears the allocator's 5 A deadband; the Limit line surfaces the live
+  factor. See [docs/journal/2026-06-20.md](journal/2026-06-20.md) and
+  [charge-current-allocation.md](charge-current-allocation.md).
+
 ## Done
 
 - Item 1 (deploy.sh, watcher retired): e4444fc, a6f506f — verified with a
