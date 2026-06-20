@@ -202,15 +202,17 @@ def render_kindle_snapshot(
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        # min-height is the device's measured usable viewport (Kindle Touch:
-        # documentElement.clientHeight 700px, dpr 1, minus body's 8px margins).
-        # height:100% is intentionally absent — a display:table element treats it
-        # as content height, so it never filled the screen and the footer floated.
-        ".kindle-page{display:table;width:100%;min-height:692px;}",
-        ".kindle-content{display:table-row;}",
-        ".kindle-content-inner{display:table-cell;vertical-align:top;}",
-        ".kindle-footer{display:table-row;height:28px;}",
-        ".kindle-footer-cell{display:table-cell;vertical-align:bottom;}",
+        # Pin the footer to the bottom with absolute positioning inside a
+        # min-height block. min-height is the measured usable viewport (Kindle
+        # Touch: documentElement.clientHeight 700px, dpr 1, minus 8px body
+        # margins). NB: the earlier display:table approach failed because this
+        # 2011 WebKit ignores min-height on table boxes, so the page collapsed to
+        # content height and the footer floated. Absolute positioning inside a
+        # min-height block is plain CSS2 and is honored (unlike table min-height,
+        # position:fixed, and vh on this browser).
+        ".kindle-page{position:relative;width:100%;min-height:692px;}",
+        ".kindle-content-inner{padding-bottom:44px;}",
+        ".kindle-footer{position:absolute;left:0;right:0;bottom:0;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -278,15 +280,17 @@ def render_kindle_details(
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        # min-height is the device's measured usable viewport (Kindle Touch:
-        # documentElement.clientHeight 700px, dpr 1, minus body's 8px margins).
-        # height:100% is intentionally absent — a display:table element treats it
-        # as content height, so it never filled the screen and the footer floated.
-        ".kindle-page{display:table;width:100%;min-height:692px;}",
-        ".kindle-content{display:table-row;}",
-        ".kindle-content-inner{display:table-cell;vertical-align:top;}",
-        ".kindle-footer{display:table-row;height:28px;}",
-        ".kindle-footer-cell{display:table-cell;vertical-align:bottom;}",
+        # Pin the footer to the bottom with absolute positioning inside a
+        # min-height block. min-height is the measured usable viewport (Kindle
+        # Touch: documentElement.clientHeight 700px, dpr 1, minus 8px body
+        # margins). NB: the earlier display:table approach failed because this
+        # 2011 WebKit ignores min-height on table boxes, so the page collapsed to
+        # content height and the footer floated. Absolute positioning inside a
+        # min-height block is plain CSS2 and is honored (unlike table min-height,
+        # position:fixed, and vh on this browser).
+        ".kindle-page{position:relative;width:100%;min-height:692px;}",
+        ".kindle-content-inner{padding-bottom:44px;}",
+        ".kindle-footer{position:absolute;left:0;right:0;bottom:0;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",

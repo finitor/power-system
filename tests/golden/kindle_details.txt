@@ -37,11 +37,9 @@
 <style>
 html,body{height:100%;}
 body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
-.kindle-page{display:table;width:100%;min-height:692px;}
-.kindle-content{display:table-row;}
-.kindle-content-inner{display:table-cell;vertical-align:top;}
-.kindle-footer{display:table-row;height:28px;}
-.kindle-footer-cell{display:table-cell;vertical-align:bottom;}
+.kindle-page{position:relative;width:100%;min-height:692px;}
+.kindle-content-inner{padding-bottom:44px;}
+.kindle-footer{position:absolute;left:0;right:0;bottom:0;}
 h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}
 ul{margin:0 0 4px 18px;padding:0;}
 li{line-height:1.15;}
