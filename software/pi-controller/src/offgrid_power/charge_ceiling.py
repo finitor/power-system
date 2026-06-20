@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import threading
 
 from .canbus import PylonCanSnapshot
+
+# The CCL budget fraction is an operator knob (it scales the BMS charge-current
+# limit down to a working budget near the taper knee). Keep it inside a sane
+# band: never starve charging to nothing, never claim more than the BMS allows.
+MIN_CCL_BUDGET_FRACTION = 0.05
+MAX_CCL_BUDGET_FRACTION = 1.0
 
 
 @dataclass(frozen=True)
@@ -44,6 +51,38 @@ class ChargeCeiling:
         self._cell_latch_reason: str | None = None
         self._low_temp_latched = False
         self._low_temp_latch_reason: str | None = None
+        # Serializes operator budget-fraction edits (HTTP handler threads)
+        # against each other; evaluate() reads self.config, which is rebound
+        # atomically, so the allocator loop never sees a torn value.
+        self._budget_lock = threading.Lock()
+
+    @property
+    def budget_fraction(self) -> float:
+        return self.config.bms_ccl_budget_fraction
+
+    def set_budget_fraction(self, fraction: float) -> float:
+        """Set the CCL budget fraction to an absolute value; return what stuck.
+
+        Raises ValueError if the request is outside the allowed band rather than
+        silently clamping, so a fat-fingered absolute set is refused, not masked.
+        """
+        rounded = _validate_budget_fraction(fraction)
+        with self._budget_lock:
+            self.config = replace(self.config, bms_ccl_budget_fraction=rounded)
+        return rounded
+
+    def nudge_budget_fraction(self, delta: float) -> tuple[float, float]:
+        """Read-modify-write the CCL budget fraction by `delta`.
+
+        Returns ``(previous, new)``. Raises ValueError if the result would leave
+        the allowed band. The read and write happen under one lock so concurrent
+        nudges can't interleave.
+        """
+        with self._budget_lock:
+            previous = self.config.bms_ccl_budget_fraction
+            new = _validate_budget_fraction(previous + delta)
+            self.config = replace(self.config, bms_ccl_budget_fraction=new)
+        return round(previous, 4), new
 
     @property
     def full_latched(self) -> bool:
@@ -147,6 +186,16 @@ class ChargeCeiling:
             min(bms_ccl_a, bms_ccl_a * config.bms_ccl_budget_fraction),
         )
         return ChargeCeilingResult(round(allowance_a, 1), "BMS CCL fraction")
+
+
+def _validate_budget_fraction(fraction: float) -> float:
+    rounded = round(fraction, 4)
+    if not (MIN_CCL_BUDGET_FRACTION <= rounded <= MAX_CCL_BUDGET_FRACTION):
+        raise ValueError(
+            f"CCL budget fraction out of range: {rounded:.2f} "
+            f"(allowed {MIN_CCL_BUDGET_FRACTION:.2f}-{MAX_CCL_BUDGET_FRACTION:.2f})"
+        )
+    return rounded
 
 
 def _minimum_battery_temperature_c(battery: PylonCanSnapshot) -> float | None:

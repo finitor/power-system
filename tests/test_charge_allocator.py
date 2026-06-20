@@ -13,8 +13,36 @@ from offgrid_power.charge_allocator import (  # noqa: E402
     ChargeAllocatorConfig,
     ChargeCurrentAllocator,
     ChargerAllocationInput,
+    allocation_detail,
     charge_allocation_event,
 )
+
+
+class AllocationDetailTest(unittest.TestCase):
+    def test_includes_ccl_budget_fraction_when_supplied(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=12.0,
+            chargers=[_charger("classic", actual=20.0, limit=80.0, max_=80.0)],
+            charge_ceiling_a=20.0,
+            charge_ceiling_reason="BMS CCL fraction",
+        )
+        detail = allocation_detail(decision, dry_run=False, ccl_budget_fraction=0.55)
+        self.assertEqual(detail["ccl_budget_fraction"], 0.55)
+
+    def test_ccl_budget_fraction_defaults_to_none(self) -> None:
+        decision = ChargeCurrentAllocator().decide(
+            bms_ccl_a=40.0,
+            charge_enabled=True,
+            battery_current_a=10.0,
+            load_current_a=12.0,
+            chargers=[_charger("classic", actual=20.0, limit=80.0, max_=80.0)],
+            charge_ceiling_a=20.0,
+            charge_ceiling_reason="BMS CCL fraction",
+        )
+        self.assertIsNone(allocation_detail(decision, dry_run=False)["ccl_budget_fraction"])
 
 
 class ChargeAllocatorTest(unittest.TestCase):

@@ -14,11 +14,14 @@ import select
 import signal
 
 from offgrid_power.cli.api_terminal_display import (
-    TUNE_SESSION_BUDGET_V,
+    BUDGET_SESSION_BUDGET,
     VIEW_POWER,
     VIEW_WEATHER,
+    VOLTAGE_SESSION_BUDGET_V,
     TuneState,
     _with_refresh,
+    budget_fraction_from_snapshot,
+    build_tunables,
     commit_tune,
     compose_frame,
     derive_weather_url,
@@ -146,8 +149,9 @@ class ResolveTuneKeyTest(unittest.TestCase):
         self.assertEqual(resolve_tune_key("+"), "up")
         self.assertEqual(resolve_tune_key("="), "up")
         self.assertEqual(resolve_tune_key("-"), "down")
-        self.assertEqual(resolve_tune_key("0"), "select0")
-        self.assertEqual(resolve_tune_key("1"), "select1")
+        self.assertEqual(resolve_tune_key("0"), "select:v0")
+        self.assertEqual(resolve_tune_key("1"), "select:v1")
+        self.assertEqual(resolve_tune_key("b"), "select:budget")
         self.assertEqual(resolve_tune_key("\t"), "toggle")
         self.assertEqual(resolve_tune_key("["), "step_down")
         self.assertEqual(resolve_tune_key("]"), "step_up")
@@ -172,50 +176,94 @@ class ScalarsFromSnapshotTest(unittest.TestCase):
         self.assertEqual(scalars_from_snapshot(payload), {})
 
 
+class BudgetFractionFromSnapshotTest(unittest.TestCase):
+    def test_reads_fraction_from_allocation(self) -> None:
+        self.assertEqual(
+            budget_fraction_from_snapshot({"allocation": {"ccl_budget_fraction": 0.5}}), 0.5
+        )
+
+    def test_none_when_absent_or_no_allocation(self) -> None:
+        self.assertIsNone(budget_fraction_from_snapshot({"allocation": None}))
+        self.assertIsNone(budget_fraction_from_snapshot({"allocation": {}}))
+        self.assertIsNone(budget_fraction_from_snapshot({}))
+
+
+class BuildTunablesTest(unittest.TestCase):
+    def test_builds_voltage_rows_then_budget(self) -> None:
+        rows = build_tunables({0: 55.2, 1: 54.7}, 0.5)
+        self.assertEqual([r.key for r in rows], ["v0", "v1", "budget"])
+        self.assertEqual(rows[0].kind, "voltage")
+        self.assertEqual(rows[0].controller, 0)
+        self.assertEqual(rows[2].kind, "budget")
+        self.assertEqual(rows[2].base, 0.5)
+
+    def test_omits_budget_when_unavailable(self) -> None:
+        rows = build_tunables({0: 55.2}, None)
+        self.assertEqual([r.key for r in rows], ["v0"])
+
+
 class TuneStateTest(unittest.TestCase):
+    def _state(self, budget=0.5) -> TuneState:
+        return TuneState(build_tunables({0: 55.2, 1: 54.7}, budget))
+
     def test_adjust_stages_without_touching_base(self) -> None:
-        tune = TuneState({0: 55.2, 1: 54.7})
-        self.assertEqual(tune.controller, 0)
-        tune.adjust(+1)  # default step 0.1
-        self.assertEqual(tune.pending[0], 55.3)
-        self.assertEqual(tune.bases[0], 55.2)  # base unchanged until commit
-        self.assertEqual(tune.net_delta(0), 0.1)
+        tune = self._state()
+        self.assertEqual(tune.current.key, "v0")
+        tune.adjust(+1)  # default voltage step 0.1
+        self.assertEqual(tune.current.pending, 55.3)
+        self.assertEqual(tune.current.base, 55.2)  # base unchanged until commit
+        self.assertEqual(tune.current.net, 0.1)
         self.assertTrue(tune.dirty())
 
-    def test_select_and_toggle(self) -> None:
-        tune = TuneState({0: 55.2, 1: 54.7})
-        tune.select(1)
-        self.assertEqual(tune.controller, 1)
+    def test_select_by_key_and_toggle(self) -> None:
+        tune = self._state()
+        tune.select("budget")
+        self.assertEqual(tune.current.key, "budget")
         tune.toggle()
-        self.assertEqual(tune.controller, 0)
+        self.assertEqual(tune.current.key, "v0")  # wraps back to the top
+
+    def test_budget_row_steps_in_fraction(self) -> None:
+        tune = self._state()
+        tune.select("budget")
+        tune.adjust(+1)  # default budget step 0.05 (5 points)
+        self.assertEqual(tune.current.pending, 0.55)
+        self.assertEqual(tune.current.fmt_net(), "+5")
 
     def test_session_budget_caps_staging(self) -> None:
-        tune = TuneState({0: 55.0})
-        # step 0.1; budget 0.5 -> 5 steps allowed, the 6th is refused
+        tune = TuneState(build_tunables({0: 55.0}, None))
+        # voltage step 0.1; budget 0.5 -> 5 steps allowed, the 6th is refused
         for _ in range(5):
             tune.adjust(+1)
-        self.assertAlmostEqual(tune.net_delta(0), TUNE_SESSION_BUDGET_V, places=2)
+        self.assertAlmostEqual(tune.current.net, VOLTAGE_SESSION_BUDGET_V, places=2)
         tune.adjust(+1)
-        self.assertAlmostEqual(tune.net_delta(0), TUNE_SESSION_BUDGET_V, places=2)  # unchanged
+        self.assertAlmostEqual(tune.current.net, VOLTAGE_SESSION_BUDGET_V, places=2)  # unchanged
         self.assertIn("budget", tune.message)
 
-    def test_step_cycle_clamps(self) -> None:
-        tune = TuneState({0: 55.0})
+    def test_budget_session_cap(self) -> None:
+        tune = TuneState(build_tunables({}, 0.5))
+        # budget step 0.05; session budget 0.25 -> 5 steps allowed
+        for _ in range(5):
+            tune.adjust(+1)
+        self.assertAlmostEqual(tune.current.net, BUDGET_SESSION_BUDGET, places=4)
+        tune.adjust(+1)
+        self.assertAlmostEqual(tune.current.net, BUDGET_SESSION_BUDGET, places=4)  # unchanged
+
+    def test_step_cycle_clamps_per_row(self) -> None:
+        tune = self._state()  # selected row is v0 (voltage)
         tune.cycle_step(-1)
-        self.assertEqual(tune.step, 0.05)
+        self.assertEqual(tune.current.step, 0.05)
         tune.cycle_step(-1)
-        self.assertEqual(tune.step, 0.05)  # clamped at smallest
-        tune.cycle_step(+1)
-        tune.cycle_step(+1)
-        tune.cycle_step(+1)
-        self.assertEqual(tune.step, 0.2)  # clamped at largest
+        self.assertEqual(tune.current.step, 0.05)  # clamped at smallest
+        for _ in range(3):
+            tune.cycle_step(+1)
+        self.assertEqual(tune.current.step, 0.2)  # clamped at largest
 
 
 class CommitTuneTest(unittest.TestCase):
     def test_commit_posts_net_delta_and_advances_base(self) -> None:
-        tune = TuneState({0: 55.2, 1: 54.7})
+        tune = TuneState(build_tunables({0: 55.2, 1: 54.7}, 0.5))
         tune.adjust(+1)
-        tune.adjust(+1)  # stage +0.2 on Classic
+        tune.adjust(+1)  # stage +0.2 on Classic (v0)
         calls = []
 
         def fake_post(control_url, controller, delta_v, timeout=5.0):
@@ -232,12 +280,34 @@ class CommitTuneTest(unittest.TestCase):
             mod.post_nudge = original
 
         self.assertTrue(ok)
-        self.assertEqual(calls, [(0, 0.2)])  # only the dirty controller, one delta
-        self.assertEqual(tune.bases[0], 55.4)  # base advanced to achieved voltage
+        self.assertEqual(calls, [(0, 0.2)])  # only the dirty row, one delta
+        self.assertEqual(tune.tunables[0].base, 55.4)  # base advanced to achieved voltage
         self.assertFalse(tune.dirty())
 
+    def test_commit_posts_budget_delta(self) -> None:
+        tune = TuneState(build_tunables({}, 0.5))
+        tune.adjust(+1)  # +0.05 on the budget row
+        calls = []
+
+        def fake_budget(control_url, delta, timeout=5.0):
+            calls.append(delta)
+            return {"ok": True, "fraction": round(0.5 + delta, 4)}
+
+        import offgrid_power.cli.api_terminal_display as mod
+
+        original = mod.post_budget_nudge
+        mod.post_budget_nudge = fake_budget
+        try:
+            ok = commit_tune(tune, "http://x")
+        finally:
+            mod.post_budget_nudge = original
+
+        self.assertTrue(ok)
+        self.assertEqual(calls, [0.05])
+        self.assertEqual(tune.tunables[0].base, 0.55)
+
     def test_commit_reports_refusal_and_discards_stage(self) -> None:
-        tune = TuneState({0: 55.2})
+        tune = TuneState(build_tunables({0: 55.2}, None))
         tune.adjust(+1)
 
         import offgrid_power.cli.api_terminal_display as mod
@@ -251,17 +321,19 @@ class CommitTuneTest(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertIn("refused", tune.message)
-        self.assertEqual(tune.pending[0], tune.bases[0])  # stage discarded
+        self.assertEqual(tune.tunables[0].pending, tune.tunables[0].base)  # stage discarded
 
 
 class TuneFooterTest(unittest.TestCase):
     def test_marks_selection_and_staged_change(self) -> None:
-        tune = TuneState({0: 55.2, 1: 54.7})
-        tune.adjust(+1)  # stage +0.1 on Classic (selected)
+        tune = TuneState(build_tunables({0: 55.2, 1: 54.7}, 0.5))
+        tune.adjust(+1)  # stage +0.1 on Classic (v0, selected)
         panel = tune_footer(tune)
-        self.assertIn("TUNE charge voltage", panel)
+        self.assertIn("TUNE charge", panel)
         self.assertIn("> [0] Classic", panel)
         self.assertIn("→ 55.30V (+0.10)", panel)
+        self.assertIn("[b] CCL budget", panel)
+        self.assertIn("50%", panel)
         self.assertIn("[Enter] apply", panel)
 
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+from dataclasses import dataclass
 import json
 import os
 import select
@@ -41,14 +42,22 @@ VIEW_WEATHER = "weather"
 SNAPSHOT_SUFFIX = "/api/v1/snapshot"
 WEATHER_SUFFIX = "/api/v1/weather"
 VOLTAGE_CONTROL_SUFFIX = "/api/v1/control/charge-controller/voltage"
+CCL_BUDGET_CONTROL_SUFFIX = "/api/v1/control/charge-budget/ccl-fraction"
 
-# Tune-mode tuning. Steps the operator can cycle through; the per-session budget
-# caps how far one tune session can wander from where it started (re-arm to go
-# further); the idle timeout disarms tune mode so it's never left live.
-TUNE_STEP_SIZES_V = (0.05, 0.1, 0.2)
-TUNE_DEFAULT_STEP_INDEX = 1
-TUNE_SESSION_BUDGET_V = 0.5
+# Tune mode disarms after this long without a keypress so it's never left live.
 TUNE_IDLE_TIMEOUT_S = 20.0
+
+# Per-tunable knobs. Steps are what the operator cycles with [ / ]; the session
+# budget caps how far one tune session can wander from where it opened (re-arm
+# to go further). Controller voltages are in volts; the CCL budget is a fraction
+# (0-1) shown as a percent and stepped 5 points at a time.
+VOLTAGE_STEPS_V = (0.05, 0.1, 0.2)
+VOLTAGE_DEFAULT_STEP_INDEX = 1
+VOLTAGE_SESSION_BUDGET_V = 0.5
+
+BUDGET_STEPS = (0.01, 0.05, 0.1)
+BUDGET_DEFAULT_STEP_INDEX = 1
+BUDGET_SESSION_BUDGET = 0.25
 
 CONTROLLER_LABELS = {0: "Classic", 1: "EPEver"}
 
@@ -114,9 +123,11 @@ def resolve_tune_key(char: str) -> str | None:
     if char in ("-", "_", "j", "J"):
         return "down"
     if char == "0":
-        return "select0"
+        return "select:v0"
     if char == "1":
-        return "select1"
+        return "select:v1"
+    if char in ("b", "B"):
+        return "select:budget"
     if char == "\t":
         return "toggle"
     if char == "[":
@@ -126,61 +137,127 @@ def resolve_tune_key(char: str) -> str | None:
     return None
 
 
-class TuneState:
-    """Staged scalar-voltage edits for the tune-mode overlay.
+@dataclass
+class Tunable:
+    """One staged-edit row in the tune overlay (a controller voltage or the budget).
 
-    Holds the setpoint each controller had at entry/last-commit (``bases``) and
-    the operator's staged target (``pending``). Nothing is sent to the
-    supervisor until a commit; until then this is pure local bookkeeping bounded
-    by the per-session budget.
+    ``base`` is the value at entry/last-commit; ``pending`` is the operator's
+    staged target. Nothing leaves the client until commit. ``kind`` drives both
+    the display units (volts vs percent) and which control endpoint a commit hits.
     """
 
-    def __init__(self, scalars: dict[int, float]):
-        if not scalars:
-            raise ValueError("tune mode needs at least one controller scalar voltage")
-        self.bases: dict[int, float] = {c: round(v, 2) for c, v in scalars.items()}
-        self.pending: dict[int, float] = dict(self.bases)
-        self.controller: int = min(self.bases)
-        self.step_index: int = TUNE_DEFAULT_STEP_INDEX
-        self.message: str = ""
+    key: str
+    label: str
+    kind: str  # "voltage" | "budget"
+    base: float
+    pending: float
+    steps: tuple[float, ...]
+    step_index: int
+    session_budget: float
+    controller: int | None = None
 
     @property
     def step(self) -> float:
-        return TUNE_STEP_SIZES_V[self.step_index]
+        return self.steps[self.step_index]
 
-    def net_delta(self, controller: int) -> float:
-        return round(self.pending[controller] - self.bases[controller], 2)
+    @property
+    def net(self) -> float:
+        return round(self.pending - self.base, 4)
+
+    @property
+    def dirty(self) -> bool:
+        return self.net != 0
+
+    def fmt(self, value: float) -> str:
+        return f"{value:.2f}V" if self.kind == "voltage" else f"{value * 100:.0f}%"
+
+    def fmt_net(self) -> str:
+        return f"{self.net:+.2f}" if self.kind == "voltage" else f"{self.net * 100:+.0f}"
+
+
+def build_tunables(scalars: dict[int, float], budget_fraction: float | None) -> list[Tunable]:
+    """Assemble the tune rows: each controller's scalar voltage, then the budget."""
+    tunables: list[Tunable] = []
+    for controller in sorted(scalars):
+        tunables.append(
+            Tunable(
+                key=f"v{controller}",
+                label=CONTROLLER_LABELS.get(controller, f"ctrl {controller}"),
+                kind="voltage",
+                base=round(scalars[controller], 2),
+                pending=round(scalars[controller], 2),
+                steps=VOLTAGE_STEPS_V,
+                step_index=VOLTAGE_DEFAULT_STEP_INDEX,
+                session_budget=VOLTAGE_SESSION_BUDGET_V,
+                controller=controller,
+            )
+        )
+    if budget_fraction is not None:
+        tunables.append(
+            Tunable(
+                key="budget",
+                label="CCL budget",
+                kind="budget",
+                base=round(budget_fraction, 4),
+                pending=round(budget_fraction, 4),
+                steps=BUDGET_STEPS,
+                step_index=BUDGET_DEFAULT_STEP_INDEX,
+                session_budget=BUDGET_SESSION_BUDGET,
+            )
+        )
+    return tunables
+
+
+class TuneState:
+    """Staged edits for the tune overlay across a list of tunables.
+
+    Holds a list of :class:`Tunable` rows and which one is selected. Nothing is
+    sent to the supervisor until a commit; until then this is pure local
+    bookkeeping bounded by each row's per-session budget.
+    """
+
+    def __init__(self, tunables: list[Tunable]):
+        if not tunables:
+            raise ValueError("tune mode needs at least one tunable")
+        self.tunables = tunables
+        self.index = 0
+        self.message = ""
+
+    @property
+    def current(self) -> Tunable:
+        return self.tunables[self.index]
 
     def dirty(self) -> bool:
-        return any(self.net_delta(c) != 0 for c in self.bases)
+        return any(t.dirty for t in self.tunables)
 
-    def select(self, controller: int) -> None:
-        if controller in self.bases:
-            self.controller = controller
-            self.message = ""
+    def select(self, key: str) -> None:
+        for i, tunable in enumerate(self.tunables):
+            if tunable.key == key:
+                self.index = i
+                self.message = ""
+                return
 
     def toggle(self) -> None:
-        controllers = sorted(self.bases)
-        index = controllers.index(self.controller)
-        self.controller = controllers[(index + 1) % len(controllers)]
+        self.index = (self.index + 1) % len(self.tunables)
         self.message = ""
 
     def cycle_step(self, direction: int) -> None:
-        self.step_index = max(0, min(len(TUNE_STEP_SIZES_V) - 1, self.step_index + direction))
+        tunable = self.current
+        tunable.step_index = max(0, min(len(tunable.steps) - 1, tunable.step_index + direction))
         self.message = ""
 
     def adjust(self, direction: int) -> None:
-        """Stage one step up (+1) or down (-1) on the selected controller.
+        """Stage one step up (+1) or down (-1) on the selected tunable.
 
         Refused — with a message, not an exception — once the staged change
-        would exceed the session budget from the entry value.
+        would exceed that row's session budget from the entry value.
         """
-        controller = self.controller
-        candidate = round(self.pending[controller] + direction * self.step, 2)
-        if abs(round(candidate - self.bases[controller], 2)) > TUNE_SESSION_BUDGET_V + 1e-9:
-            self.message = f"session budget +/-{TUNE_SESSION_BUDGET_V:.2f}V reached - apply or cancel"
+        tunable = self.current
+        candidate = round(tunable.pending + direction * tunable.step, 4)
+        if abs(round(candidate - tunable.base, 4)) > tunable.session_budget + 1e-9:
+            self.message = "session budget reached - apply or cancel"
             return
-        self.pending[controller] = candidate
+        tunable.pending = candidate
         self.message = ""
 
 
@@ -206,18 +283,30 @@ def footer(view: str) -> str:
     )
 
 
+def _tune_select_hint(tune: TuneState) -> str:
+    keys = []
+    for tunable in tune.tunables:
+        if tunable.kind == "voltage" and tunable.controller is not None:
+            keys.append(str(tunable.controller))
+        elif tunable.key == "budget":
+            keys.append("b")
+    return "/".join(keys)
+
+
 def tune_footer(tune: TuneState) -> str:
     """Render the multi-line tune-mode panel pinned at the bottom of the frame."""
-    lines = ["", "── TUNE charge voltage ──────────────"]
-    for controller in sorted(tune.bases):
-        selected = ">" if controller == tune.controller else " "
-        label = CONTROLLER_LABELS.get(controller, f"ctrl {controller}")
-        base = tune.bases[controller]
-        net = tune.net_delta(controller)
-        staged = f"  → {tune.pending[controller]:.2f}V ({net:+.2f})" if net else ""
-        lines.append(f" {selected} [{controller}] {label:<7} {base:.2f}V{staged}")
-    lines.append(f"   step {tune.step:.2f}V   budget ±{TUNE_SESSION_BUDGET_V:.2f}V")
-    lines.append("   [+/-] adjust  [0/1] select  [ [ / ] ] step  [Enter] apply  [Esc] cancel")
+    lines = ["", "── TUNE charge ──────────────────────"]
+    for tunable in tune.tunables:
+        selected = ">" if tunable is tune.current else " "
+        tag = str(tunable.controller) if tunable.controller is not None else "b"
+        staged = f"  → {tunable.fmt(tunable.pending)} ({tunable.fmt_net()})" if tunable.dirty else ""
+        lines.append(f" {selected} [{tag}] {tunable.label:<10} {tunable.fmt(tunable.base)}{staged}")
+    current = tune.current
+    lines.append(f"   step {current.fmt(current.step).lstrip()}")
+    lines.append(
+        f"   [+/-] adjust  [{_tune_select_hint(tune)}] select  "
+        "[ [ / ] ] step  [Enter] apply  [Esc] cancel"
+    )
     if tune.message:
         lines.append(f"   {tune.message}")
     return "\n".join(lines)
@@ -389,14 +478,15 @@ def main() -> int:
 
 
 def _enter_tune(args: argparse.Namespace) -> TuneState | None:
-    """Fetch current scalars and open tune mode, or return None if unavailable."""
+    """Fetch current setpoints and open tune mode, or return None if unavailable."""
     try:
-        scalars = fetch_scalars(args.url, timeout=args.timeout)
+        scalars, budget_fraction = fetch_tune_inputs(args.url, timeout=args.timeout)
     except (OSError, URLError, json.JSONDecodeError):
         return None
-    if not scalars:
+    tunables = build_tunables(scalars, budget_fraction)
+    if not tunables:
         return None
-    return TuneState(scalars)
+    return TuneState(tunables)
 
 
 def _handle_tune_key(char: str, tune: TuneState, args: argparse.Namespace) -> str | None:
@@ -418,10 +508,8 @@ def _handle_tune_key(char: str, tune: TuneState, args: argparse.Namespace) -> st
         tune.adjust(+1)
     elif action == "down":
         tune.adjust(-1)
-    elif action == "select0":
-        tune.select(0)
-    elif action == "select1":
-        tune.select(1)
+    elif action.startswith("select:"):
+        tune.select(action.split(":", 1)[1])
     elif action == "toggle":
         tune.toggle()
     elif action == "step_down":
@@ -502,22 +590,32 @@ def _controller_index(controller_id) -> int | None:
     return None
 
 
-def fetch_scalars(url: str, timeout: float = 5.0) -> dict[int, float]:
-    """GET the snapshot and return current scalar voltages, or raise on failure."""
+def budget_fraction_from_snapshot(payload: dict) -> float | None:
+    """Pull the live CCL budget fraction out of a snapshot's allocation block.
+
+    None when allocation isn't running (no allocation block) or the field is
+    absent — in which case tune mode simply omits the budget row.
+    """
+    value = (payload.get("allocation") or {}).get("ccl_budget_fraction")
+    return round(float(value), 4) if isinstance(value, (int, float)) else None
+
+
+def fetch_tune_inputs(url: str, timeout: float = 5.0) -> tuple[dict[int, float], float | None]:
+    """GET the snapshot and return (scalar voltages, CCL budget fraction)."""
     with urlopen(url, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
-    return scalars_from_snapshot(payload)
+    return scalars_from_snapshot(payload), budget_fraction_from_snapshot(payload)
 
 
-def post_nudge(control_url: str, controller: int, delta_v: float, timeout: float = 5.0) -> dict:
-    """POST a scalar-voltage delta to the supervisor and return its JSON reply.
+def _post_control(control_url: str, suffix: str, body: dict, timeout: float) -> dict:
+    """POST a control request and return its JSON reply.
 
     Raises on transport failure; an HTTP error response is parsed and returned
     so the caller can surface the supervisor's reason (e.g. a refused write).
     """
-    url = control_url.rstrip("/") + VOLTAGE_CONTROL_SUFFIX
-    body = json.dumps({"controller": controller, "delta_v": round(delta_v, 2)}).encode("utf-8")
-    request = Request(url, data=body, headers={"Content-Type": "application/json"})
+    url = control_url.rstrip("/") + suffix
+    data = json.dumps(body).encode("utf-8")
+    request = Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
         with urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
@@ -529,40 +627,60 @@ def post_nudge(control_url: str, controller: int, delta_v: float, timeout: float
             return {"ok": False, "error": f"HTTP {exc.code}: {detail.strip() or exc.reason}"}
 
 
-def commit_tune(tune: TuneState, control_url: str, timeout: float = 5.0) -> bool:
-    """Apply every staged controller change as one delta each; return success.
+def post_nudge(control_url: str, controller: int, delta_v: float, timeout: float = 5.0) -> dict:
+    """POST a scalar-voltage delta to the supervisor and return its JSON reply."""
+    return _post_control(
+        control_url, VOLTAGE_CONTROL_SUFFIX, {"controller": controller, "delta_v": round(delta_v, 2)}, timeout
+    )
 
-    Updates the tune state in place: on a confirmed write the controller's base
-    advances to the achieved voltage (so the operator can keep nudging from
-    there); the result is reported through ``tune.message``.
+
+def post_budget_nudge(control_url: str, delta: float, timeout: float = 5.0) -> dict:
+    """POST a CCL budget-fraction delta to the supervisor and return its reply."""
+    return _post_control(control_url, CCL_BUDGET_CONTROL_SUFFIX, {"delta": round(delta, 4)}, timeout)
+
+
+def _commit_one(tunable: Tunable, control_url: str, timeout: float) -> str:
+    """Send one tunable's staged net change; update its base; return a status word.
+
+    On success the base advances to the achieved value (so the operator can keep
+    nudging from there). On refusal/failure the stage is discarded back to base.
     """
-    pending = [c for c in sorted(tune.bases) if tune.net_delta(c) != 0]
-    if not pending:
+    delta = tunable.net
+    try:
+        if tunable.kind == "budget":
+            reply = post_budget_nudge(control_url, delta, timeout=timeout)
+        else:
+            reply = post_nudge(control_url, tunable.controller, delta, timeout=timeout)
+    except (OSError, URLError, json.JSONDecodeError) as exc:
+        tunable.pending = tunable.base
+        return f"{tunable.label} failed: {exc}"
+
+    if not reply.get("ok"):
+        tunable.pending = tunable.base  # discard the rejected stage
+        return f"{tunable.label} refused: {reply.get('error', 'unknown error')}"
+
+    if tunable.kind == "budget":
+        achieved = round(float(reply.get("fraction", tunable.pending)), 4)
+        tunable.base = tunable.pending = achieved
+        return f"{tunable.label} {tunable.fmt(achieved)}"
+    achieved = round(float(reply.get("voltage_v", tunable.pending)), 2)
+    tunable.base = tunable.pending = achieved
+    mark = "ok" if reply.get("confirmed") else "UNCONFIRMED"
+    return f"{tunable.label} {tunable.fmt(achieved)} {mark}"
+
+
+def commit_tune(tune: TuneState, control_url: str, timeout: float = 5.0) -> bool:
+    """Apply every staged change as one delta each; return whether all succeeded.
+
+    Results are reported through ``tune.message``.
+    """
+    dirty = [t for t in tune.tunables if t.dirty]
+    if not dirty:
         tune.message = "nothing staged"
         return False
-    outcomes: list[str] = []
-    all_ok = True
-    for controller in pending:
-        delta = tune.net_delta(controller)
-        label = CONTROLLER_LABELS.get(controller, f"ctrl {controller}")
-        try:
-            reply = post_nudge(control_url, controller, delta, timeout=timeout)
-        except (OSError, URLError, json.JSONDecodeError) as exc:
-            all_ok = False
-            outcomes.append(f"{label} failed: {exc}")
-            continue
-        if reply.get("ok"):
-            achieved = reply.get("voltage_v", tune.pending[controller])
-            tune.bases[controller] = round(float(achieved), 2)
-            tune.pending[controller] = tune.bases[controller]
-            mark = "ok" if reply.get("confirmed") else "UNCONFIRMED"
-            outcomes.append(f"{label} {achieved:.2f}V {mark}")
-        else:
-            all_ok = False
-            tune.pending[controller] = tune.bases[controller]  # discard the rejected stage
-            outcomes.append(f"{label} refused: {reply.get('error', 'unknown error')}")
+    outcomes = [_commit_one(t, control_url, timeout) for t in dirty]
     tune.message = "  |  ".join(outcomes)
-    return all_ok
+    return all("refused" not in o and "failed" not in o for o in outcomes)
 
 
 if __name__ == "__main__":

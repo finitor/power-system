@@ -320,7 +320,13 @@ def main() -> int:
         else None
     )
     if args.web_display:
-        start_web_display(args, supervisor, snapshot_cache, weather_service)
+        start_web_display(
+            args,
+            supervisor,
+            snapshot_cache,
+            weather_service,
+            charge_budget=charge_allocation_logger.ceiling if charge_allocation_logger is not None else None,
+        )
     previous_poll_render: str | None = None
 
     # Per-device actor threads: one thread owns each adapter so a slow or
@@ -350,7 +356,9 @@ def main() -> int:
                 allocation_decision = charge_allocation_logger.record(snapshot, metric_recorder)
                 if allocation_decision is not None:
                     allocation_detail_payload = allocation_detail(
-                        allocation_decision, dry_run=not charge_allocation_logger.live
+                        allocation_decision,
+                        dry_run=not charge_allocation_logger.live,
+                        ccl_budget_fraction=charge_allocation_logger.ceiling.budget_fraction,
                     )
             # Derive the EPEver "today" from its monotonic lifetime total (its own
             # daily register doesn't reset); the load cumulative needs it too, so
@@ -405,6 +413,7 @@ def start_web_display(
     supervisor: Supervisor,
     snapshot_cache: SnapshotCache,
     weather_service: WeatherService | None = None,
+    charge_budget: ChargeCeiling | None = None,
 ) -> None:
     thread = Thread(
         target=run_display_server,
@@ -417,6 +426,7 @@ def start_web_display(
             "allocation_provider": snapshot_cache.get_allocation,
             "weather_provider": None if weather_service is None else weather_service.get,
             "weather_refresh_hook": None if weather_service is None else weather_service.request_refresh,
+            "charge_budget": charge_budget,
         },
         daemon=True,
     )

@@ -316,6 +316,26 @@ Charge budget resolver (`CHARGE_CEILING_…`):
 | `CHARGE_CEILING_HIGH_CELL_SOFT_LIMIT_V` | 3.55 | recovery threshold and upper-cell zone for delta stop |
 | `CHARGE_CEILING_HIGH_DELTA_STOP_MV` | 150 | cell-delta stop in the upper-cell zone |
 
+### Nudging the CCL budget fraction live (no restart)
+
+`bms_ccl_budget_fraction` is the one ceiling knob with a live override, for
+walking the budget up or down while watching the taper near the knee. The env
+var above is the boot default; to change it in flight without a restart:
+
+- **Script:** `scripts/charge-budget.py --by +5` (percentage points), or
+  `scripts/charge-budget.py 60` to set 60%.
+- **Console:** tune mode (`t`) has a **CCL budget** row — `b` selects it,
+  `+`/`-` stage 5-point nudges, Enter applies (see
+  [display-services.md](subsystems/display-services.md#operator-controls-terminal-display)).
+- **API:** `POST /api/v1/control/charge-budget/ccl-fraction` (see
+  [supervisor-api.md](telemetry/supervisor-api.md)).
+
+The live value is **in-memory only** — it resets to
+`CHARGE_CEILING_BMS_CCL_BUDGET_FRACTION` when the supervisor restarts. Make a
+change permanent by editing the env var. The override is clamped to 0.05–1.0 and
+only affects allocation below the BMS knee baseline. The current value is shown
+in the snapshot's `allocation.ccl_budget_fraction`.
+
 ### Reading what it's doing
 
 - **Live:** the "Charge Allocation" panel on the console (Mode, Limits CCL/allowance,

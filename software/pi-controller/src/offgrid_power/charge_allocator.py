@@ -303,12 +303,22 @@ class ChargeCurrentAllocator:
         )
 
 
-def allocation_detail(decision: ChargeAllocationDecision, *, dry_run: bool) -> dict:
+def allocation_detail(
+    decision: ChargeAllocationDecision,
+    *,
+    dry_run: bool,
+    ccl_budget_fraction: float | None = None,
+) -> dict:
     """Compact, serializable view of a decision -- shared by the telemetry event
-    and the snapshot API/display so they never drift."""
+    and the snapshot API/display so they never drift.
+
+    ``ccl_budget_fraction`` is the live operator knob from the ChargeCeiling; it
+    is surfaced here so the display can show and tune it alongside the allocation.
+    """
     return {
         "mode": "dry-run" if dry_run else "live",
         "reason": decision.reason,
+        "ccl_budget_fraction": ccl_budget_fraction,
         "bms_ccl_a": decision.bms_ccl_a,
         "allowance_a": decision.charge_ceiling_a,
         "charge_ceiling_a": decision.charge_ceiling_a,

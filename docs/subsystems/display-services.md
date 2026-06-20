@@ -32,12 +32,20 @@ On an interactive tty the `api_terminal_display` client takes single keypresses:
 `p` power, `w` weather, space toggles the two, `q` quits. `t` opens **tune
 mode** for nudging a controller's scalar charge voltage from the console.
 
-Tune mode is **staged-commit**: `+`/`-` stage a change to the selected
-controller's setpoint (shown as `→ target (Δ)` in the overlay) but send
-nothing; the change is applied only on `Enter`. `0`/`1` (or Tab) select the
-controller, `[`/`]` cycle the step size (0.05 / 0.1 / 0.2 V), `Esc` (or `q`)
-cancels without sending. This keeps a stray keypress from moving the system —
-applying a change always takes a deliberate Enter.
+Tune mode is **staged-commit**: `+`/`-` stage a change to the selected row
+(shown as `→ target (Δ)` in the overlay) but send nothing; the change is applied
+only on `Enter`. The overlay has a row per controller voltage plus a **CCL
+budget** row. `0`/`1` select a controller, `b` selects the budget, Tab cycles
+through them; `[`/`]` cycle the step size (voltages: 0.05 / 0.1 / 0.2 V; budget:
+1 / 5 / 10 points), `Esc` (or `q`) cancels without sending. This keeps a stray
+keypress from moving the system — applying a change always takes a deliberate
+Enter.
+
+The CCL budget row tunes the allocator's CCL budget fraction (in-memory; resets
+to the configured default on supervisor restart) — see
+[charge-current-allocation.md](../charge-current-allocation.md). It is shown and
+nudged as a percent (5 points at a time), committed via
+`POST /api/v1/control/charge-budget/ccl-fraction`.
 
 Guard rails, outermost last:
 

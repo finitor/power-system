@@ -13,6 +13,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from offgrid_power.canbus import CanFrame, PylonCanSnapshot, PylonStatus, decode_pylon_snapshot
+from offgrid_power.charge_ceiling import ChargeCeiling
 from offgrid_power.classic import ClassicChargeSettings
 from offgrid_power.load import LoadSummary
 from offgrid_power.supervisor import STATUS_ERROR, Supervisor
@@ -1039,6 +1040,94 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertEqual(response.status.value, 400)
         self.assertIn("per-call cap", json.loads(response.body)["error"])
+
+    def test_control_api_nudges_ccl_budget_fraction(self) -> None:
+        ceiling = ChargeCeiling()  # default budget fraction 0.5
+
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-budget/ccl-fraction",
+            {"delta": 0.05},
+            charge_budget=ceiling,
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(payload["previous_fraction"], 0.5)
+        self.assertEqual(payload["fraction"], 0.55)
+        self.assertEqual(payload["delta"], 0.05)
+        self.assertEqual(ceiling.budget_fraction, 0.55)
+
+    def test_control_api_sets_ccl_budget_fraction_absolute(self) -> None:
+        ceiling = ChargeCeiling()
+
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-budget/ccl-fraction",
+            {"fraction": 0.6},
+            charge_budget=ceiling,
+        )
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(ceiling.budget_fraction, 0.6)
+
+    def test_control_api_ccl_budget_dry_run_does_not_write(self) -> None:
+        ceiling = ChargeCeiling()
+
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-budget/ccl-fraction",
+            {"delta": 0.05, "dry_run": True},
+            charge_budget=ceiling,
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(payload["fraction"], 0.55)
+        self.assertEqual(ceiling.budget_fraction, 0.5)  # unchanged
+
+    def test_control_api_ccl_budget_rejects_out_of_range_result(self) -> None:
+        ceiling = ChargeCeiling()
+        ceiling.set_budget_fraction(0.95)
+
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-budget/ccl-fraction",
+            {"delta": 0.1},  # 0.95 + 0.1 = 1.05 > max 1.0
+            charge_budget=ceiling,
+        )
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("out of range", json.loads(response.body)["error"])
+        self.assertEqual(ceiling.budget_fraction, 0.95)  # unchanged
+
+    def test_control_api_ccl_budget_rejects_oversized_delta(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-budget/ccl-fraction",
+            {"delta": 0.3},
+            charge_budget=ChargeCeiling(),
+        )
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("per-call cap", json.loads(response.body)["error"])
+
+    def test_control_api_ccl_budget_rejects_both_fraction_and_delta(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-budget/ccl-fraction",
+            {"fraction": 0.5, "delta": 0.05},
+            charge_budget=ChargeCeiling(),
+        )
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("exactly one of", json.loads(response.body)["error"])
+
+    def test_control_api_ccl_budget_conflict_when_allocation_disabled(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-budget/ccl-fraction",
+            {"delta": 0.05},
+            charge_budget=None,
+        )
+        self.assertEqual(response.status.value, 409)
+        self.assertIn("not enabled", json.loads(response.body)["error"])
 
     def test_control_api_routes_epever_charge_settings(self) -> None:
         supervisor = FakeControlSupervisor()
