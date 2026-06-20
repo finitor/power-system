@@ -65,6 +65,7 @@ is a read-only telemetry tap. See
 - Every physical wiring change should be reflected in documentation and photos.
 - Secrets do not go in Git. Use `.env` files locally and keep `.env.example` in the repo.
 - Subsystem docs are the source of truth for what should be measured, what may be controlled, and what still needs research.
+- Git is the source of truth; the Pi checkout is disposable. Never hand-edit on the Pi without reconciling back — work on the Mac, commit + push, then `deploy.sh`. See [CONTRIBUTING.md](CONTRIBUTING.md) and [Marooned changes](docs/runbooks/running-the-supervisor.md#marooned-changes-the-rule-that-keeps-biting-us).
 
 ## Quick Start
 
