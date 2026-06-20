@@ -479,7 +479,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"Off-Grid Power", response.body)
 
     def test_routes_regular_browser_to_terminal_style_full_snapshot(self) -> None:
+        captured_at = datetime(2026, 6, 13, 12, 30, tzinfo=timezone.utc)
         snapshot = make_snapshot(
+            captured_at=captured_at,
+            battery=make_battery_snapshot(soc_percent=92),
             classic=make_classic_telemetry(),
             epever=make_epever_telemetry(),
             magnum=make_magnum_snapshot(),
@@ -489,11 +492,17 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertEqual(response.status.value, 200)
         self.assertEqual(response.content_type, "text/html; charset=utf-8")
+        self.assertIn(b'class="power-summary"', response.body)
+        self.assertIn(b'class="soc-cell">SOC 92%</td>', response.body)
+        self.assertIn(b'class="meta-cell">Updated:', response.body)
+        self.assertIn(b'class="button-cell"><a class="nav-button" href="/weather">Weather</a>', response.body)
+        self.assertIn(b".power-summary .soc-cell{font-size:36px;line-height:1;width:23ch;", response.body)
         self.assertIn(b"<pre>", response.body)
         self.assertIn(b"Charge Controller 0 (Classic)", response.body)
         self.assertIn(b"Inverter/Charger", response.body)
         self.assertIn(b"Temperatures", response.body)
         self.assertIn(b'href="/weather">Weather</a>', response.body)
+        self.assertNotIn(b"Off-Grid Power Supervisor", response.body)
         self.assertNotIn(b"More Power Info", response.body)
 
     def test_routes_regular_browser_from_kindle_paths_to_terminal_style_snapshot(self) -> None:

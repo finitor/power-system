@@ -16,7 +16,7 @@ from .api_terminal_display import render_api_snapshot
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
 from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot
-from .terminal_display import format_cell_location_for_display, format_time
+from .terminal_display import format_cell_location_for_display, format_time, format_updated_time
 from .weather import WeatherReport, weather_api_payload
 
 
@@ -383,9 +383,8 @@ def render_browser_snapshot(
     load_summary: LoadSummary | None = None,
     allocation: dict | None = None,
 ) -> str:
-    rendered = render_api_snapshot(
-        snapshot_api_payload(snapshot, load_summary=load_summary, allocation=allocation)
-    )
+    payload = snapshot_api_payload(snapshot, load_summary=load_summary, allocation=allocation)
+    rendered = _trim_browser_snapshot_header(render_api_snapshot(payload))
     return "\n".join(
         [
             "<!doctype html>",
@@ -395,16 +394,45 @@ def render_browser_snapshot(
             "<title>Off-Grid Power</title>",
             "<style>",
             _browser_display_css(),
+            ".power-summary{border-collapse:collapse;width:100%;margin:0 0 12px 0;border-bottom:1px solid #777;}",
+            ".power-summary td{font:16px/1.15 monospace;font-weight:bold;border-bottom:0;padding:0 12px 6px 0;vertical-align:middle;}",
+            ".power-summary .soc-cell{font-size:36px;line-height:1;width:23ch;color:#fff;}",
+            ".power-summary .meta-cell{text-align:left;}",
+            ".power-summary .button-cell{text-align:right;width:1%;padding-right:0;white-space:nowrap;}",
             "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
             "</style>",
             "</head>",
             "<body>",
-            '<div class="nav"><a class="nav-button" href="/weather">Weather</a></div>',
+            _browser_snapshot_header(payload),
             f"<pre>{escape(rendered)}</pre>",
             "</body>",
             "</html>",
         ]
     )
+
+
+def _browser_snapshot_header(payload: dict) -> str:
+    battery = payload.get("battery") or {}
+    status = payload.get("status") or {}
+    captured_at = _parse_payload_time(payload.get("captured_at"))
+    soc = battery.get("soc_percent")
+    soc_text = "--" if soc is None else f"{soc}%"
+    updated = format_updated_time(captured_at) if captured_at is not None else "unavailable"
+    severity = status.get("severity") or ("OK" if status.get("ok") else "ERROR")
+    return (
+        '<table class="power-summary">'
+        f'<tr><td class="soc-cell">SOC {escape(str(soc_text))}</td>'
+        f'<td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(str(severity))}</td>'
+        '<td class="button-cell"><a class="nav-button" href="/weather">Weather</a></td></tr>'
+        "</table>"
+    )
+
+
+def _trim_browser_snapshot_header(rendered: str) -> str:
+    lines = rendered.splitlines()
+    if len(lines) >= 4 and lines[0].startswith("Off-Grid Power Supervisor") and lines[3] == "":
+        return "\n".join(lines[4:])
+    return rendered
 
 
 def render_browser_weather(payload: dict | None) -> str:
