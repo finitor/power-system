@@ -449,10 +449,10 @@ class WebDisplayTest(unittest.TestCase):
         )
         self.assertEqual(html.count("<h2>Status Conditions</h2>"), 1)
 
+        # Status Conditions are shown on the main /kindle page only; the details
+        # page no longer repeats them (it still surfaces Errors separately).
         details_html = render_kindle_details(snapshot)
-        self.assertIn("Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V", details_html)
-        self.assertIn("Battery temp low", details_html)
-        self.assertIn("<h2>Status Conditions</h2>", details_html)
+        self.assertNotIn("<h2>Status Conditions</h2>", details_html)
 
     def test_routes_kindle_path(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()
@@ -490,7 +490,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"Temperatures", response.body)
         self.assertIn(b'href="/weather">Weather</a>', response.body)
         self.assertNotIn(b"Off-Grid Power Supervisor", response.body)
-        self.assertNotIn(b"More Power Info", response.body)
+        self.assertNotIn(b"footer-button-cell", response.body)  # no Kindle footer nav in the browser view
 
     def test_routes_regular_browser_from_kindle_paths_to_terminal_style_snapshot(self) -> None:
         snapshot = make_snapshot(
@@ -509,8 +509,7 @@ class WebDisplayTest(unittest.TestCase):
                 self.assertIn(b"Charge Controller 0 (Classic)", response.body)
                 self.assertIn(b"Inverter/Charger", response.body)
                 self.assertIn(b'href="/weather">Weather</a>', response.body)
-                self.assertNotIn(b"More Power Info", response.body)
-                self.assertNotIn(b"Back to Power", response.body)
+                self.assertNotIn(b"footer-button-cell", response.body)  # no Kindle footer nav
 
     def test_routes_regular_browser_weather_to_dark_terminal_page(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
@@ -563,7 +562,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"Off-Grid Power Details", response.body)
         self.assertIn(b"Inverter/Charger", response.body)
         self.assertIn(b"Weather", response.body)
-        self.assertIn(b"Back to Power", response.body)
+        self.assertIn(b">Back</a>", response.body)
 
     def test_routes_api_snapshot_as_json(self) -> None:
         snapshot = make_snapshot(

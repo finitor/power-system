@@ -151,36 +151,6 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
     )
 
 
-def _kindle_viewport_diag_script() -> str:
-    """TEMPORARY: report the device's viewport metrics on the page.
-
-    The footer won't pin to the physical bottom because the Kindle browser gives
-    CSS no reliable screen-height reference. Before pinning the layout to the
-    device's real height we need to know what it actually reports. This runs in
-    the head (which survives the XHR body swaps) and refills the #vp-diag line, so
-    the numbers stay visible across refreshes. Remove once measured. ES3-only.
-    """
-    return (
-        '<script type="text/javascript">\n'
-        "(function() {\n"
-        "  function fill() {\n"
-        "    var el = document.getElementById('vp-diag');\n"
-        "    if (el) {\n"
-        "      var d = document.documentElement;\n"
-        "      el.innerHTML = 'vp: innerH=' + (window.innerHeight || '?')\n"
-        "        + ' clientH=' + ((d && d.clientHeight) || '?')\n"
-        "        + ' bodyH=' + ((document.body && document.body.clientHeight) || '?')\n"
-        "        + ' screenH=' + ((window.screen && window.screen.height) || '?')\n"
-        "        + ' dpr=' + (window.devicePixelRatio || '?');\n"
-        "    }\n"
-        "    setTimeout(fill, 1500);\n"
-        "  }\n"
-        "  fill();\n"
-        "})();\n"
-        "</script>"
-    )
-
-
 def _browser_refresh_script(refresh_seconds: int) -> str:
     return (
         '<script type="text/javascript">\n'
@@ -228,12 +198,15 @@ def render_kindle_snapshot(
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
         _kindle_refresh_script(refresh_seconds),
-        _kindle_viewport_diag_script(),  # TEMPORARY: remove after measuring (see fn docstring)
         "<title>Off-Grid Power</title>",
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        ".kindle-page{display:table;width:100%;height:100%;min-height:640px;}",
+        # min-height is the device's measured usable viewport (Kindle Touch:
+        # documentElement.clientHeight 700px, dpr 1, minus body's 8px margins).
+        # height:100% is intentionally absent — a display:table element treats it
+        # as content height, so it never filled the screen and the footer floated.
+        ".kindle-page{display:table;width:100%;min-height:692px;}",
         ".kindle-content{display:table-row;}",
         ".kindle-content-inner{display:table-cell;vertical-align:top;}",
         ".kindle-footer{display:table-row;height:28px;}",
@@ -251,7 +224,11 @@ def render_kindle_snapshot(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;}",
+        # Footer button mirrors the top-right Weather button: a top-link in a 16%
+        # cell, so it renders identical height and width.
+        ".footer-table{border-collapse:collapse;width:100%;}",
+        ".footer-table td{border-bottom:0;padding:0;}",
+        ".footer-button-cell{width:16%;}",
         ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
@@ -266,14 +243,13 @@ def render_kindle_snapshot(
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
-        '<div id="vp-diag" class="small">vp: measuring...</div>',  # TEMPORARY: viewport diagnostic
     ]
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
     lines.extend(_status_summary_section(snapshot))
     lines.extend(["</div></div>"])
-    lines.extend(_kindle_nav_button("/kindle/details", "More Power Info..."))
+    lines.extend(_kindle_nav_button("/kindle/details", "More ..."))
     lines.extend(["</div>"])
 
     lines.extend(
@@ -302,7 +278,11 @@ def render_kindle_details(
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        ".kindle-page{display:table;width:100%;height:100%;min-height:640px;}",
+        # min-height is the device's measured usable viewport (Kindle Touch:
+        # documentElement.clientHeight 700px, dpr 1, minus body's 8px margins).
+        # height:100% is intentionally absent — a display:table element treats it
+        # as content height, so it never filled the screen and the footer floated.
+        ".kindle-page{display:table;width:100%;min-height:692px;}",
         ".kindle-content{display:table-row;}",
         ".kindle-content-inner{display:table-cell;vertical-align:top;}",
         ".kindle-footer{display:table-row;height:28px;}",
@@ -319,7 +299,11 @@ def render_kindle_details(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        ".bottom-link{font-size:17px;line-height:1.55;color:#000;background:#fff;text-decoration:none;border:1px solid #000;display:block;text-align:center;}",
+        # Footer button mirrors the top-right Weather button: a top-link in a 16%
+        # cell, so it renders identical height and width.
+        ".footer-table{border-collapse:collapse;width:100%;}",
+        ".footer-table td{border-bottom:0;padding:0;}",
+        ".footer-button-cell{width:16%;}",
         ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
@@ -340,7 +324,7 @@ def render_kindle_details(
     lines.extend(_temperature_section(snapshot))
     lines.extend(_status_detail_sections(snapshot))
     lines.extend(["</div></div>"])
-    lines.extend(_kindle_nav_button("/kindle", "Back to Power"))
+    lines.extend(_kindle_nav_button("/kindle", "Back"))
     lines.extend(["</div>"])
     lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
@@ -1813,9 +1797,14 @@ def run_display_server(
 
 
 def _kindle_nav_button(href: str, label: str) -> list[str]:
+    # An empty spacer cell plus a 16% button cell, so the footer button lands
+    # bottom-right at the same size as the top-right Weather button (same
+    # top-link class, same 16% cell width).
     return [
         '<div class="kindle-footer"><div class="kindle-footer-cell">',
-        f'<a class="bottom-link" href="{escape(href)}">{escape(label)}</a>',
+        '<table class="footer-table"><tr><td></td>',
+        f'<td class="footer-button-cell"><a class="top-link" href="{escape(href)}">{escape(label)}</a></td>',
+        "</tr></table>",
         "</div></div>",
     ]
 
@@ -1825,6 +1814,8 @@ def _page_turn_link(href: str, side: str, label: str) -> str:
 
 
 def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
+    # Errors only. The Status Conditions group is shown on the main /kindle page,
+    # so repeating it on the details page is redundant.
     lines: list[str] = []
     if snapshot.errors:
         lines.append("<h2>Errors</h2>")
@@ -1832,7 +1823,6 @@ def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
         for error in snapshot.errors:
             lines.append(f"<li>{escape(error)}</li>")
         lines.append("</ul>")
-    lines.extend(_status_summary_section(snapshot))
     return lines
 
 
