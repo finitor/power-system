@@ -95,6 +95,64 @@ voltage — happens at the knee. **Everything above the knee is voltage-limited.
 That is the regime where "more current limit" stops doing anything and only the
 voltage setpoint (and how long you hold it) decides how full you get.
 
+## Stage strategy: collapsed absorb/float/equalize
+
+This system deliberately sets absorb, float, and equalize to the **same** voltage
+on both controllers (the scalar-voltage policy). The taper near the top is then
+owned by the supervisor's closed loop, not by each controller's built-in stage
+machine.
+
+**Why the lead-acid stage structure doesn't carry over.** A distinct, lower
+*float* exists for lead-acid because it self-discharges fast enough to need a
+continuous maintenance trickle, and because holding it at the higher absorb
+voltage causes gassing/water-loss and grid corrosion. LiFePO4 has neither
+problem: ~1–3%/month self-discharge (no trickle needed) and no gassing/corrosion
+overcharge mechanism. *Equalize* is a deliberate lead-acid overcharge to stir
+electrolyte and balance cells — actively unwanted on LiFePO4 — so setting
+equalize = absorb neutralizes it.
+
+There is still a *LiFePO4* reason some installs lower or disable float, but it is
+a different one: to avoid holding the pack at high SoC/voltage continuously, which
+is the main calendar-aging driver for lithium. The lead-acid maintenance
+rationale flips to a calendar-life rationale — same knob, opposite reason.
+
+**What collapsing the setpoints buys (the primary motivation here).** The
+controller presents one voltage target regardless of its internal stage: there is
+no absorb-timer expiry or drop-to-float transition for the supervisor to model or
+fight. "Stage" reduces to a pure function of state — current-limited while `V_oc`
+is below the setpoint (climbing), voltage-limited once it reaches it (tapering) —
+with no hidden timer deciding anything. Two heterogeneous controllers (Classic,
+EPEver) with different stage machines collapse to the same behavior, so the
+allocator models them uniformly (`I = (V_set − V_oc)/R_int`, capped by the current
+budget) instead of replicating each vendor's firmware. That is the conservative,
+inspectable control this project favors, and it is the dominant justification for
+the choice. As a bonus, the pack still gets a daily high-voltage window in which
+passive balancing can work.
+
+**What it costs, and why our duty cycle covers it.** Held continuously at a high
+collapsed setpoint, the pack would sit near the top of the knee — high-SoC
+*residence*, the calendar-aging lever (the current is ~0 once tapered; this is
+voltage/SoC dwell, not lead-acid-style overcharge). But this is a pure-solar,
+daily-cycling pack: the house draws it down to ~70% SoC overnight, so it touches
+the top only for the hours of solar surplus and spends most of each cycle in the
+benign mid-band. Time-averaged SoC is moderate, and the high-residence aging that
+the lower-float advice targets never accumulates. Shallow daily cycling in the
+mid-range is the easy regime for LiFePO4 on both the cycle- and calendar-aging
+axes.
+
+The mitigation is **duty-cycle dependent**, though. The case to watch is a sunny
+stretch with little or no load (e.g. the site unoccupied), where the pack reaches
+the setpoint midday and then dwells at high voltage until the next draw. That is
+where a lower held voltage — or an away-mode setpoint drop — would earn its keep;
+for normal occupied operation the nightly drawdown handles it.
+
+**Guidance.** Keep the collapsed setpoint moderate rather than at the very top of
+the knee (a target in the upper-flat/low-knee region ages better than ~3.55 V/cell
+held continuously); watch cell delta as max-cell rises
+([Threshold Theory](charge-management.md#threshold-theory)); and treat long
+no-load sunny periods as the one scenario where the absent lower float would
+matter.
+
 ## Worked example: idle at 97% in full sun
 
 Observed one bright afternoon (arrays capable of ~1000 W):
@@ -206,3 +264,8 @@ there, without sitting so high that cell delta diverges or longevity suffers.
   elimination argument that isolates it as the voltage-limited CV-taper endpoint
   rather than a BMS refusal. Motivated writing this doc as the conceptual basis
   for the operator voltage/CCL-scaling nudge tools.
+- 2026-06-20 — Recorded the deliberate collapsed absorb/float/equalize strategy:
+  control simplicity (the supervisor owns the taper instead of each controller's
+  stage machine) is the primary reason; the calendar-aging downside of no lower
+  float is covered by the pure-solar duty cycle drawing the pack to ~70% nightly,
+  with long no-load sunny periods flagged as the exception.
