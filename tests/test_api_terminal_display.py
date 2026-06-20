@@ -9,6 +9,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from offgrid_power.api_terminal_display import (
     _allocation_lines,
@@ -19,6 +20,7 @@ from offgrid_power.api_terminal_display import (
     render_api_weather,
 )
 from offgrid_power.weather import WeatherReport, weather_api_payload
+from golden import check_golden
 
 
 class ApiTerminalDisplayTest(unittest.TestCase):
@@ -124,39 +126,18 @@ class ApiTerminalDisplayTest(unittest.TestCase):
 
         rendered = render_api_snapshot(payload, now=datetime(2026, 6, 5, 12, 0, 2, tzinfo=timezone.utc))
 
-        self.assertIn("SOC:  92%  Status:  OK", rendered)
-        self.assertIn("Now                   4.0A  212W", rendered)
-        self.assertIn("Flow                  53.04V  -1.2A  -64W  discharging", rendered)
-        self.assertIn("Cells                 Δ 6mV; min 2-14 3.312V; max 2-10 3.318V", rendered)
-        self.assertIn("Charge Status         Stage: Float  State: MPPT or regulating voltage", rendered)
-        # EPEver block: canonical first, vendor word in parens, no vendor knowledge in renderer.
-        self.assertIn("Charge Status         Stage: Resting (No charging)", rendered)
-        self.assertIn("Charge Settings       Limit 80.0A Absorb 55.6V/32.5m Float 55.0V Max TCV 56.8V", rendered)
-        self.assertIn("Charge Controller 0 (Classic)\n", rendered)
-        self.assertIn("\n\nCharge Controller 1 (Epever)\n", rendered)
-        # cc1 mirrors cc0: a "Production Today" line (energy only, no Ah from the
-        # EPEver), and no static "Rated" line. Adaptive units: sub-1 kWh shows Wh
-        # (EPEver 0.1 -> 100Wh), >=1 kWh shows kWh (Classic 5.8 -> 5.8kWh).
-        self.assertIn("Production Today      100Wh", rendered)
-        self.assertIn("Production Today      5.8kWh  106Ah", rendered)
+        # Whole-frame layout (every field, spacing, ordering) lives in the golden
+        # file; re-bless with UPDATE_GOLDEN=1 on an intended change.
+        check_golden(self, "api_snapshot_full", rendered)
+
+        # Deliberate *suppressions* are kept as explicit guards so a golden
+        # re-bless can't silently reintroduce them:
+        # - EPEver settings hide EQ; controllers carry no static "Rated" line.
+        # - "Battery terminal"/"INV battery" rows suppressed (2026-06-17).
         self.assertNotIn("Rated", rendered)
-        self.assertIn("Charge Settings       Limit 80.0A Absorb 54.7V/120m Float 53.6V", rendered)
         self.assertNotIn("EQ 54.7V", rendered)
-        self.assertIn("\n\nInverter/Charger\n", rendered)
-        self.assertIn("DC                    53.2V  4A  213W", rendered)
-        self.assertIn("AC Output             120V  1A  60.0Hz", rendered)
-        self.assertIn("Status                Inverting", rendered)
-        self.assertIn("Charge Settings       Absorb 54.4V 3.0h Float 54.4V Shore 30A", rendered)
-        self.assertNotIn("Temps", rendered)
-        # "Battery terminal" and "INV battery" are suppressed (2026-06-17).
         self.assertNotIn("Battery terminal", rendered)
         self.assertNotIn("INV battery", rendered)
-        self.assertIn("CC0 FET               31.0C", rendered)
-        self.assertNotIn("CC1 battery", rendered)
-        self.assertNotIn("CC1 device", rendered)
-        self.assertIn("INV FET               30C", rendered)
-        self.assertIn("Sensor 0 ambient temp 18.2C", rendered)
-        self.assertNotIn("Press Ctrl-C", rendered)
 
     def test_renders_charge_allocation_section(self) -> None:
         lines = _allocation_lines(
@@ -452,20 +433,8 @@ class ApiWeatherDisplayTest(unittest.TestCase):
     def test_render_api_weather_sections(self) -> None:
         rendered = render_api_weather(weather_api_payload(self._report()))
 
-        self.assertIn("Off-Grid Weather - Cabin", rendered)
-        self.assertIn("As of: 08:30", rendered)
-        self.assertIn("\nCurrent\n", rendered)
-        self.assertIn("Condition             overcast", rendered)
-        self.assertIn("Temperature           11.0C", rendered)
-        self.assertIn("Wind                  5km/h  20km/h gust  SW", rendered)
-        self.assertIn("\nNext Hours\n", rendered)
-        self.assertIn("\nForecast\n", rendered)
-        self.assertIn("\nSolar Irradiance\n", rendered)
-        self.assertIn("Global Horizontal     156W/m2", rendered)
-        self.assertIn("\nAstronomy\n", rendered)
-        self.assertIn("Sun                   rise 05:39  set 21:39", rendered)
-        self.assertIn("Moon                  waning crescent (0.92)", rendered)
-        self.assertIn("Aurora Tonight        unlikely  peak Kp 3.7 around 23:00", rendered)
+        # Whole-frame layout in the golden file; re-bless with UPDATE_GOLDEN=1.
+        check_golden(self, "api_weather_full", rendered)
 
     def test_render_api_weather_no_data(self) -> None:
         rendered = render_api_weather(weather_api_payload(None))

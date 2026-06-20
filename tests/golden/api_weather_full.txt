@@ -1,0 +1,31 @@
+Off-Grid Weather - Cabin
+As of: 08:30:00 EDT
+
+Current
+  Condition             overcast
+  Temperature           11.0C
+  Feels Like            10.3C
+  Humidity              94%
+  Cloud                 94%
+  Wind                  5km/h  20km/h gust  SW
+  Precip Now            0.0mm  0.0mm rain  0.0cm snow
+
+Next Hours
+  08:00                 overcast  10.2C  24% precip  3km/h
+  09:00                 overcast  11.7C  15% precip  10km/h
+
+Forecast
+  Sat 06/13             fog  7.8C-13.1C  24% precip  0.0mm
+  Sun 06/14             overcast  7.3C-10.0C  8% precip  0.0mm
+
+Solar Irradiance
+  Global Horizontal     156W/m2
+  Direct Radiation      0W/m2
+  Diffuse Radiation     156W/m2
+  Direct Normal         0W/m2
+
+Astronomy
+  Sun                   rise 05:39  set 21:39
+  Moon                  waning crescent (0.92)
+  Aurora                now 0% valid 09:25
+  Aurora Tonight        unlikely  peak Kp 3.7 around 23:00

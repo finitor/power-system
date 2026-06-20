@@ -1,0 +1,42 @@
+Off-Grid Power Supervisor
+Updated: 08:00:00 EDT
+SOC:  92%  Status:  OK
+
+Load
+  Now                   4.0A  212W
+  Estimated Autonomy    46.0h
+
+Battery Bank
+  Flow                  53.04V  -1.2A  -64W  discharging
+  Cells                 Δ 6mV; min 2-14 3.312V; max 2-10 3.318V
+  Protection/Alarms     none
+  Enable                charge yes  discharge yes
+  Limits                charge 58.4V/200.0A  discharge 200.0A
+
+Charge Controller 0 (Classic)
+  PV                    91.2V  4.5A  Voc 101.0V
+  Output                54.8V  7.1A  389W
+  Charge Status         Stage: Float  State: MPPT or regulating voltage
+  Production Today      5.8kWh  106Ah
+  Charge Settings       Limit 80.0A Absorb 55.6V/32.5m Float 55.0V Max TCV 56.8V
+
+Charge Controller 1 (Epever)
+  PV                    0.0V  0.0A  0W
+  Output                53.2V  0.0A  0W
+  Charge Status         Stage: Resting (No charging)
+  Production Today      100Wh
+  Charge Settings       Limit 80.0A Absorb 54.7V/120m Float 53.6V Recovery ?V
+
+Inverter/Charger
+  DC                    53.2V  4A  213W
+  AC Output             120V  1A  60.0Hz
+  AC Input              0V  no source
+  Status                Inverting
+  Charge Settings       Absorb 54.4V 3.0h Float 54.4V Shore 30A
+
+Temperatures
+  CC0 FET               31.0C
+  CC0 PCB               29.0C
+  INV transformer       37C
+  INV FET               30C
+  Sensor 0 ambient temp 18.2C
