@@ -90,6 +90,26 @@ All resulting charge voltages are guarded against the BMS-published CVL. Pass
 The aliases `controller_number` and `charge_controller_number` are also
 accepted for `controller`.
 
+Instead of an absolute `voltage_v`, send a signed `delta_v` to *nudge* the
+controller's current scalar setpoint:
+
+```json
+{ "controller": 0, "delta_v": 0.1, "dry_run": false }
+```
+
+This is a read-modify-write: the supervisor reads the controller's current
+scalar setpoint on the device's actor thread (Classic absorb / EPEver boost),
+adds `delta_v`, applies the same scalar policy, and writes it back. Exactly one
+of `voltage_v` or `delta_v` must be supplied; supplying both is a `400`.
+`delta_v` magnitude is capped at 1.0 V per call (a runaway-client backstop —
+larger moves should use `voltage_v`); the resolved target is still guarded
+against BMS CVL like any other write.
+
+Voltage responses include `previous_voltage_v` (the pre-write scalar, `null`
+for an absolute set), the resolved `voltage_v`, the requested `delta_v`
+(`null` for an absolute set), and `confirmed` — `true` when the controller's
+readback matched the target, `null` on a dry run.
+
 `POST /api/v1/control/classic/charge-settings` accepts any subset of:
 
 ```json

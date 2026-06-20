@@ -184,6 +184,39 @@ class Supervisor:
             return self._readers["classic"].submit(write)
         return write()
 
+    def read_classic_settings(self) -> ClassicChargeSettings:
+        """Read fresh Classic charge settings on the device actor thread.
+
+        Used by the scalar-voltage *delta* path, which must read the current
+        setpoint and write base+delta back. Going through the actor thread
+        keeps the read on the same thread that performs the subsequent write,
+        so the value can't be read from a stale poll cache.
+        """
+        if self.classic is None:
+            raise RuntimeError("no Classic adapter configured")
+
+        def read() -> ClassicChargeSettings:
+            return self.classic.read()[1]
+
+        if self._readers is not None and "classic" in self._readers:
+            return self._readers["classic"].submit(read)  # type: ignore[return-value]
+        return read()
+
+    def read_epever_settings(self) -> EpeverChargeSettings:
+        """Read fresh EPEver charge settings on the device actor thread.
+
+        The EPEver counterpart of read_classic_settings; see that method.
+        """
+        if self.epever is None:
+            raise RuntimeError("no EPEver adapter configured")
+
+        def read() -> EpeverChargeSettings:
+            return self.epever.read()[1]
+
+        if self._readers is not None and "epever" in self._readers:
+            return self._readers["epever"].submit(read)  # type: ignore[return-value]
+        return read()
+
     def write_epever_charge_voltages(self, **kwargs) -> EpeverChargeSettings:
         """Write EPEver charge voltages via the device actor thread."""
         if self.epever is None:

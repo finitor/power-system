@@ -55,6 +55,12 @@ class FakeControlSupervisor:
     def read_snapshot(self):
         return self.snapshot
 
+    def read_classic_settings(self):
+        return self.snapshot.classic_settings or make_classic_settings()
+
+    def read_epever_settings(self):
+        return self.snapshot.epever_settings or make_epever_settings()
+
     def write_classic_charge_settings(self, **kwargs):
         self.classic_calls.append(kwargs)
         current = self.snapshot.classic_settings or make_classic_settings()
@@ -930,6 +936,109 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertEqual(response.status.value, 400)
         self.assertIn("unknown charge controller number", json.loads(response.body)["error"])
+
+    def test_control_api_nudges_classic_scalar_voltage_up(self) -> None:
+        supervisor = FakeControlSupervisor()  # Classic absorb starts at 55.2
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "delta_v": 0.1},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(payload["previous_voltage_v"], 55.2)
+        self.assertEqual(payload["voltage_v"], 55.3)
+        self.assertEqual(payload["delta_v"], 0.1)
+        self.assertTrue(payload["confirmed"])
+        self.assertEqual(
+            supervisor.classic_calls,
+            [
+                {
+                    "absorb_voltage_v": 55.3,
+                    "float_voltage_v": 55.2,
+                    "equalize_voltage_v": 55.3,
+                    "max_temp_comp_voltage_v": 55.3,
+                }
+            ],
+        )
+
+    def test_control_api_nudges_epever_scalar_voltage_down(self) -> None:
+        supervisor = FakeControlSupervisor()  # EPEver boost starts at 54.7
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 1, "delta_v": -0.1},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(payload["previous_voltage_v"], 54.7)
+        self.assertEqual(payload["voltage_v"], 54.6)
+        self.assertEqual(supervisor.voltage_calls, [{"boost_v": 54.6, "float_v": 54.6, "equalize_v": 54.6, "boost_reconnect_v": 53.6}])
+
+    def test_control_api_delta_dry_run_does_not_write(self) -> None:
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "delta_v": 0.1, "dry_run": True},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(payload["voltage_v"], 55.3)
+        self.assertIsNone(payload["confirmed"])
+        self.assertEqual(supervisor.classic_calls, [])
+
+    def test_control_api_delta_guarded_against_bms_cvl(self) -> None:
+        # CVL is 58.4; nudging Classic (55.2) up 0.1 is fine, but a delta that
+        # would push the absorb target above CVL must be refused.
+        supervisor = FakeControlSupervisor()
+
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "delta_v": 0.95},  # 55.2 + 0.95 = 56.15, under cap, under CVL
+        )
+        self.assertEqual(response.status.value, 200)
+
+        supervisor = FakeControlSupervisor(
+            snapshot=make_snapshot(
+                classic_settings=make_classic_settings(absorb_voltage_v=58.35),
+                epever_settings=make_epever_settings(charging_limit_voltage_v=60.0),
+                battery=make_battery_with_cvl(58.4),
+            )
+        )
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "delta_v": 0.1},  # 58.35 + 0.1 = 58.45 > CVL 58.4
+        )
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("exceeds BMS CVL", json.loads(response.body)["error"])
+        self.assertEqual(supervisor.classic_calls, [])
+
+    def test_control_api_rejects_both_voltage_and_delta(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "voltage_v": 56.3, "delta_v": 0.1},
+        )
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("exactly one of", json.loads(response.body)["error"])
+
+    def test_control_api_rejects_oversized_delta(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-controller/voltage",
+            {"controller": 0, "delta_v": 2.0},
+        )
+        self.assertEqual(response.status.value, 400)
+        self.assertIn("per-call cap", json.loads(response.body)["error"])
 
     def test_control_api_routes_epever_charge_settings(self) -> None:
         supervisor = FakeControlSupervisor()

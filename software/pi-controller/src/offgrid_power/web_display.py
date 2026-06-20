@@ -8,6 +8,7 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import logging
 from threading import Lock
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
@@ -26,6 +27,17 @@ BATTERY_IDLE_CURRENT_A = 0.5
 BROWSER_POWER_REFRESH_SECONDS = 30
 BROWSER_WEATHER_REFRESH_SECONDS = 300
 BROWSER_RETRY_SECONDS = 5
+
+# Largest single scalar-voltage nudge the API will accept. A backstop against a
+# buggy or runaway client: big moves should use an absolute voltage_v, not one
+# giant delta. The operator terminal stages much smaller steps than this.
+MAX_SCALAR_DELTA_V = 1.0
+# A scalar write is "confirmed" when the controller reads back within this of
+# the target — wide enough to absorb the Classic's 0.1 V register granularity,
+# tighter than a single nudge step.
+SCALAR_CONFIRM_TOLERANCE_V = 0.06
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -646,15 +658,21 @@ def route_control_request(supervisor: Supervisor, path: str, payload: dict) -> D
 def _control_charge_controller_voltage(supervisor: Supervisor, payload: dict) -> DisplayResponse:
     try:
         controller = _controller_number(payload)
-        voltage_v = _required_number(payload, "voltage_v")
+        voltage_v = _optional_number(payload, "voltage_v")
+        delta_v = _optional_number(payload, "delta_v")
         dry_run = bool(payload.get("dry_run", False))
-        if not (0.0 < voltage_v <= 65.0):
-            raise ValueError(f"voltage_v out of range: {voltage_v}")
+        if (voltage_v is None) == (delta_v is None):
+            raise ValueError("exactly one of voltage_v or delta_v must be supplied")
+        if delta_v is not None and abs(delta_v) > MAX_SCALAR_DELTA_V:
+            raise ValueError(
+                f"delta_v magnitude {delta_v:+.2f}V exceeds the {MAX_SCALAR_DELTA_V:.2f}V "
+                "per-call cap; use voltage_v for a larger move"
+            )
 
         if controller == 0:
-            return _control_classic_scalar_voltage(supervisor, voltage_v, dry_run=dry_run)
+            return _control_classic_scalar_voltage(supervisor, voltage_v, delta_v, dry_run=dry_run)
         if controller == 1:
-            return _control_epever_scalar_voltage(supervisor, voltage_v, dry_run=dry_run)
+            return _control_epever_scalar_voltage(supervisor, voltage_v, delta_v, dry_run=dry_run)
         raise ValueError(f"unknown charge controller number: {controller}")
     except ValueError as exc:
         return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
@@ -662,12 +680,30 @@ def _control_charge_controller_voltage(supervisor: Supervisor, payload: dict) ->
         return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
 
 
+def _resolve_scalar_target(voltage_v: float | None, delta_v: float | None, base_v: float) -> float:
+    """Resolve the absolute scalar target from either an absolute or delta request.
+
+    For a delta, the current setpoint is read fresh from the device (base_v) and
+    the delta added — the read-modify-write the operator asked for. The result is
+    range-checked here so a delta that lands somewhere absurd is refused the same
+    way an absolute request would be.
+    """
+    target = round(base_v + delta_v, 2) if delta_v is not None else round(voltage_v, 2)
+    if not (0.0 < target <= 65.0):
+        raise ValueError(f"resulting charge voltage out of range: {target:.2f}V")
+    return target
+
+
 def _control_classic_scalar_voltage(
     supervisor: Supervisor,
-    voltage_v: float,
+    voltage_v: float | None,
+    delta_v: float | None,
     *,
     dry_run: bool,
 ) -> DisplayResponse:
+    previous_voltage_v = round(supervisor.read_classic_settings().absorb_voltage_v, 2) if delta_v is not None else None
+    base = previous_voltage_v if previous_voltage_v is not None else 0.0
+    voltage_v = _resolve_scalar_target(voltage_v, delta_v, base)
     planned = {
         "absorb_voltage_v": round(voltage_v, 2),
         "float_voltage_v": round(voltage_v - 0.1, 2),
@@ -676,13 +712,19 @@ def _control_classic_scalar_voltage(
     }
     _guard_voltage_targets_against_bms(supervisor.read_snapshot(), planned)
     settings = None if dry_run else supervisor.write_classic_charge_settings(**planned)
+    confirmed = None if settings is None else _scalar_confirmed(settings.absorb_voltage_v, planned["absorb_voltage_v"])
+    if settings is not None:
+        _log_scalar_change("classic", previous_voltage_v, voltage_v, delta_v, confirmed)
     return _json_response(
         HTTPStatus.OK,
         {
             "ok": True,
             "device": "classic",
             "controller": 0,
+            "previous_voltage_v": previous_voltage_v,
             "voltage_v": voltage_v,
+            "delta_v": delta_v,
+            "confirmed": confirmed,
             "dry_run": dry_run,
             "planned": planned,
             "settings": _classic_settings_api_payload(settings),
@@ -692,10 +734,14 @@ def _control_classic_scalar_voltage(
 
 def _control_epever_scalar_voltage(
     supervisor: Supervisor,
-    voltage_v: float,
+    voltage_v: float | None,
+    delta_v: float | None,
     *,
     dry_run: bool,
 ) -> DisplayResponse:
+    previous_voltage_v = round(supervisor.read_epever_settings().boost_voltage_v, 2) if delta_v is not None else None
+    base = previous_voltage_v if previous_voltage_v is not None else 0.0
+    voltage_v = _resolve_scalar_target(voltage_v, delta_v, base)
     planned = {
         "boost_voltage_v": round(voltage_v, 2),
         "absorb_voltage_v": round(voltage_v, 2),
@@ -721,18 +767,47 @@ def _control_epever_scalar_voltage(
             equalize_v=planned["equalize_voltage_v"],
             boost_reconnect_v=planned["boost_reconnect_voltage_v"],
         )
+    confirmed = None if settings is None else _scalar_confirmed(settings.boost_voltage_v, planned["boost_voltage_v"])
+    if settings is not None:
+        _log_scalar_change("epever", previous_voltage_v, voltage_v, delta_v, confirmed)
     return _json_response(
         HTTPStatus.OK,
         {
             "ok": True,
             "device": "epever",
             "controller": 1,
+            "previous_voltage_v": previous_voltage_v,
             "voltage_v": voltage_v,
+            "delta_v": delta_v,
+            "confirmed": confirmed,
             "dry_run": dry_run,
             "planned": planned,
             "settings": _epever_settings_api_payload(settings),
         },
     )
+
+
+def _scalar_confirmed(readback_v: float, target_v: float) -> bool:
+    return abs(readback_v - target_v) <= SCALAR_CONFIRM_TOLERANCE_V
+
+
+def _log_scalar_change(
+    device: str,
+    previous_v: float | None,
+    voltage_v: float,
+    delta_v: float | None,
+    confirmed: bool,
+) -> None:
+    """Leave an audit trail for operator scalar-voltage writes in the journal.
+
+    Manual nudges and absolute sets should be as visible in the logs as the
+    allocator's automated writes, so a later "why did the setpoint move?" has an
+    answer. Goes through the stdlib logger the supervisor service hands to
+    journald.
+    """
+    move = f"{previous_v:.2f}->{voltage_v:.2f}V" if previous_v is not None else f"{voltage_v:.2f}V"
+    delta = f" (delta {delta_v:+.2f}V)" if delta_v is not None else ""
+    logger.info("scalar charge voltage write: %s %s%s confirmed=%s", device, move, delta, confirmed)
 
 
 def _control_classic_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:

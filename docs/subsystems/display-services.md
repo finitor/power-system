@@ -26,6 +26,33 @@ Port assignments:
 | 8080 | nginx | Legacy Kindle bookmark; identical proxy behavior to port 80 |
 | 8081 | supervisor | Raw web/API server, loopback consumers only |
 
+## Operator Controls (terminal display)
+
+On an interactive tty the `api_terminal_display` client takes single keypresses:
+`p` power, `w` weather, space toggles the two, `q` quits. `t` opens **tune
+mode** for nudging a controller's scalar charge voltage from the console.
+
+Tune mode is **staged-commit**: `+`/`-` stage a change to the selected
+controller's setpoint (shown as `→ target (Δ)` in the overlay) but send
+nothing; the change is applied only on `Enter`. `0`/`1` (or Tab) select the
+controller, `[`/`]` cycle the step size (0.05 / 0.1 / 0.2 V), `Esc` (or `q`)
+cancels without sending. This keeps a stray keypress from moving the system —
+applying a change always takes a deliberate Enter.
+
+Guard rails, outermost last:
+
+- The staging gate (`t` to arm) means normal keys never touch voltage.
+- A per-session budget caps how far one tune session can wander from where it
+  opened (±0.5 V); go further by committing and re-arming.
+- Tune mode auto-disarms after ~20 s idle, so it's never left armed.
+- On commit the client sends one `delta_v` per dirty controller to
+  `POST /api/v1/control/charge-controller/voltage` (default `--control-url`
+  `http://127.0.0.1:8081`, the loopback control surface — not the nginx
+  display port).
+- The supervisor's BMS-CVL guard and 1.0 V per-call delta cap are the hard
+  backstops regardless of what the client sends; a refused write is shown in
+  the overlay, and the setpoint only advances on a confirmed readback.
+
 ## Restart Behavior
 
 `sudo systemctl restart offgrid-supervisor` is the standard deploy action and
