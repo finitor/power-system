@@ -8,6 +8,27 @@ PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 echo "services: supervisor=$(systemctl is-active offgrid-supervisor) console=$(systemctl is-active offgrid-console) nginx=$(systemctl is-active nginx) can-watchdog-timer=$(systemctl is-active offgrid-can-watchdog.timer)"
 
+# Working-tree state: surfaces marooned bench edits (changes made on the Pi
+# that never made it back to git) on every diag, since this is the first move
+# anyone runs. Offline-safe: ahead/behind are vs the last-fetched origin, no
+# network fetch.
+REPO="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+if git -C "${REPO}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    head="$(git -C "${REPO}" rev-parse --short HEAD)"
+    modified="$(git -C "${REPO}" status --porcelain --untracked-files=no | grep -c .)"
+    untracked="$(git -C "${REPO}" ls-files --others --exclude-standard | grep -c .)"
+    behind="$(git -C "${REPO}" rev-list --count HEAD..@{u} 2>/dev/null || echo '?')"
+    ahead="$(git -C "${REPO}" rev-list --count @{u}..HEAD 2>/dev/null || echo '?')"
+    if [ "${modified}" -eq 0 ] && [ "${untracked}" -eq 0 ]; then
+        tree="clean"
+    else
+        tree="DIRTY (${modified} modified, ${untracked} untracked) <- reconcile before deploy"
+    fi
+    echo "git: ${head} ${tree}; behind=${behind} ahead=${ahead} (vs last-fetched origin)"
+else
+    echo "git: not a repo"
+fi
+
 SYS=/sys/class/net/can0
 if [ -d "${SYS}" ]; then
     rx1="$(cat "${SYS}/statistics/rx_packets")"

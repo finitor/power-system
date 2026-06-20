@@ -39,6 +39,31 @@ locations (including the systemd unit), reinstalls the package if dependencies
 changed, restarts the services, and health-checks. It refuses to run with a
 dirty Pi working tree.
 
+### Marooned changes (the rule that keeps biting us)
+
+The Pi checkout is **disposable** — git is the source of truth, and `deploy.sh`
+reconciles to it. So any edit made directly on the Pi (a quick bench fix, a
+`scp` of a single file) is *marooned* until it is committed and pushed from the
+Mac. Marooned work has twice been found stranded here.
+
+- **Detect it:** `scripts/diag.sh` reports a `git:` line — `clean`, or
+  `DIRTY (N modified, M untracked)`. Since diag is the first move for anything,
+  a dirty tree can't hide. (`git status` and `git -C ~/power-system status` work
+  too.)
+- **Why untracked files are the sneaky case:** a clean `git pull` ignores
+  untracked files entirely, so a new file authored on the Pi (e.g. a new script)
+  never blocks a deploy and never reaches git on its own. `deploy.sh` now prints
+  a loud WARNING listing them; `diag.sh` counts them.
+- **Reconcile before discarding** — the changes may exist *only* on the Pi:
+  1. `git -C ~/power-system status` then `git diff` to see what's there.
+  2. Copy anything real to the Mac (into the repo), commit, and push.
+  3. Only then, on the Pi: `git checkout -- . && git clean -i` (review untracked
+     interactively), then `bash scripts/deploy.sh`.
+
+The standing rule: **bench iteration is fine, but every session ends by getting
+the change into git** (commit + push from the Mac, then `deploy.sh`), leaving
+the Pi tree clean.
+
 ---
 
 ## 2. First-time setup on a fresh Pi
@@ -94,7 +119,7 @@ python3 -m venv .venv                                  # create it
   without reinstalling. `deploy.sh` only reinstalls when `pyproject.toml` changed.
 - Run anything with the venv's interpreter: `.venv/bin/python ...`, or use the
   installed console scripts directly: `.venv/bin/offgrid-supervisor`,
-  `.venv/bin/offgrid-terminal-display`, `.venv/bin/offgrid-r2-export`, etc.
+  `.venv/bin/offgrid-terminal-display`, `.venv/bin/offgrid-object-store-export`, etc.
 - The Mac dev venv is the same idea (Python 3.12 there) and runs the full test
   suite: `.venv/bin/python -m pytest`.
 

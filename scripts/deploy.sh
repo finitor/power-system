@@ -48,11 +48,28 @@ fi
 cd "${PROJECT_DIR}"
 
 echo "== git =="
+# Marooned-change guard. Tracked modifications block the deploy (a pull would
+# fight them). Untracked files do NOT block a clean ff pull, but they are the
+# most common way bench work gets stranded on the Pi forever, so surface them
+# loudly. Either way: rescue real work to git BEFORE discarding -- these edits
+# may exist only here.
 if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "ERROR: working tree has local modifications:" >&2
-    git status --short >&2
-    echo "Reconcile first (commit on the workstation and push, then discard here with: git checkout -- .)" >&2
+    echo "ERROR: the Pi working tree has local modifications to tracked files:" >&2
+    git status --short --untracked-files=no >&2
+    echo "" >&2
+    echo "These may be bench edits that exist ONLY on the Pi. Do not discard blindly:" >&2
+    echo "  1. Review:  git -C \"${PROJECT_DIR}\" diff" >&2
+    echo "  2. Rescue anything real to the Mac (copy into the repo there, commit, push)." >&2
+    echo "  3. Only then discard the Pi copy and redeploy:" >&2
+    echo "       git checkout -- . && git pull --ff-only && bash scripts/deploy.sh" >&2
     exit 1
+fi
+untracked="$(git ls-files --others --exclude-standard)"
+if [ -n "${untracked}" ]; then
+    echo "WARNING: untracked files on the Pi (possible marooned bench work):" >&2
+    printf '  %s\n' ${untracked} >&2
+    echo "  -> if any are real, copy them into the repo on the Mac, commit, and push;" >&2
+    echo "     they will never reach git on their own. (Deploy continues.)" >&2
 fi
 old_head="$(git rev-parse HEAD)"
 git pull --ff-only
