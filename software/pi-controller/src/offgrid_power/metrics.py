@@ -60,6 +60,21 @@ def _local_window_utc_text(day: date, duration: timedelta) -> tuple[str, str]:
     return utc_timestamp_text(start), utc_timestamp_text(end)
 
 
+def local_day_utc_bounds(day: date) -> tuple[str, str]:
+    """UTC timestamp-text bounds ``[start, end)`` spanning the local day.
+
+    ``captured_at`` is stored in canonical UTC, but "a day" for this off-grid
+    site means a local calendar day (the Classic's daily counters reset at
+    local midnight). Convert both local-midnight boundaries to UTC text so a
+    caller can select a local day with a direct lexical comparison against
+    stored values. Computing the end from the next day's local midnight (rather
+    than start + 24h) keeps the window correct across DST transitions.
+    """
+    start = _local_time_on_day(day)
+    end = _local_time_on_day(day + timedelta(days=1))
+    return utc_timestamp_text(start), utc_timestamp_text(end)
+
+
 @dataclass(frozen=True)
 class MetricSample:
     captured_at: datetime

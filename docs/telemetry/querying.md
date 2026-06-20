@@ -98,14 +98,24 @@ Table: `samples`
 
 | column | notes |
 |---|---|
-| `captured_at` | ISO-8601 with local TZ offset, e.g. `2026-06-15T10:07:12-04:00` |
+| `captured_at` | ISO-8601 in **UTC**, e.g. `2026-06-15T14:07:12.284562+00:00` (always `+00:00`) |
 | `source` | `classic.0`, `epever.1`, `battery`, `battery.can`, `load`, `weather`, `supervisor` |
 | `metric` | metric name (see below) |
 | `value` | numeric |
 | `text` | string (for stage names, states, etc.) |
 | `unit` | `W`, `A`, `V`, `kWh`, `Ah`, `C`, … |
 
-**Date filtering:** `captured_at` stores local time with a TZ offset. Filter by string prefix — `captured_at >= '2026-06-15'` — rather than SQLite's `date()` function, which interprets values as UTC.
+**Date filtering:** `captured_at` is stored in UTC. Because the text is uniform UTC, lexical (string) comparison equals chronological order, and SQLite's `date()`/`datetime()` agree with the raw text — both report the **UTC** day.
+
+That UTC day is *not* the local calendar day. At this site (UTC−04:00 in summer) local midnight is `04:00` UTC, so a bare prefix like `captured_at >= '2026-06-15'` selects the UTC day, shifted ~4h from the local day. To filter by **local** day, compare against the local-midnight boundaries expressed in UTC:
+
+```sql
+-- "2026-06-15" local, at UTC-04:00:
+WHERE captured_at >= '2026-06-15T04:00:00+00:00'
+  AND captured_at <  '2026-06-16T04:00:00+00:00'
+```
+
+`scripts/query_metrics.py` computes these bounds for you (see `day_bounds`, which mirrors `offgrid_power.metrics.local_day_utc_bounds`), so the subcommands below report local-day results and display times in local time.
 
 ### Key metrics — `classic.0`
 
@@ -150,16 +160,18 @@ conn.execute("""
 
 ### Example: daily energy totals for the past week
 
+`daily_energy` is a running counter that the Classic resets at **local** midnight, so bucket by the local day. SQLite's `date()` would group by the UTC day (~4h off); shift into local time first with the site offset:
+
 ```python
 conn.execute("""
-    SELECT date(captured_at) AS day, MAX(value) AS kwh
+    SELECT date(captured_at, '-4 hours') AS local_day, MAX(value) AS kwh
     FROM samples
     WHERE source = 'classic.0'
       AND metric = 'daily_energy'
-    GROUP BY day
-    ORDER BY day DESC
+    GROUP BY local_day
+    ORDER BY local_day DESC
     LIMIT 7
 """).fetchall()
 ```
 
-(Uses `MAX` because `daily_energy` is a running counter that peaks at end-of-day.)
+(`MAX` because the counter peaks at end-of-day. The `-4 hours` is the summer offset; for a DST-correct, offset-free version use `scripts/query_metrics.py daily-summary --date …` per day, which derives the local-day bounds from the system zone.)

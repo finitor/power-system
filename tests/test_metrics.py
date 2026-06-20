@@ -26,6 +26,7 @@ from offgrid_power.metrics import (
     TelemetryEvent,
     initialize_metrics_db,
     merge_metric_stores,
+    parse_timestamp,
     snapshot_metric_samples,
     weather_metric_samples,
 )
@@ -313,6 +314,39 @@ class MetricRecorderTest(unittest.TestCase):
             )
 
         self.assertEqual(recorder.midnight_soc_percent(date(2026, 5, 31)), 91)
+
+    def test_local_day_utc_bounds_spans_local_calendar_day(self) -> None:
+        from offgrid_power.metrics import local_day_utc_bounds
+
+        day = date(2026, 6, 15)
+        start, end = local_day_utc_bounds(day)
+
+        # Bounds are canonical UTC text, in chronological (lexical) order.
+        self.assertTrue(start.endswith("+00:00"))
+        self.assertTrue(end.endswith("+00:00"))
+        self.assertLess(start, end)
+
+        # They are exactly local midnight and the next local midnight.
+        self.assertEqual(parse_timestamp(start).astimezone(),
+                         datetime(2026, 6, 15, 0, 0).astimezone())
+        self.assertEqual(parse_timestamp(end).astimezone(),
+                         datetime(2026, 6, 16, 0, 0).astimezone())
+
+    def test_query_script_day_bounds_match_canonical_helper(self) -> None:
+        # The standalone query CLI inlines its own day_bounds (stdlib-only so it
+        # runs anywhere with just the DB). Guard against drift from the package
+        # helper that the supervisor uses.
+        from offgrid_power.metrics import local_day_utc_bounds
+
+        scripts_dir = REPO_ROOT / "scripts"
+        sys.path.insert(0, str(scripts_dir))
+        try:
+            import query_metrics
+        finally:
+            sys.path.remove(str(scripts_dir))
+
+        for day in (date(2026, 1, 15), date(2026, 6, 15), date(2026, 11, 1)):
+            self.assertEqual(query_metrics.day_bounds(day), local_day_utc_bounds(day))
 
     def test_midnight_soc_percent_ignores_samples_after_window(self) -> None:
         recorder = MetricRecorder(str(self.path), snapshot_interval_s=60)

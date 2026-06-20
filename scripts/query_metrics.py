@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 DB_PATH = "/srv/telemetry/data/metrics.sqlite"
@@ -29,8 +29,31 @@ def open_db(path: str = DB_PATH) -> sqlite3.Connection:
 
 
 def day_bounds(d: date) -> tuple[str, str]:
-    """Return ISO prefix bounds for a local-date range query."""
-    return str(d), str(d + timedelta(days=1))
+    """UTC ISO bounds ``[start, end)`` covering the *local* calendar day ``d``.
+
+    ``captured_at`` is stored in canonical UTC (e.g. ``2026-06-20T15:32:06+00:00``),
+    so a bare ``'YYYY-MM-DD'`` string prefix would select a UTC day — shifted from
+    the local day by the UTC offset. Convert the local-midnight boundaries to UTC
+    text and compare lexically, which is valid because every timestamp is UTC.
+    Mirrors ``offgrid_power.metrics.local_day_utc_bounds`` (kept inline so this
+    helper runs anywhere with only the standard library and the DB file).
+    """
+    start_local = datetime.combine(d, time.min).astimezone()
+    end_local = datetime.combine(d + timedelta(days=1), time.min).astimezone()
+    return (
+        start_local.astimezone(timezone.utc).isoformat(),
+        end_local.astimezone(timezone.utc).isoformat(),
+    )
+
+
+def local_hhmm(ts: str) -> str:
+    """Local ``HH:MM`` for a stored UTC ISO timestamp.
+
+    Stored timestamps are UTC; operators read the clock on the wall, so convert
+    to the local zone for display. ``fromisoformat`` also parses any legacy
+    offset, so this is correct regardless of the stored offset.
+    """
+    return datetime.fromisoformat(ts).astimezone().strftime("%H:%M")
 
 
 # ---------------------------------------------------------------------------
@@ -58,8 +81,7 @@ def cmd_peak_power(args: argparse.Namespace) -> None:
         print(f"No charging power data for {d}.")
         return
     ts, value, unit = row
-    local_time = ts[11:16]  # HH:MM
-    print(f"Peak charging power on {d}: {value:.0f} {unit} at {local_time}")
+    print(f"Peak charging power on {d}: {value:.0f} {unit} at {local_hhmm(ts)}")
 
 
 def cmd_daily_summary(args: argparse.Namespace) -> None:
@@ -95,7 +117,7 @@ def cmd_daily_summary(args: argparse.Namespace) -> None:
     energy_kwh, _ = latest("daily_energy")
     amp_hours, _ = latest("daily_amp_hours")
     peak_w, _, peak_ts = peak("battery_power")
-    peak_time = peak_ts[11:16] if peak_ts else "?"
+    peak_time = local_hhmm(peak_ts) if peak_ts else "?"
     peak_v, _, _ = peak("pv_voltage")
     voc, _ = latest("last_voc")
 
@@ -129,7 +151,7 @@ def cmd_now(args: argparse.Namespace) -> None:
             if row is None:
                 continue
             ts, value, text, unit = row
-            age_note = f"  @ {ts[11:16]}"
+            age_note = f"  @ {local_hhmm(ts)}"
             display = text if value is None else f"{value} {unit or ''}".strip()
             print(f"  {metric:<22} {display}{age_note}")
 
@@ -157,7 +179,7 @@ def cmd_charge_history(args: argparse.Namespace) -> None:
     last_stage = None
     for ts, text, _ in rows:
         if text != last_stage:
-            print(f"  {ts[11:16]}  {text}")
+            print(f"  {local_hhmm(ts)}  {text}")
             last_stage = text
 
 
