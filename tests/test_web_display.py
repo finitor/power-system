@@ -217,7 +217,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("SOC --", empty_html)
         self.assertNotIn("SOC SOC", empty_html)
 
-        error_html = render_kindle_details(make_snapshot(errors=["Battery CAN read failed: timeout"]))
+        # Errors render on the main page (moved off the details page).
+        error_html = render_kindle_snapshot(make_snapshot(errors=["Battery CAN read failed: timeout"]))
         self.assertIn("<h2>Errors</h2>", error_html)
         self.assertIn("Battery CAN read failed: timeout", error_html)
 
@@ -426,7 +427,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("high cell voltage, charge over current", html)
 
     def test_escapes_error_text(self) -> None:
-        html = render_kindle_details(make_snapshot(errors=["bad <device>"]))
+        html = render_kindle_snapshot(make_snapshot(errors=["bad <device>"]))
 
         self.assertIn("bad &lt;device&gt;", html)
         self.assertNotIn("bad <device>", html)
@@ -490,7 +491,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"Temperatures", response.body)
         self.assertIn(b'href="/weather">Weather</a>', response.body)
         self.assertNotIn(b"Off-Grid Power Supervisor", response.body)
-        self.assertNotIn(b"footer-button-cell", response.body)  # no Kindle footer nav in the browser view
+        self.assertNotIn(b"nav-hint", response.body)  # no Kindle footer nav in the browser view
 
     def test_routes_regular_browser_from_kindle_paths_to_terminal_style_snapshot(self) -> None:
         snapshot = make_snapshot(
@@ -509,7 +510,7 @@ class WebDisplayTest(unittest.TestCase):
                 self.assertIn(b"Charge Controller 0 (Classic)", response.body)
                 self.assertIn(b"Inverter/Charger", response.body)
                 self.assertIn(b'href="/weather">Weather</a>', response.body)
-                self.assertNotIn(b"footer-button-cell", response.body)  # no Kindle footer nav
+                self.assertNotIn(b"nav-hint", response.body)  # no Kindle footer nav
 
     def test_routes_regular_browser_weather_to_dark_terminal_page(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
@@ -562,7 +563,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"Off-Grid Power Details", response.body)
         self.assertIn(b"Inverter/Charger", response.body)
         self.assertIn(b"Weather", response.body)
-        self.assertIn(b">Back</a>", response.body)
+        self.assertIn(b"&lt; BACK", response.body)
 
     def test_routes_api_snapshot_as_json(self) -> None:
         snapshot = make_snapshot(

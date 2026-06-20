@@ -6,26 +6,6 @@
 (function() {
   var LIVE_MS = 60000, RETRY_MS = 5000;
   var SENTINEL = 'offgrid-live';
-  // Push the in-flow footer to the screen bottom by padding the content
-  // area. This browser ignores min-height/height on the page box and
-  // mishandles fixed/absolute positioning, but it honors padding, so we
-  // grow the content's bottom padding by the measured gap. Reset first so
-  // the measurement is the page's natural height. Re-run after each swap.
-  function positionFooter() {
-    var f = document.getElementById('kindle-footer');
-    var ci = document.getElementById('kindle-content-inner');
-    var d = document.documentElement;
-    if (!f || !ci || !d || !d.clientHeight) { return; }
-    ci.style.paddingBottom = '0px';
-    var fh = f.offsetHeight;
-    var natTop = f.offsetTop;
-    var gap = (d.clientHeight - 8 - fh) - natTop;
-    if (gap > 0) { ci.style.paddingBottom = gap + 'px'; }
-    var dg = document.getElementById('vp2');
-    if (dg) {
-      dg.innerHTML = 'vp2: vh=' + d.clientHeight + ' fh=' + fh + ' footTop=' + natTop + ' gap=' + gap;
-    }
-  }
   function schedule(ms) { setTimeout(tick, ms); }
   function tick() {
     var x = new XMLHttpRequest();
@@ -45,14 +25,11 @@
       var j = t.lastIndexOf(bc);
       if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }
       document.body.innerHTML = t.substring(i + 1, j);
-      positionFooter();
       schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);
     };
     x.onerror = function() { schedule(RETRY_MS); };
     x.send(null);
   }
-  setTimeout(positionFooter, 80);
-  setTimeout(positionFooter, 600);
   schedule(LIVE_MS);
 })();
 </script>
@@ -60,7 +37,6 @@
 <style>
 html,body{height:100%;}
 body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
-.kindle-page{width:100%;}
 h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}
 ul{margin:0 0 4px 18px;padding:0;}
 li{line-height:1.15;}
@@ -74,9 +50,7 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 .summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}
 .summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}
 .top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}
-.footer-table{border-collapse:collapse;width:100%;}
-.footer-table td{border-bottom:0;padding:0;}
-.footer-button-cell{width:16%;}
+.nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}
 .page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
 .page-turn-left{left:0;}
 .page-turn-right{right:0;}
@@ -87,11 +61,9 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <!-- offgrid-live -->
 <a class="page-turn page-turn-left" href="/weather">Weather</a>
 <a class="page-turn page-turn-right" href="/kindle/details">More Power Info</a>
-<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner" id="kindle-content-inner">
 <table class="summary-table">
 <tr><td class="soc-cell">SOC 97%</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>
 </table>
-<div id="vp2" class="small"></div>
 <h2>Load</h2>
 <table>
 <tr><td>Now</td><td>5.1A  272W</td></tr>
@@ -115,12 +87,6 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <table>
 <tr><td colspan="2">none</td></tr>
 </table>
-</div></div>
-<div class="kindle-footer" id="kindle-footer"><div class="kindle-footer-cell">
-<table class="footer-table"><tr><td></td>
-<td class="footer-button-cell"><a class="top-link" href="/kindle/details">More ...</a></td>
-</tr></table>
-</div></div>
-</div>
+<div class="nav-hint" style="text-align:right;">MORE &gt;</div>
 </body>
 </html>

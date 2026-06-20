@@ -121,26 +121,6 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "(function() {\n"
         f"  var LIVE_MS = {refresh_seconds * 1000}, RETRY_MS = {KINDLE_RETRY_SECONDS * 1000};\n"
         f"  var SENTINEL = '{KINDLE_LIVE_SENTINEL}';\n"
-        "  // Push the in-flow footer to the screen bottom by padding the content\n"
-        "  // area. This browser ignores min-height/height on the page box and\n"
-        "  // mishandles fixed/absolute positioning, but it honors padding, so we\n"
-        "  // grow the content's bottom padding by the measured gap. Reset first so\n"
-        "  // the measurement is the page's natural height. Re-run after each swap.\n"
-        "  function positionFooter() {\n"
-        "    var f = document.getElementById('kindle-footer');\n"
-        "    var ci = document.getElementById('kindle-content-inner');\n"
-        "    var d = document.documentElement;\n"
-        "    if (!f || !ci || !d || !d.clientHeight) { return; }\n"
-        "    ci.style.paddingBottom = '0px';\n"
-        "    var fh = f.offsetHeight;\n"
-        "    var natTop = f.offsetTop;\n"  # footer's natural top (offsetParent = body content origin, viewport y=4)
-        "    var gap = (d.clientHeight - 8 - fh) - natTop;\n"  # 8 = body's 4px top+bottom margins
-        "    if (gap > 0) { ci.style.paddingBottom = gap + 'px'; }\n"
-        "    var dg = document.getElementById('vp2');\n"
-        "    if (dg) {\n"
-        "      dg.innerHTML = 'vp2: vh=' + d.clientHeight + ' fh=' + fh + ' footTop=' + natTop + ' gap=' + gap;\n"
-        "    }\n"
-        "  }\n"
         "  function schedule(ms) { setTimeout(tick, ms); }\n"
         "  function tick() {\n"
         "    var x = new XMLHttpRequest();\n"
@@ -160,14 +140,11 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "      var j = t.lastIndexOf(bc);\n"
         "      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }\n"
         "      document.body.innerHTML = t.substring(i + 1, j);\n"
-        "      positionFooter();\n"
         "      schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);\n"
         "    };\n"
         "    x.onerror = function() { schedule(RETRY_MS); };\n"
         "    x.send(null);\n"
         "  }\n"
-        "  setTimeout(positionFooter, 80);\n"  # initial server-rendered body
-        "  setTimeout(positionFooter, 600);\n"  # re-measure once layout settles
         "  schedule(LIVE_MS);\n"
         "})();\n"
         "</script>"
@@ -225,12 +202,6 @@ def render_kindle_snapshot(
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        # The footer is positioned by JS (see _kindle_refresh_script). This 2011
-        # Kindle WebKit ignores min-height/height on the page box and mishandles
-        # fixed/absolute positioning, but it DOES honor padding — so JS pads the
-        # content area to push the in-flow footer to the screen bottom when the
-        # page is shorter than the viewport. Pure CSS can't do it on this browser.
-        ".kindle-page{width:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -244,11 +215,10 @@ def render_kindle_snapshot(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        # Footer button mirrors the top-right Weather button: a top-link in a 16%
-        # cell, so it renders identical height and width.
-        ".footer-table{border-collapse:collapse;width:100%;}",
-        ".footer-table td{border-bottom:0;padding:0;}",
-        ".footer-button-cell{width:16%;}",
+        # Plaintext nav hints after the last content, pointing to the invisible
+        # page-turn tap zones at the margins (no footer button — this browser
+        # can't reliably pin one to the screen bottom).
+        ".nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}",
         ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
@@ -259,26 +229,17 @@ def render_kindle_snapshot(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/weather", "left", "Weather"),
         _page_turn_link("/kindle/details", "right", "More Power Info"),
-        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner" id="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
-        '<div id="vp2" class="small"></div>',  # TEMPORARY: footer-pin diagnostic
     ]
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
+    lines.extend(_error_section(snapshot))
     lines.extend(_status_summary_section(snapshot))
-    lines.extend(["</div></div>"])
-    lines.extend(_kindle_nav_button("/kindle/details", "More ..."))
-    lines.extend(["</div>"])
-
-    lines.extend(
-        [
-            "</body>",
-            "</html>",
-        ]
-    )
+    lines.extend(_kindle_nav_hint("MORE >", "right"))
+    lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
 
 
@@ -299,12 +260,6 @@ def render_kindle_details(
         "<style>",
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        # The footer is positioned by JS (see _kindle_refresh_script). This 2011
-        # Kindle WebKit ignores min-height/height on the page box and mishandles
-        # fixed/absolute positioning, but it DOES honor padding — so JS pads the
-        # content area to push the in-flow footer to the screen bottom when the
-        # page is shorter than the viewport. Pure CSS can't do it on this browser.
-        ".kindle-page{width:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
@@ -317,11 +272,10 @@ def render_kindle_details(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        # Footer button mirrors the top-right Weather button: a top-link in a 16%
-        # cell, so it renders identical height and width.
-        ".footer-table{border-collapse:collapse;width:100%;}",
-        ".footer-table td{border-bottom:0;padding:0;}",
-        ".footer-button-cell{width:16%;}",
+        # Plaintext nav hints after the last content, pointing to the invisible
+        # page-turn tap zones at the margins (no footer button — this browser
+        # can't reliably pin one to the screen bottom).
+        ".nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}",
         ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
@@ -332,7 +286,6 @@ def render_kindle_details(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle", "left", "Back to Power"),
         _page_turn_link("/weather", "right", "Weather"),
-        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner" id="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -340,10 +293,7 @@ def render_kindle_details(
     lines.extend(_inverter_charger_section(snapshot))
     lines.extend(_charge_controller_settings_section(snapshot))
     lines.extend(_temperature_section(snapshot))
-    lines.extend(_status_detail_sections(snapshot))
-    lines.extend(["</div></div>"])
-    lines.extend(_kindle_nav_button("/kindle", "Back"))
-    lines.extend(["</div>"])
+    lines.extend(_kindle_nav_hint("< BACK", "left"))
     lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
 
@@ -1814,26 +1764,19 @@ def run_display_server(
         server.serve_forever()
 
 
-def _kindle_nav_button(href: str, label: str) -> list[str]:
-    # An empty spacer cell plus a 16% button cell, so the footer button lands
-    # bottom-right at the same size as the top-right Weather button (same
-    # top-link class, same 16% cell width).
-    return [
-        '<div class="kindle-footer" id="kindle-footer"><div class="kindle-footer-cell">',
-        '<table class="footer-table"><tr><td></td>',
-        f'<td class="footer-button-cell"><a class="top-link" href="{escape(href)}">{escape(label)}</a></td>',
-        "</tr></table>",
-        "</div></div>",
-    ]
+def _kindle_nav_hint(label: str, align: str) -> list[str]:
+    # Plaintext hint after the last content (not a button). It points the user to
+    # the invisible page-turn tap zone on that side of the screen; we don't try to
+    # pin it to the screen bottom because this browser can't do that reliably.
+    return [f'<div class="nav-hint" style="text-align:{align};">{escape(label)}</div>']
 
 
 def _page_turn_link(href: str, side: str, label: str) -> str:
     return f'<a class="page-turn page-turn-{escape(side)}" href="{escape(href)}">{escape(label)}</a>'
 
 
-def _status_detail_sections(snapshot: SupervisorSnapshot) -> list[str]:
-    # Errors only. The Status Conditions group is shown on the main /kindle page,
-    # so repeating it on the details page is redundant.
+def _error_section(snapshot: SupervisorSnapshot) -> list[str]:
+    # Errors render on the main /kindle page alongside Status Conditions.
     lines: list[str] = []
     if snapshot.errors:
         lines.append("<h2>Errors</h2>")

@@ -6,26 +6,6 @@
 (function() {
   var LIVE_MS = 60000, RETRY_MS = 5000;
   var SENTINEL = 'offgrid-live';
-  // Push the in-flow footer to the screen bottom by padding the content
-  // area. This browser ignores min-height/height on the page box and
-  // mishandles fixed/absolute positioning, but it honors padding, so we
-  // grow the content's bottom padding by the measured gap. Reset first so
-  // the measurement is the page's natural height. Re-run after each swap.
-  function positionFooter() {
-    var f = document.getElementById('kindle-footer');
-    var ci = document.getElementById('kindle-content-inner');
-    var d = document.documentElement;
-    if (!f || !ci || !d || !d.clientHeight) { return; }
-    ci.style.paddingBottom = '0px';
-    var fh = f.offsetHeight;
-    var natTop = f.offsetTop;
-    var gap = (d.clientHeight - 8 - fh) - natTop;
-    if (gap > 0) { ci.style.paddingBottom = gap + 'px'; }
-    var dg = document.getElementById('vp2');
-    if (dg) {
-      dg.innerHTML = 'vp2: vh=' + d.clientHeight + ' fh=' + fh + ' footTop=' + natTop + ' gap=' + gap;
-    }
-  }
   function schedule(ms) { setTimeout(tick, ms); }
   function tick() {
     var x = new XMLHttpRequest();
@@ -45,14 +25,11 @@
       var j = t.lastIndexOf(bc);
       if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }
       document.body.innerHTML = t.substring(i + 1, j);
-      positionFooter();
       schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);
     };
     x.onerror = function() { schedule(RETRY_MS); };
     x.send(null);
   }
-  setTimeout(positionFooter, 80);
-  setTimeout(positionFooter, 600);
   schedule(LIVE_MS);
 })();
 </script>
