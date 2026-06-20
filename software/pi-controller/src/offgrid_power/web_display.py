@@ -121,6 +121,24 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "(function() {\n"
         f"  var LIVE_MS = {refresh_seconds * 1000}, RETRY_MS = {KINDLE_RETRY_SECONDS * 1000};\n"
         f"  var SENTINEL = '{KINDLE_LIVE_SENTINEL}';\n"
+        "  // Pin the footer by computed pixel offset from the measured viewport.\n"
+        "  // This browser ignores min-height/height on the page box (table and\n"
+        "  // block alike) and mishandles position:fixed, so CSS can't place it.\n"
+        "  // Absolute top in px doesn't depend on the container height, so it\n"
+        "  // survives those quirks. Re-run after every body swap.\n"
+        "  function positionFooter() {\n"
+        "    var f = document.getElementById('kindle-footer');\n"
+        "    var d = document.documentElement;\n"
+        "    if (!f || !d || !d.clientHeight) { return; }\n"
+        "    var top = (d.clientHeight - 8) - f.offsetHeight;\n"  # 8 = body's 4px top+bottom margins
+        "    if (top > 0) { f.style.position = 'absolute'; f.style.bottom = 'auto'; f.style.top = top + 'px'; }\n"
+        "    var dg = document.getElementById('vp2');\n"
+        "    if (dg) {\n"
+        "      var kp = document.getElementById('kindle-page');\n"
+        "      dg.innerHTML = 'vp2: vh=' + d.clientHeight + ' footH=' + f.offsetHeight\n"
+        "        + ' top=' + top + ' pageH=' + (kp ? kp.offsetHeight : '?');\n"
+        "    }\n"
+        "  }\n"
         "  function schedule(ms) { setTimeout(tick, ms); }\n"
         "  function tick() {\n"
         "    var x = new XMLHttpRequest();\n"
@@ -140,11 +158,14 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "      var j = t.lastIndexOf(bc);\n"
         "      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }\n"
         "      document.body.innerHTML = t.substring(i + 1, j);\n"
+        "      positionFooter();\n"
         "      schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);\n"
         "    };\n"
         "    x.onerror = function() { schedule(RETRY_MS); };\n"
         "    x.send(null);\n"
         "  }\n"
+        "  setTimeout(positionFooter, 80);\n"  # initial server-rendered body
+        "  setTimeout(positionFooter, 600);\n"  # re-measure once layout settles
         "  schedule(LIVE_MS);\n"
         "})();\n"
         "</script>"
@@ -241,10 +262,11 @@ def render_kindle_snapshot(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/weather", "left", "Weather"),
         _page_turn_link("/kindle/details", "right", "More Power Info"),
-        '<div class="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
+        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
+        '<div id="vp2" class="small"></div>',  # TEMPORARY: footer-pin diagnostic
     ]
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
@@ -318,7 +340,7 @@ def render_kindle_details(
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle", "left", "Back to Power"),
         _page_turn_link("/weather", "right", "Weather"),
-        '<div class="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
+        '<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">',
         '<table class="summary-table">',
         f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
         "</table>",
@@ -1805,7 +1827,7 @@ def _kindle_nav_button(href: str, label: str) -> list[str]:
     # bottom-right at the same size as the top-right Weather button (same
     # top-link class, same 16% cell width).
     return [
-        '<div class="kindle-footer"><div class="kindle-footer-cell">',
+        '<div class="kindle-footer" id="kindle-footer"><div class="kindle-footer-cell">',
         '<table class="footer-table"><tr><td></td>',
         f'<td class="footer-button-cell"><a class="top-link" href="{escape(href)}">{escape(label)}</a></td>',
         "</tr></table>",

@@ -6,6 +6,24 @@
 (function() {
   var LIVE_MS = 60000, RETRY_MS = 5000;
   var SENTINEL = 'offgrid-live';
+  // Pin the footer by computed pixel offset from the measured viewport.
+  // This browser ignores min-height/height on the page box (table and
+  // block alike) and mishandles position:fixed, so CSS can't place it.
+  // Absolute top in px doesn't depend on the container height, so it
+  // survives those quirks. Re-run after every body swap.
+  function positionFooter() {
+    var f = document.getElementById('kindle-footer');
+    var d = document.documentElement;
+    if (!f || !d || !d.clientHeight) { return; }
+    var top = (d.clientHeight - 8) - f.offsetHeight;
+    if (top > 0) { f.style.position = 'absolute'; f.style.bottom = 'auto'; f.style.top = top + 'px'; }
+    var dg = document.getElementById('vp2');
+    if (dg) {
+      var kp = document.getElementById('kindle-page');
+      dg.innerHTML = 'vp2: vh=' + d.clientHeight + ' footH=' + f.offsetHeight
+        + ' top=' + top + ' pageH=' + (kp ? kp.offsetHeight : '?');
+    }
+  }
   function schedule(ms) { setTimeout(tick, ms); }
   function tick() {
     var x = new XMLHttpRequest();
@@ -25,11 +43,14 @@
       var j = t.lastIndexOf(bc);
       if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }
       document.body.innerHTML = t.substring(i + 1, j);
+      positionFooter();
       schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);
     };
     x.onerror = function() { schedule(RETRY_MS); };
     x.send(null);
   }
+  setTimeout(positionFooter, 80);
+  setTimeout(positionFooter, 600);
   schedule(LIVE_MS);
 })();
 </script>
@@ -66,10 +87,11 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <!-- offgrid-live -->
 <a class="page-turn page-turn-left" href="/weather">Weather</a>
 <a class="page-turn page-turn-right" href="/kindle/details">More Power Info</a>
-<div class="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">
+<div class="kindle-page" id="kindle-page"><div class="kindle-content"><div class="kindle-content-inner">
 <table class="summary-table">
 <tr><td class="soc-cell">SOC 97%</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>
 </table>
+<div id="vp2" class="small"></div>
 <h2>Load</h2>
 <table>
 <tr><td>Now</td><td>5.1A  272W</td></tr>
@@ -94,7 +116,7 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <tr><td colspan="2">none</td></tr>
 </table>
 </div></div>
-<div class="kindle-footer"><div class="kindle-footer-cell">
+<div class="kindle-footer" id="kindle-footer"><div class="kindle-footer-cell">
 <table class="footer-table"><tr><td></td>
 <td class="footer-button-cell"><a class="top-link" href="/kindle/details">More ...</a></td>
 </tr></table>
