@@ -97,7 +97,17 @@ sequence and the deploy.sh self-update lesson.
   Export format is settled per decision 0003 — Parquet since the 64-bit
   migration (2026-06-13 OS, serializer swap 2026-06-16).
 
-## 10. Combined charge-current coordination for parallel controllers — DEFERRED
+## 10. Combined charge-current coordination for parallel controllers — DONE
+
+**DONE (live 2026-06-18):** superseded by the closed-loop charge allocator
+([Real-Time Charge Current Allocation](charge-current-allocation.md)), which
+replaced the single-controller `charger_taper`. The allocator resolves one net
+charge budget from BMS CCL (engaging at the BMS taper knee) and apportions it
+evenly across both controllers, driven by measured combined/BMS current rather
+than a fixed split — exactly the demand-aware shape sketched below. Both arrays
+now charge in parallel under one authority; the EPEver is a committed, in-service
+controller (no longer in burn-in). The original framing is kept below for
+context.
 
 When the Classic (array 0) and EPEver (array 1) both charge the bank at once,
 the per-controller **current limit** stops being physically meaningful. Each

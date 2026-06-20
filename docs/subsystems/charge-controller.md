@@ -2,7 +2,7 @@
 
 ## Hardware
 
-The system is moving toward multiple PV sources. Code and documentation should refer to charge-controller/PV-source telemetry generically where possible instead of assuming the Midnite Classic is the only solar input.
+The system runs two PV sources on two charge controllers (MidNite Classic on array 0, EPEver TEP10425 on array 1). Code and documentation refer to charge-controller/PV-source telemetry generically rather than assuming the MidNite Classic is the only solar input.
 
 | Item | Value |
 |---|---|
@@ -19,32 +19,31 @@ The system is moving toward multiple PV sources. Code and documentation should r
 
 | PV source | Controller | Array | Status | Notes |
 |---|---|---|---|---|
-| PV array 0 | Midnite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | Existing | 8 modules total; exact module ratings may vary around 295-305 W |
-| PV array 1 | EPEver TEP10425 (likely) or Victron BlueSolar MPPT 150/85 | Canadian Solar CS6X-300-adjacent modules, 4s3p | Dry run before mount construction | 12 modules total; exact module ratings may vary around 295-305 W |
+| PV array 0 | MidNite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | In service | 8 modules total; exact module ratings may vary around 295-305 W |
+| PV array 1 | EPEver TEP10425 | Canadian Solar CS6X-300-adjacent modules, 4s3p | In service (PV connected 2026-06-16); mount construction outstanding | 12 modules total; exact module ratings may vary around 295-305 W |
 
-## Array 1 Controller Selection
+## Array 1 Controller (EPEver TEP10425)
 
-The EPEver is on hand (2026-06-10); the Victron order may be in limbo. Working position: the **EPEver
-TEP10425 is the probable pick** because of its higher PV input headroom —
-250 V max Voc at lowest temperature against the Victron's 150 V absolute
-limit, which rules out 4s strings of the CS6X-class modules outright. The
-Victron stays in contention only if its control and telemetry prove
-significantly better in practice (VE.Can is a known-good protocol; the
-EPEver's writable RS485 Modbus registers and PV-input behavior must be
-bench-confirmed before relying on them).
+**Decided: the EPEver TEP10425 is the array 1 controller**, installed and in
+service (RS485 Modbus RTU on `/dev/epever-rs485`, read and write; PV connected
+2026-06-16). It won on PV input headroom — 250 V max Voc at lowest temperature,
+versus the once-contended Victron BlueSolar MPPT 150/85's 150 V absolute limit,
+which ruled out 4s strings of the CS6X-class modules outright. The Victron is no
+longer a candidate: that hardware has been lost, and the Victron-bus experiment
+is closed.
 
 EPEver manual notes (saved at `~/Dropbox/manuals/solar/TEP-Manual-EN-V1.1.pdf`):
 two PV inputs, IP20, common-negative grounding, local parameter setting,
 RS485 Modbus, built-in BMS communication port, and built-in CAN parallel
-communication port. The manual further reveals a native closed-loop BMS
-mode (BPRO/UBS) that follows BMS-published charge voltage/current limits
-directly — potentially making the supervisor's charge taper unnecessary on
-this controller. Integration details and the bench checklist:
-[epever-tep10425 research note](../research/epever-tep10425.md).
-
-If the Victron is installed, its battery-side protection needs a 120-125 A
-DC breaker (manual examples use 120 A for the 85 A output); tracked as
-`victron-batt-breaker` (deferred) in the inventory.
+communication port. The manual also describes a native closed-loop BMS mode
+(BPRO/UBS) that follows BMS-published charge voltage/current limits directly.
+**We do not use it as the charge authority:** the supervisor's closed-loop
+charge allocator is the single policy authority across both controllers (see
+[Real-Time Charge Current Allocation](../charge-current-allocation.md) and the
+[epever-tep10425 research note](../research/epever-tep10425.md) for why the
+native mode is not trusted with this bank). The allocator writes the EPEver's
+current register and charge coil; the EPEver still owns its own CV voltage
+regulation.
 
 ### Consolidation option (considered 2026-06-10, parked)
 
@@ -54,7 +53,7 @@ Decision: **keep the Classic on array 0.** Rationale: controller redundancy
 single-point failure is the worst available off-grid), ~6 kW combined
 nameplate would clip the EPEver's 5,200 W ceiling on the best days, the
 multi-controller supervisor cost is already paid (actor threads;
-charger-agnostic taper), and a subsystem with nine years of trouble-free
+charger-agnostic charge allocator), and a subsystem with nine years of trouble-free
 service should not be disturbed to win marginal simplicity. The dual input
 is instead the **Classic-failure contingency**: if the Classic dies, both
 arrays move to the EPEver with the control path already proven.
@@ -92,7 +91,7 @@ With two controllers feeding one staged-charging goal, their differing
 stage words are normalized to a single canonical vocabulary (the Classic's,
 which tracks industry-standard terms) in
 [`charge_stage.py`](../../software/pi-controller/src/offgrid_power/charge_stage.py).
-Internal logic (e.g. the current taper) and all displays consume the
+Internal logic (e.g. the charge allocator) and all displays consume the
 canonical stage; the controller's native word is shown in parentheses where
 it differs.
 

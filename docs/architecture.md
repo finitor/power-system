@@ -6,7 +6,7 @@ This project is organized around the major power-system subsystems that require 
 
 - [Site](site.md): Wawa, Ontario installation context, time zone, and solar-noon calculation notes.
 - [Battery bank](subsystems/battery-bank.md): 2x Eco-Worthy Cubix 100 48 V 100 Ah rack-mount batteries.
-- [Solar charge controller](subsystems/charge-controller.md): legacy Midnite Solar Classic 200.
+- [Solar charge controllers](subsystems/charge-controller.md): MidNite Solar Classic 200 (array 0) and EPEver TEP10425 (array 1).
 - [Battery temperature control](subsystems/battery-temperature-control.md): winter warming, warm-weather ventilation, and charge-temperature permissives.
 - [Inverter/charger](subsystems/inverter-charger.md): MagnaSine 4448 inverter/charger.
 - [Supervisory controller](subsystems/supervisory-controller.md): Raspberry Pi and local services.
@@ -14,16 +14,21 @@ This project is organized around the major power-system subsystems that require 
 
 ```mermaid
 flowchart LR
-  Solar[Solar Array] --> Charge[Charge Controller]
-  Charge[Midnite Solar Classic 200] --> Battery[2x Eco-Worthy Cubix 100 Battery Bank]
+  Solar0[PV Array 0] --> Classic[MidNite Classic 200]
+  Solar1[PV Array 1] --> Epever[EPEver TEP10425]
+  Classic --> Battery[2x Eco-Worthy Cubix 100 Battery Bank]
+  Epever --> Battery
   Battery --> Inverter[MagnaSine 4448 Inverter/Charger]
   Battery --> Heater[Battery Enclosure Heater]
   Inverter --> ACLoads[AC Loads]
   Battery --> DCLoads[DC Loads]
   Generator[Generator / AC Input] --> Inverter
   Battery -. BMS / battery telemetry .-> Pi[Raspberry Pi]
-  Charge -. controller telemetry .-> Pi
+  Classic -. controller telemetry .-> Pi
+  Epever -. controller telemetry .-> Pi
   Inverter -. inverter telemetry .-> Pi
+  Pi -. current-limit writes (charge allocator) .-> Classic
+  Pi -. current-limit + coil writes (charge allocator) .-> Epever
   Pi --> Telemetry[Local Telemetry Storage]
   Pi --> Dashboard[Local Dashboard]
   Pi --> Alerts[Alerts]
@@ -36,7 +41,7 @@ flowchart LR
 | Subsystem | Purpose | Notes |
 |---|---|---|
 | Battery bank | Stores DC energy and exposes battery/BMS state | 2x Eco-Worthy Cubix 100, 48 V, 100 Ah each |
-| Charge controller | Converts solar array output into controlled battery charging | Midnite Solar Classic 200 |
+| Charge controllers | Convert solar array output into controlled battery charging | MidNite Solar Classic 200 (array 0) and EPEver TEP10425 (array 1); the supervisor allocates per-controller current limits |
 | Inverter/charger | Converts 48 V DC to AC and charges from AC input when available | MagnaSine 4448 |
 | Battery temperature control | Keeps batteries inside a safe temperature window | 48 V ceramic heater, insulated/ventilatable enclosure, thermostat, Pi permissive, thermal cutoffs |
 | Supervisory controller | Reads telemetry, logs state, displays dashboard, and coordinates non-critical control | Raspberry Pi |
@@ -59,7 +64,7 @@ Document which outputs the Pi is allowed to control and which safety functions a
 | Output | Controlled By | Default State | Manual Override | Notes |
 |---|---|---|---|---|
 | Battery protection | Battery BMS / hardware protection | Protected | Battery service procedures | Pi may monitor but should not be the primary safety device |
-| Solar charging | Midnite Solar Classic 200 | Controller-managed | Charge controller front panel / breaker | Pi may monitor and possibly adjust non-critical settings later |
+| Solar charging | MidNite Classic 200 (array 0) + EPEver TEP10425 (array 1) | Controller-managed regulation; Pi sets per-controller current limits (closed-loop charge allocator, live behind `--charge-allocation`) | Charge controller front panels / breakers; `systemctl stop offgrid-supervisor` or the unit flag disables Pi writes | Pi writes current-limit ceilings and the EPEver charge coil to hold net battery charge within the BMS CCL; the controllers still own voltage/CV regulation |
 | AC inversion/charging | MagnaSine 4448 | Inverter-managed | Inverter controls / breakers | Pi may monitor and possibly request mode changes if supported |
 | Battery heating | Thermostat / Pi permissive / hardware thermal cutoff | Off | Physical disconnect / fuse | Use low-power staged heat, not uncontrolled PV dump |
 | Auxiliary loads | TBD relay/contactors | Off unless specified | Physical switch or breaker | Add only after wiring and fail-safe behavior are documented |
@@ -88,12 +93,15 @@ The exact implementation may differ per charger. The Classic may be managed thro
 
 ## RS485 Device Adapter Architecture
 
-The Pi currently has one RS485 adapter (DSD TECH SH-U11H) used for the Magnum inverter network. Additional RS485 devices are planned — notably new charge controllers that also speak RS485. The intended layering when a second RS485 device arrives:
+The Pi runs two separate USB RS485 adapters, each keyed to a stable `/dev` symlink by udev so they never swap on re-enumeration:
+
+- **DSD TECH SH-U11H** (Prolific PL2303) → `/dev/magnum-rs485`, the Magnum inverter network (`MagnumClient`, read-only telemetry tap).
+- **KL0823B** (CH340) → `/dev/epever-rs485`, the EPEver TEP10425 COM port (Modbus RTU, read and write).
+
+Each adapter is a distinct physical bus, so today the transport and protocol still live together per device class (`MagnumClient`, `EpeverClient`) rather than sharing one transport. The transport/device split below is the refactor point only if two devices ever need to share a single adapter; don't introduce it earlier.
 
 - **Transport layer** — owns the serial port: device path, baud rate, open/close, raw read/write. One instance per physical adapter. Swappable independently of device logic.
-- **Device adapter** — owns the protocol: one class per device type (`MagnumClient`, future `ChargeControllerClient`, etc.). Takes a transport, not a device path. Produces a normalized snapshot in the same style as `ClassicTelemetry` and `PylonCanSnapshot`.
-
-Until a second RS485 device arrives the transport and device adapter can remain a single class (as with the existing `ClassicClient`). The refactor point is when two devices need to share an adapter or when an adapter needs to be swapped without touching device logic. Do not introduce the transport abstraction earlier.
+- **Device adapter** — owns the protocol: one class per device type. Takes a transport, not a device path. Produces a normalized snapshot in the same style as `ClassicTelemetry` and `PylonCanSnapshot`.
 
 ## BMS Disconnect And Charger Transients
 

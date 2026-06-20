@@ -15,7 +15,7 @@
 
 ## Power Supply Requirements
 
-The 12 V control bus is supplied from the 48 V battery system by a Victron Orion 48/12 DC-DC converter. The current working candidate is the isolated Orion-Tr 48/12-9A class; confirm the exact model number before final fuse and wire sizing.
+The 12 V control bus is supplied from the 48 V battery system by a Victron Orion 48/12 DC-DC converter — the isolated **Orion-Tr IP43 48/12-9 (110 W)**, installed and working. (This is the only Victron still in the system; the BlueSolar MPPT once considered for array 1 was dropped — see [charge controller](charge-controller.md).)
 
 The 12 V bus should feed low-voltage control loads such as thermostat/controller power, relay or MOSFET driver boards, DC SSR control inputs, ventilation fan/damper loads, and possibly an industrial powered USB hub. It must not feed the 48 V heater load directly.
 

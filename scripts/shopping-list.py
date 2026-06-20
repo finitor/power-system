@@ -14,7 +14,7 @@ from pathlib import Path
 
 INVENTORY = Path(__file__).resolve().parents[1] / "hardware" / "inventory.csv"
 PROCUREMENT_STATUSES = ("needed", "ordered")
-STATUS_ORDER = ("needed", "ordered", "on-hand", "installed", "deferred", "retired")
+STATUS_ORDER = ("needed", "ordered", "on-hand", "installed", "deferred", "retired", "cancelled")
 
 
 def main() -> int:

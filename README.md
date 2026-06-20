@@ -19,16 +19,23 @@ hardware, software, and legacy device support.
 
 ## Current Status
 
-In service. A Raspberry Pi supervisor polls the battery bank (CAN), the
-MidNite Classic charge controller (Modbus TCP, read and write), and the
-MagnaSine inverter/charger (Magnum network RS-485) on per-device actor
-threads, serving a Kindle wall display, a desktop terminal console, and a
+In service. A Raspberry Pi supervisor polls the battery bank (CAN), two
+solar charge controllers — the MidNite Classic on array 0 (Modbus TCP, read
+and write) and the EPEver TEP10425 on array 1 (Modbus RTU, read and write) —
+and the MagnaSine inverter/charger (Magnum network RS-485, read-only) on
+per-device actor threads. A closed-loop charge allocator distributes the
+BMS's tapering charge-current budget evenly across both controllers. The
+supervisor serves a Kindle wall display, a desktop terminal console, and a
 JSON API behind nginx, with metrics in local SQLite and store-and-forward
 export to object storage.
 
-In progress: a second PV array and charge controller (EPEver TEP10425
-likely), battery temperature control (heater/ventilation chain), and
-supervisory control of the Magnum charger — see
+In progress: battery temperature control (heater/ventilation chain) and
+finishing the array 1 physical install (the EPEver is the committed array 1
+controller — selection is settled). Closed-loop supervisory control of the
+Magnum charger was considered and **rejected** (generator charging stays
+human-attended; see
+[decision 0002](docs/decisions/0002-magnum-remote-takeover.md)) — the Magnum
+is a read-only telemetry tap. See
 [docs/engineering-plan.md](docs/engineering-plan.md) and
 [docs/journal/](docs/journal/) for the live state of work.
 

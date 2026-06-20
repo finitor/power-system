@@ -44,8 +44,7 @@ Live communication paths as configured today:
 
 | Device | Bus | Address / Port | Notes |
 |---|---|---|---|
-| MidNite Classic 200 | Modbus TCP | 192.168.0.10:502, device id 10 | Supervisor reads telemetry and reads/writes charge settings (charger current taper) |
+| MidNite Classic 200 | Modbus TCP | 192.168.0.10:502, device id 10 | Array 0. Supervisor reads telemetry and reads/writes charge settings; the charge allocator writes the current limit |
 | Eco-Worthy Cubix bank | CAN 500 kbit/s | `can0` via SH-C31G, listen-only | Pylon-protocol frames; BMS may go silent at idle and recover under load |
-| MagnaSine MS4448PAE | OEM remote | ME-RC50 | Monitor and control from the OEM remote until further notice; supervisor Magnum telemetry is disabled |
-| Victron BlueSolar MPPT 150/85 | VE.Can RJ45 | TBD on arrival | Telemetry path to be planned if selected |
-| EPEver TEP10425 | RS485 Modbus RJ45 | `/dev/epever-rs485` (temporarily udev symlink to KL0823B CH340 for 2-wire control burn-in) | KL0823B via straight-through CAT-6 breakout: COM RJ45 pin 6 -> adapter A, pin 3 -> adapter B; pin 8 GND is documented but bench comms also worked with A/B only |
+| MagnaSine MS4448PAE | Magnum RS485 (read) + OEM remote (control) | `/dev/magnum-rs485` (SH-U11H); ME-RC50 | Supervisor reads a passive Magnum-network telemetry tap (live since 2026-06-16). Control stays manual on the ME-RC50 — closed-loop takeover rejected (decision 0002) |
+| EPEver TEP10425 | RS485 Modbus RJ45 | `/dev/epever-rs485` (KL0823B CH340) | Array 1, committed and in service. KL0823B via straight-through CAT-6 breakout: COM RJ45 pin 6 -> adapter A, pin 3 -> adapter B; pin 8 GND is documented but bench comms also worked with A/B only |
