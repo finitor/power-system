@@ -174,26 +174,48 @@ class SupervisorReaderModeTest(unittest.TestCase):
         return supervisor
 
     def test_composes_from_reader_caches(self) -> None:
+        from snapshot_helpers import make_classic_telemetry
+
         now = datetime.now(timezone.utc)
 
         class FakeMagnumValue:
             pass
 
         magnum_value = FakeMagnumValue()
+        classic_value = make_classic_telemetry()
         supervisor = self._supervisor_with_readers(
             {
-                "classic": FakeReader("classic", ("telemetry", "settings"), now),
+                "classic": FakeReader("classic", (classic_value, "settings"), now),
                 "magnum": FakeReader("magnum", magnum_value, now),
             }
         )
 
         snapshot = supervisor.read_snapshot()
 
-        self.assertEqual(snapshot.classic, "telemetry")
+        self.assertIs(snapshot.classic, classic_value)
         self.assertEqual(snapshot.classic_settings, "settings")
         self.assertIs(snapshot.magnum, magnum_value)
         self.assertEqual(snapshot.errors, [])
         self.assertEqual(snapshot.status_conditions, [])
+
+    def test_classic_arc_fault_surfaces_as_error_condition(self) -> None:
+        # An arc/ground fault latches the Classic off; the supervisor must surface
+        # it as a severity-bearing Warnings-and-Faults condition (-> alertable),
+        # not leave it buried in the passive active_flags list.
+        from snapshot_helpers import make_classic_telemetry
+
+        classic = make_classic_telemetry(active_flags=["Arc fault"])
+        supervisor = self._supervisor_with_readers(
+            {"classic": FakeReader("classic", (classic, None), datetime.now(timezone.utc))}
+        )
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertTrue(
+            any("arc fault" in c.lower() for c in snapshot.status_conditions),
+            snapshot.status_conditions,
+        )
+        self.assertEqual(snapshot.status_text, "ERROR")
 
     def test_reader_error_collapses_with_staleness_into_one_aged_message(self) -> None:
         # A failing read that is also stale must yield ONE message carrying the

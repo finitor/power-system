@@ -472,6 +472,31 @@ class TerminalDisplayTest(unittest.TestCase):
         # A protection drives overall severity to ERROR (-> /api/v1/health 503).
         self.assertEqual(status_condition_severity(candidates), STATUS_ERROR)
 
+    def test_classic_fault_candidates_map_to_severity(self) -> None:
+        from offgrid_power.supervisor import (
+            STATUS_ERROR,
+            STATUS_WARNING,
+            charge_controller_fault_status_condition_candidates,
+            status_condition_severity,
+        )
+
+        classic = make_classic_telemetry(
+            active_flags=["Arc fault", "Classic over temperature", "Aux1 on", "Current limit reached"]
+        )
+        candidates = charge_controller_fault_status_condition_candidates(classic)
+        severities = {c.text: c.severity for c in candidates}
+        # Genuine faults are surfaced; informational flags (Aux on, current limit) are not.
+        self.assertEqual(len(candidates), 2)
+        arc = next(c for c in candidates if "arc fault" in c.text.lower())
+        self.assertEqual(arc.severity, STATUS_ERROR)
+        overtemp = next(c for c in candidates if "over temperature" in c.text.lower())
+        self.assertEqual(overtemp.severity, STATUS_WARNING)
+        self.assertNotIn("Aux1 on", " ".join(severities))
+        # The arc fault drives overall severity to ERROR (-> /api/v1/health 503).
+        self.assertEqual(status_condition_severity(candidates), STATUS_ERROR)
+        # No Classic telemetry -> no conditions.
+        self.assertEqual(charge_controller_fault_status_condition_candidates(None), [])
+
     def test_hides_redundant_charge_controller_state(self) -> None:
         snapshot = make_snapshot(
             classic=make_classic_telemetry(charge_stage="Resting", state="Resting"),

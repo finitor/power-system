@@ -294,6 +294,7 @@ class Supervisor:
 
         status_condition_candidates = charge_limit_status_condition_candidates(classic_settings, battery)
         status_condition_candidates.extend(battery_protection_status_condition_candidates(battery))
+        status_condition_candidates.extend(charge_controller_fault_status_condition_candidates(devices["classic"]))
         status_condition_candidates.extend(stale_candidates)
         status_conditions = [candidate.text for candidate in status_condition_candidates]
         status_severity = status_condition_severity(status_condition_candidates)
@@ -540,6 +541,48 @@ def battery_protection_status_condition_candidates(
         candidates.append(
             StatusConditionCandidate(f"battery.alarm.{flag}", f"BMS alarm: {flag}", severity=STATUS_WARNING)
         )
+    return candidates
+
+
+# MidNite Classic INFO_FLAG names that are genuine charge-controller faults worth
+# surfacing -- as opposed to the many informational/config flags (Aux on, jumpers,
+# partial shade, current-limit reached, etc.). Arc- and ground-faults both latch
+# the Classic OFF until a manual breaker-cycle reset, so their text says so.
+# Severity: anything that stops or endangers charging is an error.
+_CLASSIC_FAULT_CONDITIONS: dict[str, tuple[str, str]] = {
+    "Arc fault": ("Charge controller arc fault (PV) -- shut down, manual reset required", STATUS_ERROR),
+    "Ground fault": ("Charge controller ground fault (DC) -- shut down, manual reset required", STATUS_ERROR),
+    "Over current protect": ("Charge controller overcurrent protection tripped", STATUS_ERROR),
+    "PV input shorted": ("Charge controller PV input shorted", STATUS_ERROR),
+    "EEPROM error": ("Charge controller EEPROM error", STATUS_ERROR),
+    "Temperature compensation shorted": ("Charge controller temp-comp sensor shorted", STATUS_ERROR),
+    "Classic over temperature": ("Charge controller over temperature", STATUS_WARNING),
+}
+
+
+def charge_controller_fault_status_condition_candidates(
+    classic: ClassicTelemetry | None,
+) -> list[StatusConditionCandidate]:
+    """MidNite Classic fault flags as status conditions.
+
+    The Classic decodes a rich INFO_FLAGS set into ``active_flags``, but only a
+    few are genuine faults (arc/ground fault, OCP, hardware/PV shorts, over-temp);
+    the rest are informational. Surfacing the faults here is what makes a Classic
+    arc- or ground-fault drive overall severity, the /api/v1/health verdict, and
+    every display's Warnings and Faults group -- rather than only sitting in a
+    passive flags list. Arc and ground faults latch the Classic off until a
+    manual breaker-cycle reset, so fast alerting is what makes those protections
+    tenable on an unattended system.
+    """
+    if classic is None:
+        return []
+    candidates: list[StatusConditionCandidate] = []
+    for flag in classic.active_flags:
+        mapping = _CLASSIC_FAULT_CONDITIONS.get(flag)
+        if mapping is None:
+            continue
+        text, severity = mapping
+        candidates.append(StatusConditionCandidate(f"classic.fault.{flag}", text, severity=severity))
     return candidates
 
 
