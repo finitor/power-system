@@ -9,14 +9,14 @@
   var SENTINEL = 'offgrid-live';
   var lastFlash = (new Date()).getTime();
   // Full-screen black->white flash forces a full e-ink refresh, clearing
-  // ghosting. The overlay is position:fixed (out of flow, so it can't add
-  // document scroll) and sized by padding + measured clientWidth/Height
-  // -- properties this browser honors, unlike height/bottom on fixed.
+  // ghosting. The overlay is position:fixed, sized by padding to
+  // clientHeight (NOT overshot: overshoot extends the document and adds a
+  // scrollbar here). It covers the changing content area, which is where
+  // ghosting accumulates; the static bottom strip never updates anyway.
   function fullRefresh() {
     var de = document.documentElement;
     var vh = (de && de.clientHeight) || 800;
     var vw = (de && de.clientWidth) || 600;
-    var ih = window.innerHeight || 0;
     var o = document.createElement('div');
     o.style.position = 'fixed';
     o.style.left = '0';
@@ -24,16 +24,14 @@
     o.style.width = vw + 'px';
     o.style.zIndex = '9999';
     o.style.background = '#000';
-    o.style.color = '#fff';
-    o.style.paddingBottom = (vh + 400) + 'px';
+    o.style.paddingBottom = vh + 'px';
     document.body.appendChild(o);
-    o.innerHTML = 'flash oh=' + o.offsetHeight + ' ch=' + vh + ' ih=' + ih;
     o.offsetHeight;
     setTimeout(function() {
-      o.style.background = '#fff'; o.style.color = '#000';
+      o.style.background = '#fff';
       o.offsetHeight;
-      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 700);
-    }, 2000);
+      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 400);
+    }, 600);
   }
   function schedule(ms) { setTimeout(tick, ms); }
   function tick() {
@@ -77,7 +75,7 @@ td:first-child{font-size:17px;font-weight:bold;width:38%;}
 .summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:46%;}
 .summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}
 .top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}
-.page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
+.page-turn{position:fixed;top:58px;padding-bottom:640px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
 .page-turn-left{left:0;}
 .page-turn-right{right:0;}
 .small{font-size:13px;}

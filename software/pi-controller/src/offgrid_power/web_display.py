@@ -134,14 +134,14 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         f"  var SENTINEL = '{KINDLE_LIVE_SENTINEL}';\n"
         "  var lastFlash = (new Date()).getTime();\n"
         "  // Full-screen black->white flash forces a full e-ink refresh, clearing\n"
-        "  // ghosting. The overlay is position:fixed (out of flow, so it can't add\n"
-        "  // document scroll) and sized by padding + measured clientWidth/Height\n"
-        "  // -- properties this browser honors, unlike height/bottom on fixed.\n"
+        "  // ghosting. The overlay is position:fixed, sized by padding to\n"
+        "  // clientHeight (NOT overshot: overshoot extends the document and adds a\n"
+        "  // scrollbar here). It covers the changing content area, which is where\n"
+        "  // ghosting accumulates; the static bottom strip never updates anyway.\n"
         "  function fullRefresh() {\n"
         "    var de = document.documentElement;\n"
         "    var vh = (de && de.clientHeight) || 800;\n"
         "    var vw = (de && de.clientWidth) || 600;\n"
-        "    var ih = window.innerHeight || 0;\n"
         "    var o = document.createElement('div');\n"
         "    o.style.position = 'fixed';\n"
         "    o.style.left = '0';\n"
@@ -149,16 +149,14 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "    o.style.width = vw + 'px';\n"
         "    o.style.zIndex = '9999';\n"
         "    o.style.background = '#000';\n"
-        "    o.style.color = '#fff';\n"
-        "    o.style.paddingBottom = (vh + 400) + 'px';\n"  # TEMP overshoot to test reach
+        "    o.style.paddingBottom = vh + 'px';\n"
         "    document.body.appendChild(o);\n"
-        "    o.innerHTML = 'flash oh=' + o.offsetHeight + ' ch=' + vh + ' ih=' + ih;\n"  # TEMP readout
         "    o.offsetHeight;\n"  # force the black paint
         "    setTimeout(function() {\n"
-        "      o.style.background = '#fff'; o.style.color = '#000';\n"
+        "      o.style.background = '#fff';\n"
         "      o.offsetHeight;\n"  # force the white paint
-        "      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 700);\n"
-        "    }, 2000);\n"  # TEMP: linger 2s so the readout is recordable
+        "      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 400);\n"
+        "    }, 600);\n"
         "  }\n"
         "  function schedule(ms) { setTimeout(tick, ms); }\n"
         "  function tick() {\n"
@@ -241,7 +239,7 @@ def render_kindle_snapshot(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power</title>",
         "<style>",
-        "html,body{height:100%;overflow:hidden;}",
+        "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
@@ -265,7 +263,7 @@ def render_kindle_snapshot(
         # were both ignored / anchored to the short content box, so the strips
         # fell short of the screen). top 58 + ~660 padding reaches past the 700px
         # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn{position:fixed;top:58px;padding-bottom:640px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -303,7 +301,7 @@ def render_kindle_details(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power Details</title>",
         "<style>",
-        "html,body{height:100%;overflow:hidden;}",
+        "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
@@ -326,7 +324,7 @@ def render_kindle_details(
         # were both ignored / anchored to the short content box, so the strips
         # fell short of the screen). top 58 + ~660 padding reaches past the 700px
         # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn{position:fixed;top:58px;padding-bottom:640px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -397,7 +395,7 @@ def render_kindle_weather(
         # were both ignored / anchored to the short content box, so the strips
         # fell short of the screen). top 58 + ~660 padding reaches past the 700px
         # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn{position:fixed;top:58px;padding-bottom:640px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
