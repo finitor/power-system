@@ -646,15 +646,25 @@ def route_display_request(
         # server, which returns 503 before routing reaches here.
         return DisplayResponse(HTTPStatus.OK, "text/plain; charset=utf-8", b"ok\n")
     is_kindle = is_kindle_user_agent(user_agent)
+    content_type = "text/html; charset=utf-8"
+
+    # The /kindle* paths ARE the Kindle interface: they always serve
+    # Kindle-formatted content, irrespective of user-agent. The wall Kindle's
+    # jailbroken browser does not reliably advertise a recognizable UA, so the
+    # explicit path -- not UA sniffing -- is the contract for these.
+    if parsed_path == "/kindle":
+        html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
+        return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
+    if parsed_path == "/kindle/details":
+        html = render_kindle_details(snapshot, allocation=allocation)
+        return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
+
+    # "/", "/display", "/weather": shared paths, negotiated by user-agent
+    # (browser by default; Kindle markup when the UA is recognized).
     if parsed_path == "/weather":
         payload = weather_api_payload(weather_report)
         html = render_kindle_weather(payload) if is_kindle else render_browser_weather(payload)
-        return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
-    if parsed_path == "/kindle/details" and is_kindle:
-        html = render_kindle_details(snapshot, allocation=allocation)
-        return DisplayResponse(HTTPStatus.OK, "text/html; charset=utf-8", html.encode("utf-8"))
-
-    content_type = "text/html; charset=utf-8"
+        return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     if is_kindle:
         html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))

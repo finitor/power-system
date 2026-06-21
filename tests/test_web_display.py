@@ -512,24 +512,31 @@ class WebDisplayTest(unittest.TestCase):
         self.assertNotIn(b"Off-Grid Power Supervisor", response.body)
         self.assertNotIn(b"nav-hint", response.body)  # no Kindle footer nav in the browser view
 
-    def test_routes_regular_browser_from_kindle_paths_to_terminal_style_snapshot(self) -> None:
+    def test_kindle_paths_always_serve_kindle_content_regardless_of_user_agent(self) -> None:
+        # The /kindle* paths are the Kindle interface and must render
+        # Kindle-formatted HTML even for a non-Kindle user-agent -- the wall
+        # Kindle's browser does not reliably advertise a recognizable UA.
         snapshot = make_snapshot(
             classic=make_classic_telemetry(),
             epever=make_epever_telemetry(),
             magnum=make_magnum_snapshot(),
         )
+        browser_ua = "Version/18.0 Mobile/15E148 Safari/604.1"
 
         for path in ("/kindle", "/kindle/details"):
             with self.subTest(path=path):
-                response = route_display_request(snapshot, path, "Version/18.0 Mobile/15E148 Safari/604.1")
+                response = route_display_request(snapshot, path, browser_ua)
 
                 self.assertEqual(response.status.value, 200)
                 self.assertEqual(response.content_type, "text/html; charset=utf-8")
-                self.assertIn(b"<pre>", response.body)
-                self.assertIn(b"Charge Controller 0 (Classic)", response.body)
-                self.assertIn(b"Inverter/Charger", response.body)
-                self.assertIn(b'href="/weather">Weather</a>', response.body)
-                self.assertNotIn(b"nav-hint", response.body)  # no Kindle footer nav
+                # Kindle markup (page-turn tap zones), not the browser <pre> view.
+                self.assertNotIn(b"<pre>", response.body)
+                self.assertIn(b"page-turn", response.body)
+
+        main = route_display_request(snapshot, "/kindle", browser_ua).body
+        details = route_display_request(snapshot, "/kindle/details", browser_ua).body
+        self.assertIn(b"<h2>Charge Controller 0 (Classic)</h2>", main)
+        self.assertIn(b"<h2>Temperatures</h2>", details)
 
     def test_routes_regular_browser_weather_to_dark_terminal_page(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))
