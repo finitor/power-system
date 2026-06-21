@@ -133,15 +133,23 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         f"  var FLASH_MS = {KINDLE_FULL_REFRESH_SECONDS * 1000};\n"
         f"  var SENTINEL = '{KINDLE_LIVE_SENTINEL}';\n"
         "  var lastFlash = (new Date()).getTime();\n"
-        "  // Full-screen black->white flash forces the panel to do a full e-ink\n"
-        "  // refresh, clearing accumulated ghosting. Overlay height comes from\n"
-        "  // padding (honored here) set to the measured viewport.\n"
+        "  // Full-screen black->white flash forces a full e-ink refresh, clearing\n"
+        "  // ghosting. The overlay is position:fixed (out of flow, so it can't add\n"
+        "  // document scroll) and sized by padding + measured clientWidth/Height\n"
+        "  // -- properties this browser honors, unlike height/bottom on fixed.\n"
         "  function fullRefresh() {\n"
-        "    var vh = (document.documentElement && document.documentElement.clientHeight) || 800;\n"
+        "    var de = document.documentElement;\n"
+        "    var vh = (de && de.clientHeight) || 800;\n"
+        "    var vw = (de && de.clientWidth) || 600;\n"
         "    var o = document.createElement('div');\n"
+        "    o.style.position = 'fixed';\n"
+        "    o.style.left = '0';\n"
+        "    o.style.top = '0';\n"
+        "    o.style.width = vw + 'px';\n"
+        "    o.style.zIndex = '9999';\n"
         "    o.style.background = '#000';\n"
-        "    o.style.paddingTop = vh + 'px';\n"
-        "    document.body.insertBefore(o, document.body.firstChild);\n"
+        "    o.style.paddingBottom = vh + 'px';\n"  # height via padding; fixed keeps it out of flow
+        "    document.body.appendChild(o);\n"
         "    o.offsetHeight;\n"  # force the black paint
         "    setTimeout(function() {\n"
         "      o.style.background = '#fff';\n"
@@ -249,11 +257,12 @@ def render_kindle_snapshot(
         # page-turn tap zones at the margins (no footer button — this browser
         # can't reliably pin one to the screen bottom).
         ".nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}",
-        # Explicit height carries the tap strip to the measured viewport bottom
-        # (clientHeight 700 - top 58 ~= 642); bottom:0 stays as a fallback for a
-        # browser that honors it. This 2011 WebKit anchored bottom:0 to the
-        # content box, which fell short of the screen on short pages.
-        ".page-turn{position:fixed;top:58px;height:642px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        # The tap strip's height comes from padding-bottom — the one sizing
+        # property this 2011 WebKit honors on a fixed box (height: and bottom:0
+        # were both ignored / anchored to the short content box, so the strips
+        # fell short of the screen). top 58 + ~660 padding reaches past the 700px
+        # viewport bottom; fixed keeps it out of flow so it adds no scroll.
+        ".page-turn{position:fixed;top:58px;padding-bottom:660px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -309,11 +318,12 @@ def render_kindle_details(
         # page-turn tap zones at the margins (no footer button — this browser
         # can't reliably pin one to the screen bottom).
         ".nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}",
-        # Explicit height carries the tap strip to the measured viewport bottom
-        # (clientHeight 700 - top 58 ~= 642); bottom:0 stays as a fallback for a
-        # browser that honors it. This 2011 WebKit anchored bottom:0 to the
-        # content box, which fell short of the screen on short pages.
-        ".page-turn{position:fixed;top:58px;height:642px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        # The tap strip's height comes from padding-bottom — the one sizing
+        # property this 2011 WebKit honors on a fixed box (height: and bottom:0
+        # were both ignored / anchored to the short content box, so the strips
+        # fell short of the screen). top 58 + ~660 padding reaches past the 700px
+        # viewport bottom; fixed keeps it out of flow so it adds no scroll.
+        ".page-turn{position:fixed;top:58px;padding-bottom:660px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -379,11 +389,12 @@ def render_kindle_weather(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:46%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        # Explicit height carries the tap strip to the measured viewport bottom
-        # (clientHeight 700 - top 58 ~= 642); bottom:0 stays as a fallback for a
-        # browser that honors it. This 2011 WebKit anchored bottom:0 to the
-        # content box, which fell short of the screen on short pages.
-        ".page-turn{position:fixed;top:58px;height:642px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        # The tap strip's height comes from padding-bottom — the one sizing
+        # property this 2011 WebKit honors on a fixed box (height: and bottom:0
+        # were both ignored / anchored to the short content box, so the strips
+        # fell short of the screen). top 58 + ~660 padding reaches past the 700px
+        # viewport bottom; fixed keeps it out of flow so it adds no scroll.
+        ".page-turn{position:fixed;top:58px;padding-bottom:660px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",

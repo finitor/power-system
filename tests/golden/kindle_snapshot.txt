@@ -8,15 +8,23 @@
   var FLASH_MS = 60000;
   var SENTINEL = 'offgrid-live';
   var lastFlash = (new Date()).getTime();
-  // Full-screen black->white flash forces the panel to do a full e-ink
-  // refresh, clearing accumulated ghosting. Overlay height comes from
-  // padding (honored here) set to the measured viewport.
+  // Full-screen black->white flash forces a full e-ink refresh, clearing
+  // ghosting. The overlay is position:fixed (out of flow, so it can't add
+  // document scroll) and sized by padding + measured clientWidth/Height
+  // -- properties this browser honors, unlike height/bottom on fixed.
   function fullRefresh() {
-    var vh = (document.documentElement && document.documentElement.clientHeight) || 800;
+    var de = document.documentElement;
+    var vh = (de && de.clientHeight) || 800;
+    var vw = (de && de.clientWidth) || 600;
     var o = document.createElement('div');
+    o.style.position = 'fixed';
+    o.style.left = '0';
+    o.style.top = '0';
+    o.style.width = vw + 'px';
+    o.style.zIndex = '9999';
     o.style.background = '#000';
-    o.style.paddingTop = vh + 'px';
-    document.body.insertBefore(o, document.body.firstChild);
+    o.style.paddingBottom = vh + 'px';
+    document.body.appendChild(o);
     o.offsetHeight;
     setTimeout(function() {
       o.style.background = '#fff';
@@ -71,7 +79,7 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 .summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}
 .top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}
 .nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}
-.page-turn{position:fixed;top:58px;height:642px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
+.page-turn{position:fixed;top:58px;padding-bottom:660px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
 .page-turn-left{left:0;}
 .page-turn-right{right:0;}
 .small{font-size:13px;}
