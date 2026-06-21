@@ -171,3 +171,22 @@ spiking a cell and risking an overvoltage trip. The efficiency gain (~2–5% on 
 sliver) isn't worth the trip risk and the added control complexity. The genuinely
 useful surplus-handling option is a **diversion/dump load** (e.g. water heat) —
 additive hardware, not a loosening of the cutoff.
+
+### The Classic can't be hard-disabled (known behavior)
+
+The EPEver gets a true off at CCL=0 (its charge-enable coil), but the Classic has
+no Modbus disable — the allocator's only lever is its output current-limit
+register, written to 0. The Classic does **not** honor 0 A as a shutoff: it floors
+at a small output and short-cycles Bulk↔Resting, emitting a benign trickle
+(observed up to ~1.6 A / tens of watts, hunting). That trickle serves household
+load, not battery charge — the pack stays net-discharging at CCL=0 — so it is
+harmless in normal operation. The only edge case is household load momentarily
+dropping below a burst, briefly leaking ~1 A into a full pack (well within BMS
+tolerance). Status quo accepted; it is just cosmetically noisy in the stage
+telemetry.
+
+A genuine hard-stop path is held **in reserve**: the Classic's **Aux 1** output
+could drive a contactor to cut PV/charge on command. Aux 1 is currently occupied
+by the **Whizbang Jr** battery-current shunt, which the BMS's own current/SOC
+telemetry has effectively obsoleted. Retiring the WBjr would free Aux 1 to gate
+the Classic for real — a future development, not currently planned.
