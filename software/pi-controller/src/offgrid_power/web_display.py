@@ -98,8 +98,7 @@ KINDLE_LIVE_SENTINEL = "offgrid-live"
 # How often the Kindle forces a full-screen flash to clear e-ink ghosting that
 # accumulates from in-place (partial-update) refreshes. A visible black blink, so
 # this is a comfort-vs-cruft tradeoff; tune against the actual panel.
-# TEMPORARY: 30s for on-panel verification; restore to ~900 once confirmed.
-KINDLE_FULL_REFRESH_SECONDS = 30
+KINDLE_FULL_REFRESH_SECONDS = 900
 
 
 def _kindle_refresh_script(refresh_seconds: int) -> str:
@@ -245,7 +244,9 @@ def render_kindle_snapshot(
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
         "table{border-collapse:collapse;width:100%;}",
-        "td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
+        # No grey cell dividers: e-ink ghosts hardest on these persistent light
+        # lines. Bold first-column labels carry the row structure instead.
+        "td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}",
         "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
         ".bad{font-weight:bold;}",
         ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
@@ -307,7 +308,9 @@ def render_kindle_details(
         "ul{margin:0 0 4px 18px;padding:0;}",
         "li{line-height:1.15;}",
         "table{border-collapse:collapse;width:100%;}",
-        "td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
+        # No grey cell dividers: e-ink ghosts hardest on these persistent light
+        # lines. Bold first-column labels carry the row structure instead.
+        "td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}",
         "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
         ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
         ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",
@@ -382,7 +385,9 @@ def render_kindle_weather(
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "table{border-collapse:collapse;width:100%;}",
-        "td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}",
+        # No grey cell dividers: e-ink ghosts hardest on these persistent light
+        # lines. Bold first-column labels carry the row structure instead.
+        "td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}",
         "td:first-child{font-size:17px;font-weight:bold;width:38%;}",
         ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
         ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",

@@ -5,7 +5,7 @@
 <script type="text/javascript">
 (function() {
   var LIVE_MS = 60000, RETRY_MS = 5000;
-  var FLASH_MS = 30000;
+  var FLASH_MS = 900000;
   var SENTINEL = 'offgrid-live';
   var lastFlash = (new Date()).getTime();
   // Full-screen black->white flash forces a full e-ink refresh, clearing
@@ -70,7 +70,7 @@ h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}
 ul{margin:0 0 4px 18px;padding:0;}
 li{line-height:1.15;}
 table{border-collapse:collapse;width:100%;}
-td{font-size:17px;line-height:1.18;padding:1px 0;vertical-align:top;border-bottom:1px solid #ccc;}
+td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}
 td:first-child{font-size:17px;font-weight:bold;width:32%;}
 .bad{font-weight:bold;}
 .summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}
