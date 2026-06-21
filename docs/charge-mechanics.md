@@ -263,6 +263,55 @@ there, without sitting so high that cell delta diverges or longevity suffers.
 - **Terminal voltage well above resting OCV under charge** → normal `I·R_int`;
   don't confuse it with a high setpoint. Judge fullness by the *rested* voltage.
 
+## LFP longevity: evidence vs folklore
+
+What actually drives LiFePO4 wear, separated from the NMC-derived folklore that
+dominates online advice. This is mechanism-based; treat the **cell/BMS datasheet**
+as the authority for hard limits (max cell voltage, charge-temperature window).
+
+Two aging modes:
+
+- **Calendar** (time, even at rest): driven by **temperature** (Arrhenius) and
+  **storage SOC** (higher = faster), mechanism mainly SEI growth on the graphite
+  anode consuming lithium inventory.
+- **Cycle** (throughput): driven by C-rate, depth, temperature, and SOC window;
+  **lithium plating** (high rate + cold + high SOC) is the acute failure path.
+
+**Why LFP ≠ NMC (the crux).** The "charge only to 80%" rule is rigorous for
+NMC/NCA because their ~4.2 V/cell top drives strongly voltage-dependent cathode
+and electrolyte degradation; staying lower avoids it. LFP tops out at ~3.4–3.5
+V/cell on a very stable olivine cathode, so that high-voltage pathway is largely
+absent and the calendar-aging-vs-SOC slope is far shallower. Importing "80%" to
+LFP is mostly chemistry-transfer folklore.
+
+**Reaching 100% is beneficial for LFP, not harmful.** The flat OCV plateau makes
+mid-range SOC estimation drift, and passive balancing only works near the top, so
+the BMS re-anchors SOC and equalizes cells there. Periodic full charges are the
+recommended practice, not something to avoid.
+
+Evidence-based levers, ranked:
+
+1. **Temperature** — keep cool; hot + high-SOC is the worst calendar case; never
+   charge below ~0 °C (plating). Guarded here by the low-temperature charge stop.
+2. **Avoid plating** — don't charge fast when cold. Low-rate solar is inherently safe.
+3. **Limit long dwell at very high SOC while warm** — daily cycling that doesn't
+   park hot at 100% is fine.
+4. **Don't habitually hit the ~3.65 V/cell ceiling** — a moderate full
+   (~3.45–3.55 V/cell) is gentler for negligible capacity loss.
+5. **Throughput is the cycle budget** — low-rate partial cycling spends it slowly.
+
+Folklore to discard for LFP: "never exceed 80–90%" (NMC advice; also forgoes the
+SOC-calibration/balancing benefit of periodic full charges); "keep it at 50%"
+(that is long-term *storage* guidance, not for a daily-cycled pack); "100%
+destroys LFP" / "floating at 100% is harmless" (both overstated — the real
+dependence is shallow and temperature-gated).
+
+Caveat on the literature: the large-N degradation datasets are overwhelmingly
+NMC/NCA (EV-funded); LFP-specific peer-reviewed studies exist but are fewer, and
+much online "LFP longevity" content is extrapolation or vendor copy. The above is
+established mechanism plus the LFP-specific consensus that exists — anchor setpoint
+decisions to the cell datasheet, not forum lore.
+
 ## Field notes
 
 - 2026-06-20 — Documented the 97%-idle-in-full-sun observation above and the
@@ -285,3 +334,9 @@ there, without sitting so high that cell delta diverges or longevity suffers.
   Validates the 57.0 V scalar setpoint as safe for this pack at its current
   balance. (Telemetry is 60 s-sampled; the BMS cut on SOC and the 3.62 V guardrail
   never fired, so no evidence of an inter-sample spike.)
+- 2026-06-21 — Assessed the full day's profile (SOC 81→100%, peak cell 3.570 V /
+  rest ~3.44, delta ≤37 mV, ~0.1 C, cells 14–16 °C, ~32 min cumulative at 100%
+  then discharged) against the longevity literature: essentially optimal for LFP —
+  cool, low-rate, well-balanced, a moderate full charge cleanly terminated by the
+  BMS, with the 100% touch earning SOC calibration + balancing. See the LFP
+  longevity section above.

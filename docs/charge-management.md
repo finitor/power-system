@@ -84,15 +84,27 @@ Use `--dry-run` to print the planned settings and BMS guard result without writi
 
 ## Supervisor Status Conditions
 
-The supervisor reports status conditions but does not autonomously act on them. Any active status condition makes the top display status `ERROR`, appears in terminal and web displays, and is logged in SQLite as `supervisor.status_condition`.
+Off-normal conditions are reported as **status conditions**. They surface in one
+**"Warnings and Faults"** group on every display, are logged in SQLite, and set
+the snapshot's overall **severity** — which drives the top-line status and the
+`/api/v1/health` verdict. Severity is per-condition, not blanket:
 
-Current charge-management condition:
-
-| Condition | Trigger | Rationale |
+| Condition | Severity | Trigger |
 |---|---|---|
-| `Charge controller 0 CVS exceeds battery CVL` | Any Classic charge voltage setpoint is greater than BMS CVL | The charger setting is outside the BMS-advertised voltage envelope |
+| `BMS protection: <flag>` | ERROR | A BMS **protection** flag is set (cell over/under voltage, over/under temperature, charge/discharge over-current, system error) — the BMS has tripped a cutoff |
+| `Charge controller 0 CVS exceeds battery CVL` | ERROR | Any Classic charge voltage setpoint > BMS CVL (static config mismatch) |
+| `BMS alarm: <flag>` | WARNING | A BMS **alarm** flag is set (the pre-trip "high/low" warnings) |
 
-Current-limit exceedance, high-cell voltage, and high cell delta are handled by the allocator's closed-loop budget resolver instead of by passive supervisor warning/error conditions.
+`status_severity` maps to HTTP on the diagnostic endpoint: ERROR → `/api/v1/health`
+`503`, WARNING → `200` (degraded). Liveness `/healthz` stays `200` through all of
+these — restarting the supervisor would not clear a battery fault. Device read
+failures are folded into the same "Warnings and Faults" group (WARNING).
+
+Current-limit exceedance, high-cell voltage, and high cell delta are handled by
+the allocator's closed-loop budget resolver (below) rather than as passive
+conditions. (The BMS protection/alarm mapping is the supervisor's *independent*
+report of what the BMS itself is signalling, distinct from those allocator
+guardrails computed from cell telemetry.)
 
 ## Threshold Theory
 
@@ -127,3 +139,35 @@ cell-voltage conditions are handled in the allocator loop instead:
 2. `ChargeCurrentAllocator` distributes that allowance across the controllers.
 3. The live supervisor writes the resulting controller current limits and EPEver
    coil state when `--charge-allocation` is enabled.
+
+## Why CCL=0 is a full stop
+
+When the BMS advertises CCL=0 (or clears charge-enable), `ChargeCeiling` returns a
+0 allowance and the allocator stops the controllers entirely. The pack then covers
+household load from discharge until SOC drops enough that the BMS re-opens CCL, at
+which point charging resumes — so the pack naturally cycles just under 100%.
+
+This is deliberate, and the cost is smaller than it looks:
+
+- PV isn't wasted — the arrays simply curtail (there's nowhere to put the harvest
+  when the pack is full).
+- The load energy drawn during the CCL=0 window is replenished once CCL reopens;
+  the only real loss is the battery round-trip (~2–5%) on that sliver, plus
+  negligible extra cycling.
+- The side effect — not holding the pack hard at 100% — is good for calendar life.
+
+CCL=0 is also **ambiguous**: it can mean "full" (charge-enable still true) or
+"charging forbidden — protection/fault" (charge-enable false). Treating it
+uniformly as "do not put current into this battery" is the safe default; the
+allocation reason distinguishes the two (`"BMS CCL is zero"` vs
+`"BMS charge disabled"`).
+
+**Rejected alternative — load-following (net-zero).** Running the controllers to
+cover household load at net-zero battery current (PV serves the house; the pack
+neither charges nor discharges) would avoid the round-trip. Rejected because the
+risk is highest exactly where the margin is thinnest: at a full pack on the steep
+knee, a load down-blip momentarily pushes surplus into the battery while CCL=0,
+spiking a cell and risking an overvoltage trip. The efficiency gain (~2–5% on a
+sliver) isn't worth the trip risk and the added control complexity. The genuinely
+useful surplus-handling option is a **diversion/dump load** (e.g. water heat) —
+additive hardware, not a loosening of the cutoff.
