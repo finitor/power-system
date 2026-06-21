@@ -98,7 +98,8 @@ KINDLE_LIVE_SENTINEL = "offgrid-live"
 # How often the Kindle forces a full-screen flash to clear e-ink ghosting that
 # accumulates from in-place (partial-update) refreshes. A visible black blink, so
 # this is a comfort-vs-cruft tradeoff; tune against the actual panel.
-KINDLE_FULL_REFRESH_SECONDS = 900
+# TEMPORARY: 60s for on-panel verification; restore to ~900 once confirmed.
+KINDLE_FULL_REFRESH_SECONDS = 60
 
 
 def _kindle_refresh_script(refresh_seconds: int) -> str:
@@ -248,7 +249,11 @@ def render_kindle_snapshot(
         # page-turn tap zones at the margins (no footer button — this browser
         # can't reliably pin one to the screen bottom).
         ".nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}",
-        ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        # Explicit height carries the tap strip to the measured viewport bottom
+        # (clientHeight 700 - top 58 ~= 642); bottom:0 stays as a fallback for a
+        # browser that honors it. This 2011 WebKit anchored bottom:0 to the
+        # content box, which fell short of the screen on short pages.
+        ".page-turn{position:fixed;top:58px;height:642px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -304,7 +309,11 @@ def render_kindle_details(
         # page-turn tap zones at the margins (no footer button — this browser
         # can't reliably pin one to the screen bottom).
         ".nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}",
-        ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        # Explicit height carries the tap strip to the measured viewport bottom
+        # (clientHeight 700 - top 58 ~= 642); bottom:0 stays as a fallback for a
+        # browser that honors it. This 2011 WebKit anchored bottom:0 to the
+        # content box, which fell short of the screen on short pages.
+        ".page-turn{position:fixed;top:58px;height:642px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -370,7 +379,11 @@ def render_kindle_weather(
         ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:46%;}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        ".page-turn{position:fixed;top:58px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        # Explicit height carries the tap strip to the measured viewport bottom
+        # (clientHeight 700 - top 58 ~= 642); bottom:0 stays as a fallback for a
+        # browser that honors it. This 2011 WebKit anchored bottom:0 to the
+        # content box, which fell short of the screen on short pages.
+        ".page-turn{position:fixed;top:58px;height:642px;bottom:0;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
