@@ -216,11 +216,16 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("No data", empty_html)
         self.assertIn("SOC --", empty_html)
         self.assertNotIn("SOC SOC", empty_html)
+        # No errors and no conditions -> Status Conditions reads "none".
+        self.assertIn("none", empty_html)
 
-        # Errors render on the main page (moved off the details page).
+        # Errors fold into the Status Conditions group (no separate Errors group),
+        # and the group must not also say "none" when an error is present.
         error_html = render_kindle_snapshot(make_snapshot(errors=["Battery CAN read failed: timeout"]))
-        self.assertIn("<h2>Errors</h2>", error_html)
+        self.assertNotIn("<h2>Errors</h2>", error_html)
+        self.assertIn("<h2>Status Conditions</h2>", error_html)
         self.assertIn("Battery CAN read failed: timeout", error_html)
+        self.assertNotIn('<td colspan="2">none</td>', error_html)
 
     def test_renders_kindle_weather_values(self) -> None:
         report = WeatherReport(

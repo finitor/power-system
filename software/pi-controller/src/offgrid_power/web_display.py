@@ -236,7 +236,6 @@ def render_kindle_snapshot(
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
-    lines.extend(_error_section(snapshot))
     lines.extend(_status_summary_section(snapshot))
     lines.extend(_kindle_nav_hint("MORE >", "right"))
     lines.extend(["</body>", "</html>"])
@@ -1775,21 +1774,13 @@ def _page_turn_link(href: str, side: str, label: str) -> str:
     return f'<a class="page-turn page-turn-{escape(side)}" href="{escape(href)}">{escape(label)}</a>'
 
 
-def _error_section(snapshot: SupervisorSnapshot) -> list[str]:
-    # Errors render on the main /kindle page alongside Status Conditions.
-    lines: list[str] = []
-    if snapshot.errors:
-        lines.append("<h2>Errors</h2>")
-        lines.append("<ul>")
-        for error in snapshot.errors:
-            lines.append(f"<li>{escape(error)}</li>")
-        lines.append("</ul>")
-    return lines
-
-
 def _status_summary_section(snapshot: SupervisorSnapshot) -> list[str]:
-    conditions = list(snapshot.status_conditions)
-    value = "; ".join(conditions) if conditions else "none"
+    # Kindle: errors and status conditions share one group, so a device read
+    # error can't sit next to a "none" condition (low density, looks
+    # contradictory). Errors first (more urgent), then conditions; "none" only
+    # when there is genuinely nothing wrong.
+    messages = list(snapshot.errors) + list(snapshot.status_conditions)
+    value = "; ".join(messages) if messages else "none"
     return ["<h2>Status Conditions</h2>", "<table>", _full_row(value), "</table>"]
 
 
