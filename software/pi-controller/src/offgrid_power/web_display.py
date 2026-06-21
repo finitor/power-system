@@ -1983,16 +1983,16 @@ def _charge_controller_settings_text(settings: dict | None) -> str | None:
         return None
     if "current_limit_a" in settings:
         return (
-            f"Limit {_meas(settings.get('current_limit_a'), 'A', 1)} "
-            f"Absorb {_meas(settings.get('absorb_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
-            f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
-            f"Max TCV {_meas(settings.get('max_temp_comp_voltage_v'), 'V', 1)}"
+            f"{_meas(settings.get('current_limit_a'), 'A', 1)} "
+            f"Abs {_meas(settings.get('absorb_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
+            f"Flt {_meas(settings.get('float_voltage_v'), 'V', 1)} "
+            f"TCV {_meas(settings.get('max_temp_comp_voltage_v'), 'V', 1)}"
         )
     return (
-        f"Limit {_meas(settings.get('max_charging_current_a'), 'A', 1)} "
-        f"Absorb {_meas(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
-        f"Float {_meas(settings.get('float_voltage_v'), 'V', 1)} "
-        f"Recovery {_meas(_first_present(settings, 'bulk_recovery_voltage_v', 'boost_reconnect_voltage_v'), 'V', 1)}"
+        f"{_meas(settings.get('max_charging_current_a'), 'A', 1)} "
+        f"Abs {_meas(_first_present(settings, 'absorb_voltage_v', 'boost_voltage_v'), 'V', 1)}/{_minutes_text(settings.get('absorb_time_minutes'))} "
+        f"Flt {_meas(settings.get('float_voltage_v'), 'V', 1)} "
+        f"Rec {_meas(_first_present(settings, 'bulk_recovery_voltage_v', 'boost_reconnect_voltage_v'), 'V', 1)}"
     )
 
 

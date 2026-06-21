@@ -368,7 +368,7 @@ class WebDisplayTest(unittest.TestCase):
         details_html = render_kindle_details(snapshot)
         self.assertIn("<h2>Charge Controller Settings</h2>", details_html)
         self.assertIn("<td>CC0 (Epever)</td>", details_html)
-        self.assertIn("Limit 80.0A Absorb 54.7V/120m Float 53.6V", details_html)
+        self.assertIn("80.0A Abs 54.7V/120m Flt 53.6V", details_html)
         self.assertNotIn("EQ 54.7V", details_html)
 
     def test_kindle_charge_controllers_render_allocation_rows(self) -> None:

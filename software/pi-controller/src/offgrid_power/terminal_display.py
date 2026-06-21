@@ -271,19 +271,19 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
 def _charge_settings_line(settings: ClassicChargeSettings) -> str:
     return _row(
         "Charge Settings",
-        f"Limit {settings.battery_current_limit_a:.1f}A "
-        f"Absorb {settings.absorb_voltage_v:.1f}V/{settings.absorb_time_s / 60:g}m "
-        f"Float {settings.float_voltage_v:.1f}V "
-        f"Max TCV {settings.max_temp_comp_voltage_v:.1f}V",
+        f"{settings.battery_current_limit_a:.1f}A "
+        f"Abs {settings.absorb_voltage_v:.1f}V/{settings.absorb_time_s / 60:g}m "
+        f"Flt {settings.float_voltage_v:.1f}V "
+        f"TCV {settings.max_temp_comp_voltage_v:.1f}V",
     )
 
 
 def _epever_charge_settings_line(settings: EpeverChargeSettings) -> str:
     return _row(
         "Charge Settings",
-        f"Limit {_current_text(settings.max_charging_current_a)} "
-        f"Absorb {settings.boost_voltage_v:.1f}V/{_minutes_text(settings.boost_time_minutes)} "
-        f"Float {settings.float_voltage_v:.1f}V",
+        f"{_current_text(settings.max_charging_current_a)} "
+        f"Abs {settings.boost_voltage_v:.1f}V/{_minutes_text(settings.boost_time_minutes)} "
+        f"Flt {settings.float_voltage_v:.1f}V",
     )
 
 

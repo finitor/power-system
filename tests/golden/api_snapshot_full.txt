@@ -17,14 +17,14 @@ Charge Controller 0 (Classic)
   Output                54.8V  7.1A  389W
   Charge Status         Float
   Production Today      5.8kWh  106Ah
-  Charge Settings       Limit 80.0A Absorb 55.6V/32.5m Float 55.0V Max TCV 56.8V
+  Charge Settings       80.0A Abs 55.6V/32.5m Flt 55.0V TCV 56.8V
 
 Charge Controller 1 (Epever)
   PV                    0.0V  0.0A  0W
   Output                53.2V  0.0A  0W
   Charge Status         Resting
   Production Today      100Wh
-  Charge Settings       Limit 80.0A Absorb 54.7V/120m Float 53.6V Recovery ?V
+  Charge Settings       80.0A Abs 54.7V/120m Flt 53.6V Rec ?V
 
 Inverter/Charger
   DC                    53.2V  4A  213W
