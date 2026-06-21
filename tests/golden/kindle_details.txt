@@ -100,10 +100,6 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <tr><td>Status</td><td>Inverting</td></tr>
 <tr><td>Charge Settings</td><td>Absorb 54.4V 3.0h Float 54.4V Shore 30A</td></tr>
 </table>
-<h2>Charge Controller Settings</h2>
-<table>
-<tr><td>State</td><td>No data</td></tr>
-</table>
 <h2>Temperatures</h2>
 <table>
 <tr><td>Battery cells</td><td>15.9-16.9C</td></tr>

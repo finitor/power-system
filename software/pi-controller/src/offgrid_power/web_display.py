@@ -280,7 +280,7 @@ def render_kindle_snapshot(
     ]
     lines.extend(_load_section(load_summary))
     lines.extend(_battery_section(snapshot))
-    lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=False))
+    lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=True))
     lines.extend(_status_summary_section(snapshot))
     lines.extend(_kindle_nav_hint("MORE >", "right"))
     lines.extend(["</body>", "</html>"])
@@ -342,7 +342,6 @@ def render_kindle_details(
         "</table>",
     ]
     lines.extend(_inverter_charger_section(snapshot))
-    lines.extend(_charge_controller_settings_section(snapshot))
     lines.extend(_temperature_section(snapshot))
     lines.extend(_kindle_nav_hint("< BACK", "left"))
     lines.extend(["</body>", "</html>"])
@@ -1846,27 +1845,6 @@ def _status_summary_section(snapshot: SupervisorSnapshot) -> list[str]:
         return []
     value = "; ".join(messages)
     return ["<h2>Warnings and Faults</h2>", "<table>", _full_row(value), "</table>"]
-
-
-def _charge_controller_settings_section(snapshot: SupervisorSnapshot) -> list[str]:
-    controllers = _solar_api_payload(snapshot)
-    lines = ["<h2>Charge Controller Settings</h2>", "<table>"]
-    rendered = 0
-    for index, controller in enumerate(controllers):
-        settings_text = _charge_controller_settings_text(controller.get("settings"))
-        if settings_text is None:
-            continue
-        lines.append(_row(_charge_controller_settings_label(index, controller), settings_text))
-        rendered += 1
-    if rendered == 0:
-        lines.append(_row("State", "No data"))
-    lines.append("</table>")
-    return lines
-
-
-def _charge_controller_settings_label(index: int, controller: dict) -> str:
-    name = _charge_controller_short_name(controller)
-    return f"CC{index} ({name})" if name else f"CC{index}"
 
 
 def _charge_controller_sections(

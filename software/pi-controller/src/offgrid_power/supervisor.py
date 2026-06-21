@@ -424,10 +424,21 @@ class Supervisor:
                 else:
                     devices[name] = reading.value
 
+            # A failing read and a stale reading say the same thing with two
+            # timestamps ("read failed" + "last good Ns ago"). Collapse them into
+            # one message anchored on the age of the last good telemetry. Keep the
+            # raw exception only when there is no age to report (never read).
             if reading.error is not None:
-                errors.append(f"{self._READER_ERROR_PREFIXES[name]}: {reading.error}")
-
-            if reading.is_stale(now):
+                age = reading.age_seconds(now)
+                if age is not None:
+                    errors.append(
+                        f"{self._READER_ERROR_PREFIXES[name]} (last good read {age:.0f}s ago)"
+                    )
+                else:
+                    errors.append(f"{self._READER_ERROR_PREFIXES[name]}: {reading.error}")
+            elif reading.is_stale(now):
+                # Value is old but the latest poll didn't error (reader stalled):
+                # still warn, with the same age-anchored wording.
                 age = reading.age_seconds(now)
                 stale_candidates.append(
                     StatusConditionCandidate(

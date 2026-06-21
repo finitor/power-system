@@ -195,15 +195,31 @@ class SupervisorReaderModeTest(unittest.TestCase):
         self.assertEqual(snapshot.errors, [])
         self.assertEqual(snapshot.status_conditions, [])
 
-    def test_reader_error_keeps_last_good_value_and_reports_error(self) -> None:
-        now = datetime.now(timezone.utc)
+    def test_reader_error_collapses_with_staleness_into_one_aged_message(self) -> None:
+        # A failing read that is also stale must yield ONE message carrying the
+        # age of the last good telemetry -- not a separate "read failed" error
+        # plus a "telemetry stale" condition that say the same thing twice.
+        stale = datetime.now(timezone.utc) - timedelta(seconds=45)
         supervisor = self._supervisor_with_readers(
-            {"magnum": FakeReader("magnum", "last-good", now, error="serial port vanished")}
+            {"magnum": FakeReader("magnum", "last-good", stale, stale_after_s=20.0, error="serial port vanished")}
         )
 
         snapshot = supervisor.read_snapshot()
 
         self.assertEqual(snapshot.magnum, "last-good")
+        self.assertEqual(len(snapshot.errors), 1)
+        self.assertIn("Magnum read failed (last good read", snapshot.errors[0])
+        self.assertIn("s ago)", snapshot.errors[0])
+        self.assertEqual(snapshot.status_conditions, [])
+
+    def test_reader_error_without_prior_value_keeps_exception_detail(self) -> None:
+        # Never read successfully -> no age to report, so keep the raw exception.
+        supervisor = self._supervisor_with_readers(
+            {"magnum": FakeReader("magnum", None, None, error="serial port vanished")}
+        )
+
+        snapshot = supervisor.read_snapshot()
+
         self.assertEqual(snapshot.errors, ["Magnum read failed: serial port vanished"])
 
     def test_stale_reading_raises_warning_condition(self) -> None:

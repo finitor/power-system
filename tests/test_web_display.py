@@ -358,18 +358,20 @@ class WebDisplayTest(unittest.TestCase):
         # native word is a pure synonym, not a lossy distinction like Boost).
         self.assertIn("Resting", html)
         self.assertNotIn("No charging", html)
-        self.assertNotIn("Charge Settings", html)
+        # Charge Settings now live in the per-controller group on the main page.
+        self.assertIn("Charge Settings", html)
+        self.assertIn("80.0A Abs 54.7V/120m Flt 53.6V", html)
         self.assertNotIn("EQ 54.7V", html)
         # cc group mirrors the Classic: daily generation as "Production Today",
         # and no static "Rated" line.
         self.assertIn("Production Today", html)
         self.assertNotIn("Rated", html)
 
+        # The details page no longer carries a separate Charge Controller
+        # Settings section -- the settings moved into the main controller groups.
         details_html = render_kindle_details(snapshot)
-        self.assertIn("<h2>Charge Controller Settings</h2>", details_html)
-        self.assertIn("<td>CC0 (Epever)</td>", details_html)
-        self.assertIn("80.0A Abs 54.7V/120m Flt 53.6V", details_html)
-        self.assertNotIn("EQ 54.7V", details_html)
+        self.assertNotIn("<h2>Charge Controller Settings</h2>", details_html)
+        self.assertNotIn("80.0A Abs 54.7V/120m Flt 53.6V", details_html)
 
     def test_kindle_charge_controllers_render_allocation_rows(self) -> None:
         snapshot = make_snapshot(
