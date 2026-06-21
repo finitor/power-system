@@ -274,3 +274,14 @@ there, without sitting so high that cell delta diverges or longevity suffers.
   stage machine) is the primary reason; the calendar-aging downside of no lower
   float is covered by the pure-solar duty cycle drawing the pack to ~70% nightly,
   with long no-load sunny periods flagged as the exception.
+- 2026-06-21 — First-ever 100% SOC, reached with minimal cell stress. Peak
+  individual cell 3.570 V (cell 1-11) the minute before cutoff — only ~20 mV into
+  the upper-cell soft zone (3.55 V) and 50 mV below the 3.62 V stop; peak cell
+  delta just 37 mV (vs the 150 mV stop), i.e. excellent balance, no runaway. The
+  BMS ended charge by dropping **CCL to 0 at SOC=100** (an SOC cutoff, not an
+  overvoltage trip), after which the pack covered household load at a light
+  discharge and cell voltage relaxed 3.570 → ~3.44 V within ~5 min — confirming
+  the high reading was mostly surface/`I·R`, with the true rested top ~3.44 V/cell.
+  Validates the 57.0 V scalar setpoint as safe for this pack at its current
+  balance. (Telemetry is 60 s-sampled; the BMS cut on SOC and the 3.62 V guardrail
+  never fired, so no evidence of an inter-sample spike.)
