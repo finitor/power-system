@@ -70,15 +70,31 @@ class NormalizedStageTest(unittest.TestCase):
         # Classic BulkMppt -> canonical Bulk, native carried.
         self.assertEqual(classic_stage("BulkMppt"), NormalizedStage("Bulk", "BulkMppt"))
 
-    def test_render_is_vendor_agnostic(self) -> None:
-        self.assertEqual(NormalizedStage("Absorb", "Boost").render(), "Stage: Absorb (Boost)")
-        self.assertEqual(NormalizedStage("Float", None).render(), "Stage: Float")
+    def test_render_without_state_register_keeps_native_nuance(self) -> None:
+        # EPEver has no state register: the native word is the only extra signal.
+        self.assertEqual(NormalizedStage("Absorb", "Boost").render(), "Absorb (Boost)")
+        self.assertEqual(NormalizedStage("Float", None).render(), "Float")
+
+    def test_render_fuses_phase_and_activity_into_dense_token(self) -> None:
+        # Classic: phase already implies the converter activity -> just the phase,
+        # and the native word (BulkMppt) is dropped as redundant.
         self.assertEqual(
-            NormalizedStage("Bulk", "BulkMppt").render("MPPT tracking"),
-            "Stage: Bulk (BulkMppt)  State: MPPT tracking",
+            NormalizedStage("Bulk", "BulkMppt").render("MPPT or regulating voltage"),
+            "Bulk",
         )
-        # State that merely echoes the stage adds nothing.
-        self.assertEqual(NormalizedStage("Resting", None).render("Resting"), "Stage: Resting")
+        self.assertEqual(
+            NormalizedStage("Float", "FloatMppt").render("MPPT or regulating voltage"),
+            "Float",
+        )
+        # Resting inside a charging phase is the one case worth distinguishing:
+        # at the float target but not converting.
+        self.assertEqual(
+            NormalizedStage("Float", "FloatMppt").render("Resting"), "Float (idle)"
+        )
+        # Waking and HyperVoc collapse to single tokens; plain Resting stays Resting.
+        self.assertEqual(NormalizedStage("Bulk", None).render("Waking / Starting"), "Waking")
+        self.assertEqual(NormalizedStage("HyperVoc", None).render("Resting"), "HyperVoc")
+        self.assertEqual(NormalizedStage("Resting", None).render("Resting"), "Resting")
 
     def test_dict_roundtrip(self) -> None:
         pair = epever_stage("Boost")

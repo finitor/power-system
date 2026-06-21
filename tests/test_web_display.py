@@ -332,8 +332,11 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_snapshot(snapshot)
 
-        self.assertIn("Stage: Resting", html)
-        self.assertNotIn("State: Resting", html)
+        # Phase and activity both "Resting" fuse to one dense token; the verbose
+        # "Stage:"/"State:" scaffolding is gone.
+        self.assertIn("Resting", html)
+        self.assertNotIn("Stage:", html)
+        self.assertNotIn("State:", html)
 
     def test_renders_epever_charge_controller_group(self) -> None:
         snapshot = make_snapshot(
@@ -351,7 +354,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("<h2>Charge Controller 0 (Epever)</h2>", html)
         self.assertIn("53.1V  0.0A  0W", html)
         # EPEver "No charging" normalizes to canonical Resting, native in parens.
-        self.assertIn("Stage: Resting (No charging)", html)
+        self.assertIn("Resting (No charging)", html)
         self.assertNotIn("Charge Settings", html)
         self.assertNotIn("EQ 54.7V", html)
         # cc group mirrors the Classic: daily generation as "Production Today",

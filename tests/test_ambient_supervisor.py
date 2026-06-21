@@ -479,8 +479,9 @@ class TerminalDisplayTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("Stage: Resting", rendered)
-        self.assertNotIn("State: Resting", rendered)
+        self.assertIn("Resting", rendered)
+        self.assertNotIn("Stage:", rendered)
+        self.assertNotIn("State:", rendered)
 
 
 class HighlightChangedDigitsTest(unittest.TestCase):
