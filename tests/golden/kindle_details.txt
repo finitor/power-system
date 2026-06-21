@@ -5,7 +5,7 @@
 <script type="text/javascript">
 (function() {
   var LIVE_MS = 60000, RETRY_MS = 5000;
-  var FLASH_MS = 60000;
+  var FLASH_MS = 30000;
   var SENTINEL = 'offgrid-live';
   var lastFlash = (new Date()).getTime();
   // Full-screen black->white flash forces a full e-ink refresh, clearing
@@ -32,8 +32,8 @@
     setTimeout(function() {
       o.style.background = '#fff'; o.style.color = '#000';
       o.offsetHeight;
-      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 600);
-    }, 800);
+      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 700);
+    }, 2000);
   }
   function schedule(ms) { setTimeout(tick, ms); }
   function tick() {
@@ -66,7 +66,7 @@
 </script>
 <title>Off-Grid Power Details</title>
 <style>
-html,body{height:100%;}
+html,body{height:100%;overflow:hidden;}
 body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}
 ul{margin:0 0 4px 18px;padding:0;}
@@ -81,7 +81,7 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 .summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}
 .top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}
 .nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}
-.page-turn{position:fixed;top:58px;padding-bottom:1100px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
+.page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}
 .page-turn-left{left:0;}
 .page-turn-right{right:0;}
 .small{font-size:13px;}

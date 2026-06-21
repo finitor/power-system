@@ -98,8 +98,8 @@ KINDLE_LIVE_SENTINEL = "offgrid-live"
 # How often the Kindle forces a full-screen flash to clear e-ink ghosting that
 # accumulates from in-place (partial-update) refreshes. A visible black blink, so
 # this is a comfort-vs-cruft tradeoff; tune against the actual panel.
-# TEMPORARY: 60s for on-panel verification; restore to ~900 once confirmed.
-KINDLE_FULL_REFRESH_SECONDS = 60
+# TEMPORARY: 30s for on-panel verification; restore to ~900 once confirmed.
+KINDLE_FULL_REFRESH_SECONDS = 30
 
 
 def _kindle_refresh_script(refresh_seconds: int) -> str:
@@ -157,8 +157,8 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "    setTimeout(function() {\n"
         "      o.style.background = '#fff'; o.style.color = '#000';\n"
         "      o.offsetHeight;\n"  # force the white paint
-        "      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 600);\n"
-        "    }, 800);\n"
+        "      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 700);\n"
+        "    }, 2000);\n"  # TEMP: linger 2s so the readout is recordable
         "  }\n"
         "  function schedule(ms) { setTimeout(tick, ms); }\n"
         "  function tick() {\n"
@@ -241,7 +241,7 @@ def render_kindle_snapshot(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power</title>",
         "<style>",
-        "html,body{height:100%;}",
+        "html,body{height:100%;overflow:hidden;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
@@ -265,7 +265,7 @@ def render_kindle_snapshot(
         # were both ignored / anchored to the short content box, so the strips
         # fell short of the screen). top 58 + ~660 padding reaches past the 700px
         # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:1100px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -303,7 +303,7 @@ def render_kindle_details(
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power Details</title>",
         "<style>",
-        "html,body{height:100%;}",
+        "html,body{height:100%;overflow:hidden;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
         "ul{margin:0 0 4px 18px;padding:0;}",
@@ -326,7 +326,7 @@ def render_kindle_details(
         # were both ignored / anchored to the short content box, so the strips
         # fell short of the screen). top 58 + ~660 padding reaches past the 700px
         # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:1100px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
@@ -397,7 +397,7 @@ def render_kindle_weather(
         # were both ignored / anchored to the short content box, so the strips
         # fell short of the screen). top 58 + ~660 padding reaches past the 700px
         # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:1100px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
+        ".page-turn{position:fixed;top:58px;padding-bottom:800px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
