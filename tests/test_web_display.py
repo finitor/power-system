@@ -216,8 +216,9 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("No data", empty_html)
         self.assertIn("SOC --", empty_html)
         self.assertNotIn("SOC SOC", empty_html)
-        # No errors and no conditions -> Status Conditions reads "none".
-        self.assertIn("none", empty_html)
+        # No errors and no conditions -> the Warnings and Faults group is omitted
+        # entirely on the Kindle (no standalone "none" row).
+        self.assertNotIn("<h2>Warnings and Faults</h2>", empty_html)
 
         # Errors fold into the Warnings and Faults group (no separate Errors group),
         # and the group must not also say "none" when an error is present.
@@ -353,8 +354,10 @@ class WebDisplayTest(unittest.TestCase):
         # renderer numbers by position, not by a fixed per-vendor slot.
         self.assertIn("<h2>Charge Controller 0 (Epever)</h2>", html)
         self.assertIn("53.1V  0.0A  0W", html)
-        # EPEver "No charging" normalizes to canonical Resting, native in parens.
-        self.assertIn("Resting (No charging)", html)
+        # EPEver "No charging" canonicalizes fully to a bare "Resting" (the
+        # native word is a pure synonym, not a lossy distinction like Boost).
+        self.assertIn("Resting", html)
+        self.assertNotIn("No charging", html)
         self.assertNotIn("Charge Settings", html)
         self.assertNotIn("EQ 54.7V", html)
         # cc group mirrors the Classic: daily generation as "Production Today",

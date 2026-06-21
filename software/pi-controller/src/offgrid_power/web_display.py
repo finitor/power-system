@@ -1837,9 +1837,14 @@ def _status_summary_section(snapshot: SupervisorSnapshot) -> list[str]:
     # One off-normal group "Warnings and Faults": read failures (errors) and
     # analyzed conditions / BMS faults all mean "something is wrong", so they
     # share a group (saves vertical space; no contradictory error-next-to-"none").
-    # Errors first (more urgent), then conditions; "none" only when nothing wrong.
+    # Errors first (more urgent), then conditions.
     messages = list(snapshot.errors) + list(snapshot.status_conditions)
-    value = "; ".join(messages) if messages else "none"
+    # Kindle-only group: when nothing is wrong, omit it entirely rather than
+    # show a standalone "none" -- saves a row on the cramped e-ink, and a
+    # permanently-present empty group is just more burn-in to ghost.
+    if not messages:
+        return []
+    value = "; ".join(messages)
     return ["<h2>Warnings and Faults</h2>", "<table>", _full_row(value), "</table>"]
 
 

@@ -57,6 +57,16 @@ _EPEVER_MAP = {
     "Equalize": ChargeStage.EQUALIZE,
 }
 
+# Native words the canonical name cannot fully express, so they survive into the
+# display in parentheses. Only EPEver's "Boost" qualifies: it collapses bulk and
+# absorb into one status, so "Absorb (Boost)" warns the controller may still be
+# in the bulk climb. Every other native word either equals its canonical name or
+# is a pure synonym ("No charging" == Resting, "BulkMppt"/"FloatMppt" == Bulk/
+# Float), so it canonicalizes away. HyperVoc is its own canonical stage (Classic-
+# only), not a vendor annotation. The result: the only vendor-flavoured tokens
+# anywhere in the APIs or displays are "Absorb (Boost)" and "HyperVoc".
+_LOSSY_NATIVE = frozenset({"Boost"})
+
 
 def normalize_classic_stage(native: str | None) -> ChargeStage:
     if native is None:
@@ -151,17 +161,20 @@ class NormalizedStage:
         With a state register (Classic) the phase and converter activity are
         fused via :func:`charge_status` and the native word is dropped as
         redundant. Without one (EPEver) the canonical phase carries the native
-        word in parentheses when it adds nuance (e.g. ``Resting (No charging)``).
+        word in parentheses only when it is lossy (e.g. ``Absorb (Boost)``);
+        pure synonyms canonicalize away to a bare phase.
         """
         if state is None:
-            if self.vendor:
+            if self.vendor in _LOSSY_NATIVE:
                 return f"{self.canonical} ({self.vendor})"
             return self.canonical
         return charge_status(self.canonical, state)
 
 
 def _normalized(canonical: ChargeStage, native: str | None) -> NormalizedStage:
-    vendor = native if native and native != canonical.value else None
+    # Carry the native word only when it adds information the canonical name
+    # can't (see _LOSSY_NATIVE); everything else canonicalizes away.
+    vendor = native if native in _LOSSY_NATIVE else None
     return NormalizedStage(canonical=canonical.value, vendor=vendor)
 
 

@@ -22,7 +22,7 @@ Charge Controller 0 (Classic)
 Charge Controller 1 (Epever)
   PV                    0.0V  0.0A  0W
   Output                53.2V  0.0A  0W
-  Charge Status         Resting (No charging)
+  Charge Status         Resting
   Production Today      100Wh
   Charge Settings       Limit 80.0A Absorb 54.7V/120m Float 53.6V Recovery ?V
 

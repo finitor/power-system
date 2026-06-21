@@ -83,7 +83,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                     "battery_voltage_v": 53.2,
                     "battery_current_a": 0.0,
                     "battery_power_w": 0,
-                    "charge_stage": {"canonical": "Resting", "vendor": "No charging"},
+                    "charge_stage": {"canonical": "Resting", "vendor": None},
                     "state": None,
                     "daily_energy_kwh": 0.1,
                     "temperatures_c": {"battery": 0.0, "device": 0.0},
@@ -182,7 +182,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
                 {
                     "id": "epever.1",
                     "device": {"vendor": "EPEver", "model": "TEP10425", "short_name": "Epever"},
-                    "charge_stage": {"canonical": "Resting", "vendor": "No charging"},
+                    "charge_stage": {"canonical": "Resting", "vendor": None},
                     "daily_energy_kwh": None,
                     "daily_energy_unavailable_reason": "unavailable, midnight cumulative energy was not logged",
                 }

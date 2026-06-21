@@ -62,18 +62,23 @@ class ChargeStageTest(unittest.TestCase):
 
 
 class NormalizedStageTest(unittest.TestCase):
-    def test_vendor_present_only_when_it_differs(self) -> None:
-        # EPEver Boost differs from canonical Absorb -> vendor carried.
+    def test_vendor_carried_only_for_lossy_native_words(self) -> None:
+        # EPEver Boost collapses bulk+absorb, which canonical Absorb can't
+        # express -> the native word is carried.
         self.assertEqual(epever_stage("Boost"), NormalizedStage("Absorb", "Boost"))
-        # EPEver Float == canonical Float -> no vendor noise.
+        # Everything else canonicalizes fully -- no vendor noise, even when the
+        # native word differs in spelling (synonyms / redundant suffixes).
         self.assertEqual(epever_stage("Float"), NormalizedStage("Float", None))
-        # Classic BulkMppt -> canonical Bulk, native carried.
-        self.assertEqual(classic_stage("BulkMppt"), NormalizedStage("Bulk", "BulkMppt"))
+        self.assertEqual(epever_stage("No charging"), NormalizedStage("Resting", None))
+        self.assertEqual(classic_stage("BulkMppt"), NormalizedStage("Bulk", None))
+        self.assertEqual(classic_stage("FloatMppt"), NormalizedStage("Float", None))
 
-    def test_render_without_state_register_keeps_native_nuance(self) -> None:
-        # EPEver has no state register: the native word is the only extra signal.
+    def test_render_without_state_register_keeps_only_lossy_native_word(self) -> None:
+        # EPEver has no state register. Only the lossy native word survives;
+        # synonyms canonicalize away even if a (legacy) payload still carries one.
         self.assertEqual(NormalizedStage("Absorb", "Boost").render(), "Absorb (Boost)")
         self.assertEqual(NormalizedStage("Float", None).render(), "Float")
+        self.assertEqual(NormalizedStage("Resting", "No charging").render(), "Resting")
 
     def test_render_fuses_phase_and_activity_into_dense_token(self) -> None:
         # Classic: phase already implies the converter activity -> just the phase,
