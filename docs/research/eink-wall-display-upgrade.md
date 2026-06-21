@@ -48,7 +48,23 @@ Device options, cheapest first:
 |---|---|
 | Used Android e-ink **phone** (Hisense A5/A7/A9) | Cheapest path to a modern browser (~$80–150 used). Phone-sized ~5–6"; mostly China-market imports (check bands/region). |
 | Budget Android e-ink **tablet** (Meebook, Bigme) | Full Android + sideload; cheaper than Boox, variable software quality. **Meebook S6 seen ~$160 CAD on AliExpress (2026-06-21)** — candidate. |
+| **Bigme B6 color** | **Android 14** (newest OS of the lot — fully solves the browser issue) + **color** e-ink, ~$276 CAD (2026-06-21), oddly cheap for the specs. See color caveats below; verify the catch (screen size, RAM, panel gen). |
 | **Onyx Boox** (Page/Poke/Leaf/Note/Tab) | Best-supported, recent Android, good refresh controls. ~$150–400+ new; the "just works" pick. |
+
+### Color e-ink consideration
+
+Color e-ink (Kaleido-type: a color filter over a B&W panel) is a mixed fit for a
+mostly-text wall display:
+
+- Upside: **color-coded status** (red ERROR/alarms, charge-stage colors) is
+  genuinely useful at a glance on a power dashboard.
+- Downsides: **~half the resolution in color** (~150 vs ~300 ppi), **muted**
+  colors, and a filter layer that **cuts contrast/brightness** — text looks
+  greyer and wants the frontlight on, which is the opposite of a crisp, glance-
+  from-across-the-room wall display. Color modes also refresh slower / ghost more.
+
+For this dashboard, lean B&W-crisp unless the status colors are worth a dimmer,
+lower-res panel. Worth seeing one in person before committing.
 
 ### B. Keep the Kindle → render elsewhere, push pixels (rejected for this goal)
 
