@@ -56,18 +56,14 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
     lines.append("")
     lines.extend(_temperature_lines(payload))
 
-    errors = status.get("errors") or []
-    conditions = status.get("conditions") or []
-    if errors:
+    # One off-normal group: read failures and analyzed conditions/BMS faults all
+    # mean "something is wrong", and merging saves vertical space.
+    off_normal = [*(status.get("errors") or []), *(status.get("conditions") or [])]
+    if off_normal:
         lines.append("")
-        lines.append("Errors")
-        for error in errors:
-            lines.append(f"  - {error}")
-    if conditions:
-        lines.append("")
-        lines.append("Status Conditions")
-        for condition in conditions:
-            lines.append(f"  - {condition}")
+        lines.append("Warnings and Faults")
+        for item in off_normal:
+            lines.append(f"  - {item}")
 
     return "\n".join(lines)
 

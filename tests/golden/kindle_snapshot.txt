@@ -111,7 +111,7 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <table>
 <tr><td>State</td><td>No data</td></tr>
 </table>
-<h2>Status Conditions</h2>
+<h2>Warnings and Faults</h2>
 <table>
 <tr><td colspan="2">none</td></tr>
 </table>

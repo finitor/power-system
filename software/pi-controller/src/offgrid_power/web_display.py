@@ -1834,13 +1834,13 @@ def _page_turn_link(href: str, side: str, label: str) -> str:
 
 
 def _status_summary_section(snapshot: SupervisorSnapshot) -> list[str]:
-    # Kindle: errors and status conditions share one group, so a device read
-    # error can't sit next to a "none" condition (low density, looks
-    # contradictory). Errors first (more urgent), then conditions; "none" only
-    # when there is genuinely nothing wrong.
+    # One off-normal group "Warnings and Faults": read failures (errors) and
+    # analyzed conditions / BMS faults all mean "something is wrong", so they
+    # share a group (saves vertical space; no contradictory error-next-to-"none").
+    # Errors first (more urgent), then conditions; "none" only when nothing wrong.
     messages = list(snapshot.errors) + list(snapshot.status_conditions)
     value = "; ".join(messages) if messages else "none"
-    return ["<h2>Status Conditions</h2>", "<table>", _full_row(value), "</table>"]
+    return ["<h2>Warnings and Faults</h2>", "<table>", _full_row(value), "</table>"]
 
 
 def _charge_controller_settings_section(snapshot: SupervisorSnapshot) -> list[str]:

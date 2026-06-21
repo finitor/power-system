@@ -427,7 +427,7 @@ class TerminalDisplayTest(unittest.TestCase):
         self.assertIn("replug USB-CAN adapter", rendered)
 
     def test_battery_protections_render_as_status_conditions(self) -> None:
-        # Protections/alarms are surfaced as Status Conditions by the supervisor
+        # Protections/alarms are surfaced as Warnings and Faults by the supervisor
         # (severity-bearing), not as a passive battery row.
         snapshot = make_snapshot(
             battery=PylonCanSnapshot(
@@ -444,7 +444,7 @@ class TerminalDisplayTest(unittest.TestCase):
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("Status Conditions", rendered)
+        self.assertIn("Warnings and Faults", rendered)
         self.assertIn("BMS protection: high cell voltage", rendered)
         self.assertIn("BMS alarm: charge over current", rendered)
         self.assertNotIn("Protection/Alarms", rendered)

@@ -219,11 +219,11 @@ class WebDisplayTest(unittest.TestCase):
         # No errors and no conditions -> Status Conditions reads "none".
         self.assertIn("none", empty_html)
 
-        # Errors fold into the Status Conditions group (no separate Errors group),
+        # Errors fold into the Warnings and Faults group (no separate Errors group),
         # and the group must not also say "none" when an error is present.
         error_html = render_kindle_snapshot(make_snapshot(errors=["Battery CAN read failed: timeout"]))
         self.assertNotIn("<h2>Errors</h2>", error_html)
-        self.assertIn("<h2>Status Conditions</h2>", error_html)
+        self.assertIn("<h2>Warnings and Faults</h2>", error_html)
         self.assertIn("Battery CAN read failed: timeout", error_html)
         self.assertNotIn('<td colspan="2">none</td>', error_html)
 
@@ -416,7 +416,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"<td>Allocation</td><td>released</td>", response.body)
 
     def test_renders_bms_protections_as_status_conditions(self) -> None:
-        # Protections/alarms appear in the Status Conditions group, not a passive
+        # Protections/alarms appear in the Warnings and Faults group, not a passive
         # battery "Protection/Alarms" row.
         snapshot = make_snapshot(
             battery=PylonCanSnapshot(
@@ -432,7 +432,7 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_snapshot(snapshot)
 
-        self.assertIn("<h2>Status Conditions</h2>", html)
+        self.assertIn("<h2>Warnings and Faults</h2>", html)
         self.assertIn("BMS protection: high cell voltage", html)
         self.assertIn("BMS alarm: charge over current", html)
         self.assertNotIn("Protection/Alarms", html)
@@ -454,17 +454,17 @@ class WebDisplayTest(unittest.TestCase):
         html = render_kindle_snapshot(snapshot)
 
         self.assertIn("Status: WARNING", html)
-        self.assertIn("<h2>Status Conditions</h2>", html)
+        self.assertIn("<h2>Warnings and Faults</h2>", html)
         self.assertIn(
             '<td colspan="2">Charge controller 0 CVS exceeds battery CVL: Absorb 56.0V &gt; 55.8V; Battery temp low</td>',
             html,
         )
-        self.assertEqual(html.count("<h2>Status Conditions</h2>"), 1)
+        self.assertEqual(html.count("<h2>Warnings and Faults</h2>"), 1)
 
         # Status Conditions are shown on the main /kindle page only; the details
         # page no longer repeats them (it still surfaces Errors separately).
         details_html = render_kindle_details(snapshot)
-        self.assertNotIn("<h2>Status Conditions</h2>", details_html)
+        self.assertNotIn("<h2>Warnings and Faults</h2>", details_html)
 
     def test_routes_kindle_path(self) -> None:
         snapshot = Supervisor(classic=None, ambient=None, battery=None).read_snapshot()

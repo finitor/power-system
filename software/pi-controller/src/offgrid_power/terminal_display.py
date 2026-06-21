@@ -160,16 +160,14 @@ def render_snapshot(
     lines.append("")
     lines.extend(_temperature_lines(snapshot))
 
-    if snapshot.errors:
+    # One off-normal group (read failures + analyzed conditions/BMS faults share
+    # the same "something is wrong" meaning), to save vertical space.
+    off_normal = [*snapshot.errors, *snapshot.status_conditions]
+    if off_normal:
         lines.append("")
-        lines.append("Errors")
-        for error in snapshot.errors:
-            lines.append(f"  - {error}")
-    if snapshot.status_conditions:
-        lines.append("")
-        lines.append("Status Conditions")
-        for condition in snapshot.status_conditions:
-            lines.append(f"  - {condition}")
+        lines.append("Warnings and Faults")
+        for item in off_normal:
+            lines.append(f"  - {item}")
 
     return "\n".join(lines)
 
