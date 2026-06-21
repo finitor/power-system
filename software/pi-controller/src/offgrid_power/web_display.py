@@ -2132,13 +2132,8 @@ def _battery_section(snapshot: SupervisorSnapshot) -> list[str]:
             f"max {max_location} {extended.max_cell_voltage_v:.3f}V"
         )
         lines.append(_row("Cells", value))
-    if battery.status is not None:
-        status = battery.status
-        active_conditions = [*status.protection_flags, *status.alarm_flags]
-        if active_conditions:
-            lines.append(_row("Protection/Alarms", ", ".join(active_conditions)))
-        else:
-            lines.append(_row("Protection/Alarms", "none"))
+    # Protections/alarms surface in the Status Conditions group (off-normal
+    # status), not as a passive battery row.
     if battery.request_flags is not None:
         flags = battery.request_flags
         charge = "yes" if flags.charge_enable else "no"

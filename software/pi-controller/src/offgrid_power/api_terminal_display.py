@@ -297,9 +297,8 @@ def _battery_lines(battery: dict | None) -> list[str]:
         value += f"; max {max_location or '?'} {_fmt(max_cell, 3)}V"
         lines.append(_row("Cells", value))
 
-    protections = [*(battery.get("protection_flags") or []), *(battery.get("alarm_flags") or [])]
-    lines.append(_row("Protection/Alarms", "none" if not protections else ", ".join(protections)))
-
+    # Protections/alarms surface as Status Conditions (off-normal status), not a
+    # passive battery row.
     charge = _yes_no(battery.get("charge_enabled"))
     discharge = _yes_no(battery.get("discharge_enabled"))
     if charge is not None or discharge is not None:

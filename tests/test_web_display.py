@@ -415,7 +415,9 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 200)
         self.assertIn(b"<td>Allocation</td><td>released</td>", response.body)
 
-    def test_renders_bms_protections_and_alarms(self) -> None:
+    def test_renders_bms_protections_as_status_conditions(self) -> None:
+        # Protections/alarms appear in the Status Conditions group, not a passive
+        # battery "Protection/Alarms" row.
         snapshot = make_snapshot(
             battery=PylonCanSnapshot(
                 status=PylonStatus(
@@ -425,11 +427,15 @@ class WebDisplayTest(unittest.TestCase):
                     manufacturer_marker="PN",
                 )
             ),
+            status_conditions=["BMS protection: high cell voltage", "BMS alarm: charge over current"],
         )
 
         html = render_kindle_snapshot(snapshot)
 
-        self.assertIn("high cell voltage, charge over current", html)
+        self.assertIn("<h2>Status Conditions</h2>", html)
+        self.assertIn("BMS protection: high cell voltage", html)
+        self.assertIn("BMS alarm: charge over current", html)
+        self.assertNotIn("Protection/Alarms", html)
 
     def test_escapes_error_text(self) -> None:
         html = render_kindle_snapshot(make_snapshot(errors=["bad <device>"]))

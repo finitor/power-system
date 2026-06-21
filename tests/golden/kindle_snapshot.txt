@@ -104,7 +104,6 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <table>
 <tr><td>Flow</td><td>54.57V  2.6A  142W  charging</td></tr>
 <tr><td>Cells</td><td>Δ 14mV; min ? 3.404V; max ? 3.418V</td></tr>
-<tr><td>Protection/Alarms</td><td>none</td></tr>
 <tr><td>Enable</td><td>charge yes  discharge yes</td></tr>
 <tr><td>Limits</td><td>charge 58.4V/200.0A  discharge 200.0A</td></tr>
 </table>

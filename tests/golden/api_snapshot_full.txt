@@ -9,7 +9,6 @@ Load
 Battery Bank
   Flow                  53.04V  -1.2A  -64W  discharging
   Cells                 Δ 6mV; min 2-14 3.312V; max 2-10 3.318V
-  Protection/Alarms     none
   Enable                charge yes  discharge yes
   Limits                charge 58.4V/200.0A  discharge 200.0A
 

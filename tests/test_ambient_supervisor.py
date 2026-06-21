@@ -426,21 +426,51 @@ class TerminalDisplayTest(unittest.TestCase):
         self.assertIn("DFU in FS Mode serial 208634B94B45", rendered)
         self.assertIn("replug USB-CAN adapter", rendered)
 
-    def test_enumerates_battery_protections_and_alarms(self) -> None:
+    def test_battery_protections_render_as_status_conditions(self) -> None:
+        # Protections/alarms are surfaced as Status Conditions by the supervisor
+        # (severity-bearing), not as a passive battery row.
         snapshot = make_snapshot(
             battery=PylonCanSnapshot(
                 status=PylonStatus(
                     module_count=2,
-                    protection_flags=("high cell voltage", "low temperature"),
+                    protection_flags=("high cell voltage",),
                     alarm_flags=("charge over current",),
                     manufacturer_marker="PN",
                 )
             ),
+            status_conditions=["BMS protection: high cell voltage", "BMS alarm: charge over current"],
+            status_severity="ERROR",
         )
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("high cell voltage, low temperature, charge over current", rendered)
+        self.assertIn("Status Conditions", rendered)
+        self.assertIn("BMS protection: high cell voltage", rendered)
+        self.assertIn("BMS alarm: charge over current", rendered)
+        self.assertNotIn("Protection/Alarms", rendered)
+
+    def test_battery_protection_candidates_map_to_severity(self) -> None:
+        from offgrid_power.supervisor import (
+            STATUS_ERROR,
+            STATUS_WARNING,
+            battery_protection_status_condition_candidates,
+            status_condition_severity,
+        )
+
+        battery = PylonCanSnapshot(
+            status=PylonStatus(
+                module_count=2,
+                protection_flags=("cell/module over voltage",),
+                alarm_flags=("charge high current",),
+                manufacturer_marker="PN",
+            )
+        )
+        candidates = battery_protection_status_condition_candidates(battery)
+        by_text = {c.text: c.severity for c in candidates}
+        self.assertEqual(by_text["BMS protection: cell/module over voltage"], STATUS_ERROR)
+        self.assertEqual(by_text["BMS alarm: charge high current"], STATUS_WARNING)
+        # A protection drives overall severity to ERROR (-> /api/v1/health 503).
+        self.assertEqual(status_condition_severity(candidates), STATUS_ERROR)
 
     def test_hides_redundant_charge_controller_state(self) -> None:
         snapshot = make_snapshot(

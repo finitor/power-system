@@ -293,6 +293,7 @@ class Supervisor:
         battery = devices["battery"]
 
         status_condition_candidates = charge_limit_status_condition_candidates(classic_settings, battery)
+        status_condition_candidates.extend(battery_protection_status_condition_candidates(battery))
         status_condition_candidates.extend(stale_candidates)
         status_conditions = [candidate.text for candidate in status_condition_candidates]
         status_severity = status_condition_severity(status_condition_candidates)
@@ -504,6 +505,31 @@ def charge_limit_status_condition_candidates(
             )
         )
     return conditions
+
+
+def battery_protection_status_condition_candidates(
+    battery: PylonCanSnapshot | None,
+) -> list[StatusConditionCandidate]:
+    """BMS-reported protections and alarms as status conditions.
+
+    A *protection* means the BMS has tripped a cutoff (critical) -> ERROR; an
+    *alarm* is a pre-trip warning -> WARNING. Surfacing them here is what makes a
+    BMS fault drive overall severity, the /api/v1/health verdict, and every
+    display's Status Conditions group -- rather than only appearing as a passive
+    battery-telemetry row.
+    """
+    if battery is None or battery.status is None:
+        return []
+    candidates: list[StatusConditionCandidate] = []
+    for flag in battery.status.protection_flags:
+        candidates.append(
+            StatusConditionCandidate(f"battery.protection.{flag}", f"BMS protection: {flag}", severity=STATUS_ERROR)
+        )
+    for flag in battery.status.alarm_flags:
+        candidates.append(
+            StatusConditionCandidate(f"battery.alarm.{flag}", f"BMS alarm: {flag}", severity=STATUS_WARNING)
+        )
+    return candidates
 
 
 def status_condition_severity(candidates: list[StatusConditionCandidate]) -> str:

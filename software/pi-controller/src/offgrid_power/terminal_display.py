@@ -205,9 +205,8 @@ def _battery_bank_lines(snapshot: SupervisorSnapshot) -> list[str]:
         value += f"; min {min_location} {extended.min_cell_voltage_v:.3f}V"
         value += f"; max {max_location} {extended.max_cell_voltage_v:.3f}V"
         lines.append(_row("Cells", value))
-    if status is not None:
-        conditions = [*status.protection_flags, *status.alarm_flags]
-        lines.append(_row("Protection/Alarms", "none" if not conditions else ", ".join(conditions)))
+    # Protections/alarms are reported as Status Conditions (supervisor), not as a
+    # passive battery row, so they drive overall off-normal status.
     if requests is not None:
         charge = "yes" if requests.charge_enable else "no"
         discharge = "yes" if requests.discharge_enable else "no"
