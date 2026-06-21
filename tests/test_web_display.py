@@ -191,10 +191,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("LIVE_MS = 60000", html)
         self.assertIn("RETRY_MS = 5000", html)
         self.assertNotIn('http-equiv="refresh"', html)
-        self.assertIn('class="page-turn page-turn-left" href="/weather"', html)
+        self.assertIn('class="page-turn page-turn-left" href="/kindle/weather"', html)
         self.assertIn('class="page-turn page-turn-right" href="/kindle/details"', html)
         self.assertIn('class="page-turn page-turn-left" href="/kindle"', details_html)
-        self.assertIn('class="page-turn page-turn-right" href="/weather"', details_html)
+        self.assertIn('class="page-turn page-turn-right" href="/kindle/weather"', details_html)
 
     def test_kindle_snapshot_hides_untrusted_cc1_temperature_rows(self) -> None:
         snapshot = make_snapshot(
@@ -537,6 +537,24 @@ class WebDisplayTest(unittest.TestCase):
         details = route_display_request(snapshot, "/kindle/details", browser_ua).body
         self.assertIn(b"<h2>Charge Controller 0 (Classic)</h2>", main)
         self.assertIn(b"<h2>Temperatures</h2>", details)
+
+    def test_kindle_weather_path_always_serves_kindle_weather(self) -> None:
+        # /kindle/weather renders the Kindle weather page for any user-agent, so
+        # the whole Kindle interface is viewable/testable from a generic browser.
+        snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=80))
+        report = WeatherReport(
+            label="Cabin",
+            fetched_at=datetime(2026, 6, 21, 14, 0, tzinfo=timezone.utc),
+            data={"current": {"temperature_2m": 12.0, "weather_code": 1}},
+        )
+
+        response = route_display_request(
+            snapshot, "/kindle/weather", "Mozilla/5.0", weather_report=report
+        )
+
+        self.assertEqual(response.status.value, 200)
+        self.assertNotIn(b"<pre>", response.body)  # Kindle markup, not browser view
+        self.assertIn(b'class="page-turn page-turn-right" href="/kindle"', response.body)
 
     def test_routes_regular_browser_weather_to_dark_terminal_page(self) -> None:
         snapshot = make_snapshot(battery=make_battery_snapshot(soc_percent=92))

@@ -88,10 +88,10 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 </head>
 <body>
 <!-- offgrid-live -->
-<a class="page-turn page-turn-left" href="/weather">Weather</a>
+<a class="page-turn page-turn-left" href="/kindle/weather">Weather</a>
 <a class="page-turn page-turn-right" href="/kindle/details">More Power Info</a>
 <table class="summary-table">
-<tr><td class="soc-cell">SOC 97%</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>
+<tr><td class="soc-cell">SOC 97%</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>
 </table>
 <h2>Load</h2>
 <table>

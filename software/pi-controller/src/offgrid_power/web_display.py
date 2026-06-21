@@ -272,10 +272,10 @@ def render_kindle_snapshot(
         "</head>",
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
-        _page_turn_link("/weather", "left", "Weather"),
+        _page_turn_link("/kindle/weather", "left", "Weather"),
         _page_turn_link("/kindle/details", "right", "More Power Info"),
         '<table class="summary-table">',
-        f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
+        f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
         "</table>",
     ]
     lines.extend(_load_section(load_summary))
@@ -336,9 +336,9 @@ def render_kindle_details(
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle", "left", "Back to Power"),
-        _page_turn_link("/weather", "right", "Weather"),
+        _page_turn_link("/kindle/weather", "right", "Weather"),
         '<table class="summary-table">',
-        f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>',
+        f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
         "</table>",
     ]
     lines.extend(_inverter_charger_section(snapshot))
@@ -597,7 +597,9 @@ def _browser_display_css() -> str:
 # sources. Health is excluded so it stays a cheap liveness check.
 _SOURCE_REFRESH_PATHS = {"/api/v1/snapshot", "/", "/kindle", "/kindle/details", "/display"}
 # Weather views whose ?refresh=1 queues a background re-fetch of the forecast.
-_WEATHER_REFRESH_PATHS = {"/api/v1/weather", "/weather"}
+_WEATHER_REFRESH_PATHS = {"/api/v1/weather", "/weather", "/kindle/weather"}
+# Paths that need the weather forecast fetched in order to render.
+_WEATHER_VIEW_PATHS = {"/api/v1/weather", "/weather", "/kindle/weather"}
 
 
 def _has_refresh_flag(query: str) -> bool:
@@ -635,7 +637,7 @@ def route_display_request(
         return route_api_request(snapshot, parsed_path, load_summary=load_summary, allocation=allocation)
     if parsed_path == "/api/v1/weather":
         return _json_response(HTTPStatus.OK, weather_api_payload(weather_report))
-    if parsed_path not in {"/", "/kindle", "/kindle/details", "/display", "/weather", "/healthz"}:
+    if parsed_path not in {"/", "/kindle", "/kindle/details", "/kindle/weather", "/display", "/weather", "/healthz"}:
         return DisplayResponse(HTTPStatus.NOT_FOUND, "text/plain; charset=utf-8", b"not found\n")
     if parsed_path == "/healthz":
         # Liveness probe: reaching here means the supervisor produced a snapshot,
@@ -657,6 +659,9 @@ def route_display_request(
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     if parsed_path == "/kindle/details":
         html = render_kindle_details(snapshot, allocation=allocation)
+        return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
+    if parsed_path == "/kindle/weather":
+        html = render_kindle_weather(weather_api_payload(weather_report))
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
 
     # "/", "/display", "/weather": shared paths, negotiated by user-agent
@@ -1766,10 +1771,10 @@ def run_display_server(
                 weather_report = None
             elif load_summary_provider is not None:
                 load_summary = load_summary_provider()
-                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in {"/weather", "/api/v1/weather"} else None
+                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in _WEATHER_VIEW_PATHS else None
             else:
                 load_summary = load_tracker.update(snapshot)
-                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in {"/weather", "/api/v1/weather"} else None
+                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in _WEATHER_VIEW_PATHS else None
             allocation_path = urlparse(self.path).path
             allocation = (
                 allocation_provider()

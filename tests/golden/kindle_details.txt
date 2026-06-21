@@ -88,9 +88,9 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <body>
 <!-- offgrid-live -->
 <a class="page-turn page-turn-left" href="/kindle">Back to Power</a>
-<a class="page-turn page-turn-right" href="/weather">Weather</a>
+<a class="page-turn page-turn-right" href="/kindle/weather">Weather</a>
 <table class="summary-table">
-<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/weather">Weather</a></td></tr>
+<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>
 </table>
 <h2>Inverter/Charger</h2>
 <table>
