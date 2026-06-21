@@ -185,8 +185,11 @@ dropping below a burst, briefly leaking ~1 A into a full pack (well within BMS
 tolerance). Status quo accepted; it is just cosmetically noisy in the stage
 telemetry.
 
-A genuine hard-stop path is held **in reserve**: the Classic's **Aux 1** output
-could drive a contactor to cut PV/charge on command. Aux 1 is currently occupied
-by the **Whizbang Jr** battery-current shunt, which the BMS's own current/SOC
-telemetry has effectively obsoleted. Retiring the WBjr would free Aux 1 to gate
-the Classic for real — a future development, not currently planned.
+A genuine hard-stop path is held **in reserve**: the Classic's **Aux 1** can be
+configured as an **input** that gates charging — effectively a remote
+charge-enable, the Classic's analogue to the EPEver coil — driven by the
+supervisor (e.g. a Pi GPIO line). Aux 1 is currently occupied by the **Whizbang
+Jr** battery-current shunt, which the BMS's own current/SOC telemetry has
+effectively obsoleted. Retiring the WBjr would free Aux 1 to give the Classic a
+true supervisor-commanded on/off at CCL=0 — a future development, not currently
+planned.
