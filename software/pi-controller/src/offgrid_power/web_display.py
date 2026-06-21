@@ -95,6 +95,10 @@ def format_kindle_time(captured_at: datetime) -> str:
 
 KINDLE_RETRY_SECONDS = 5
 KINDLE_LIVE_SENTINEL = "offgrid-live"
+# How often the Kindle forces a full-screen flash to clear e-ink ghosting that
+# accumulates from in-place (partial-update) refreshes. A visible black blink, so
+# this is a comfort-vs-cruft tradeoff; tune against the actual panel.
+KINDLE_FULL_REFRESH_SECONDS = 900
 
 
 def _kindle_refresh_script(refresh_seconds: int) -> str:
@@ -115,16 +119,40 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
     is seconds, not a full slow cycle. The injected stand-by page's own
     <meta refresh> is inert (it is swapped in as body content, never
     navigated to), so this timer is the only thing that drives recovery.
+
+    Periodically (FLASH_MS) it also paints the whole screen black then white to
+    force a full e-ink waveform refresh, clearing the grey ghosting that
+    partial (innerHTML-swap) updates accumulate. The overlay is sized by padding
+    (a property this 2011 WebKit honors) to the measured viewport height.
     """
     return (
         '<script type="text/javascript">\n'
         "(function() {\n"
         f"  var LIVE_MS = {refresh_seconds * 1000}, RETRY_MS = {KINDLE_RETRY_SECONDS * 1000};\n"
+        f"  var FLASH_MS = {KINDLE_FULL_REFRESH_SECONDS * 1000};\n"
         f"  var SENTINEL = '{KINDLE_LIVE_SENTINEL}';\n"
+        "  var lastFlash = (new Date()).getTime();\n"
+        "  // Full-screen black->white flash forces the panel to do a full e-ink\n"
+        "  // refresh, clearing accumulated ghosting. Overlay height comes from\n"
+        "  // padding (honored here) set to the measured viewport.\n"
+        "  function fullRefresh() {\n"
+        "    var vh = (document.documentElement && document.documentElement.clientHeight) || 800;\n"
+        "    var o = document.createElement('div');\n"
+        "    o.style.background = '#000';\n"
+        "    o.style.paddingTop = vh + 'px';\n"
+        "    document.body.insertBefore(o, document.body.firstChild);\n"
+        "    o.offsetHeight;\n"  # force the black paint
+        "    setTimeout(function() {\n"
+        "      o.style.background = '#fff';\n"
+        "      o.offsetHeight;\n"  # force the white paint
+        "      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 400);\n"
+        "    }, 600);\n"
+        "  }\n"
         "  function schedule(ms) { setTimeout(tick, ms); }\n"
         "  function tick() {\n"
+        "    var nowMs = (new Date()).getTime();\n"
         "    var x = new XMLHttpRequest();\n"
-        "    var url = window.location.pathname + '?k=' + (new Date()).getTime();\n"
+        "    var url = window.location.pathname + '?k=' + nowMs;\n"
         "    x.open('GET', url, true);\n"
         "    x.onreadystatechange = function() {\n"
         "      if (x.readyState !== 4) { return; }\n"
@@ -140,6 +168,7 @@ def _kindle_refresh_script(refresh_seconds: int) -> str:
         "      var j = t.lastIndexOf(bc);\n"
         "      if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }\n"
         "      document.body.innerHTML = t.substring(i + 1, j);\n"
+        "      if (nowMs - lastFlash >= FLASH_MS) { lastFlash = nowMs; fullRefresh(); }\n"
         "      schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);\n"
         "    };\n"
         "    x.onerror = function() { schedule(RETRY_MS); };\n"

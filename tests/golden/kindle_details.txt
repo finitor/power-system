@@ -5,11 +5,30 @@
 <script type="text/javascript">
 (function() {
   var LIVE_MS = 60000, RETRY_MS = 5000;
+  var FLASH_MS = 900000;
   var SENTINEL = 'offgrid-live';
+  var lastFlash = (new Date()).getTime();
+  // Full-screen black->white flash forces the panel to do a full e-ink
+  // refresh, clearing accumulated ghosting. Overlay height comes from
+  // padding (honored here) set to the measured viewport.
+  function fullRefresh() {
+    var vh = (document.documentElement && document.documentElement.clientHeight) || 800;
+    var o = document.createElement('div');
+    o.style.background = '#000';
+    o.style.paddingTop = vh + 'px';
+    document.body.insertBefore(o, document.body.firstChild);
+    o.offsetHeight;
+    setTimeout(function() {
+      o.style.background = '#fff';
+      o.offsetHeight;
+      setTimeout(function() { if (o.parentNode) { o.parentNode.removeChild(o); } }, 400);
+    }, 600);
+  }
   function schedule(ms) { setTimeout(tick, ms); }
   function tick() {
+    var nowMs = (new Date()).getTime();
     var x = new XMLHttpRequest();
-    var url = window.location.pathname + '?k=' + (new Date()).getTime();
+    var url = window.location.pathname + '?k=' + nowMs;
     x.open('GET', url, true);
     x.onreadystatechange = function() {
       if (x.readyState !== 4) { return; }
@@ -25,6 +44,7 @@
       var j = t.lastIndexOf(bc);
       if (i < 0 || j < 0 || j <= i) { schedule(RETRY_MS); return; }
       document.body.innerHTML = t.substring(i + 1, j);
+      if (nowMs - lastFlash >= FLASH_MS) { lastFlash = nowMs; fullRefresh(); }
       schedule(t.indexOf(SENTINEL) >= 0 ? LIVE_MS : RETRY_MS);
     };
     x.onerror = function() { schedule(RETRY_MS); };
