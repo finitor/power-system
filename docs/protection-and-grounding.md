@@ -145,10 +145,29 @@ continuous output **and** never above the conductor's ampacity.
 | Leg | Device | Direction handling | Status / notes |
 | --- | --- | --- | --- |
 | Battery ↔ MS4448 inverter | **175 A Class-T** fuse, 4/0 cable | bidirectional (fuse is direction-agnostic; manual notes it "can be energized from both directions") | per Table 2-3; confirm/install |
-| Battery ↔ EPEver | **Heschen 2-pole 125 A** (unidirectional), wired **series-opposed** on the positive | bidirectional via the §1 trick | **on order, to install.** Confirm 125 A coordinates with the EPEver's max output **and** that the battery↔EPEver conductor is rated ≥125 A (a breaker can't protect a wire smaller than its rating) |
+| Battery ↔ EPEver | **TBD — source-dependent** (see note) | bidirectional required | EPEver outputs up to 100 A, but its battery **terminal barely accepts bare 4 AWG**, capping the leg at ~85–95 A. The Heschen 2P 125 A is **rejected** — its terminals (max 16 mm² ≈ 6 AWG) can't even take 4 AWG, and a 125 A trip wouldn't protect 4/6 AWG wire. |
 | Battery ↔ Classic | existing **100 A 2-pole disconnect** | confirm: a load-break DC *disconnect* is bidirectional, but verify whether it also provides overcurrent protection — if it's disconnect-only, add a bidirectional OCPD | confirm |
 | PV array 0 → Classic | existing **20 A 2-pole disconnect** (PV side) | PV-side, may be polarized | confirm rating |
 | Other DC legs (Orion 48/12, heater) | per [wiring.md](wiring.md) | — | heater on a 10 A DC breaker; confirm bidirectionality where on a battery leg |
+
+**EPEver-leg options (final choice depends on what can be sourced in time).** The
+leg is bounded by the EPEver's battery terminal (barely accepts bare 4 AWG → ~85–95 A),
+so wire it in **4 AWG** and **cap the EPEver BAT Max Charging Current (reg `0x9013`)
+to ~60 A** so continuous × 1.25 stays under an 80 A device. Single-pole on the
+positive; the negative stays unbroken (GFP reference). Bidirectional ~80 A
+protection, in order of preference by what's available:
+
+- **A. Class-T fuse + DC disconnect.** An **80 A Class-T** fuse (~20 kA AIC clears
+  the battery's huge short-circuit current) plus a **DC-rated load-break
+  disconnect** for isolation. The disconnect only makes/breaks operating current
+  (the fuse clears faults), so no high AIC needed — but it must be: voltage rating
+  **> 58.4 V** (most marine 48 V battery switches are under-rated for a full LiFePO4),
+  ~100 A, load-break (IEC 60947-3 DC-21+), 4 AWG lugs. A disconnect switch is
+  inherently bidirectional. Layout: battery + → fuse (close to battery) →
+  disconnect → EPEver +.
+- **B. MidNite MNEDC80.** Hydraulic-magnetic breaker — natively bidirectional (no
+  series-opposed trick needed), serves as its own disconnect, ecosystem-native to
+  the Classic, 4 AWG-capable.
 
 ## 8. Device / firmware notes
 
