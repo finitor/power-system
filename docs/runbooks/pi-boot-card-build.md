@@ -176,7 +176,12 @@ and a supervisor deploy.
    locale, timezone, and network in its advanced options before writing.
    **Decline Raspberry Pi Connect** when prompted — it is not needed.
 
-4. Boot the Pi from the new card and confirm SSH access by hostname and IP.
+4. Boot the Pi from the new card and confirm SSH access. `blueberry.local` may
+   not resolve immediately — use the IP address from `arp -a | grep b8:27` on
+   the Mac. Once connected, clear the stale host key on the Mac:
+   `ssh-keygen -R blueberry.local`
+   (Claude handles this when in session; the new card generates fresh SSH host
+   keys so the Mac's `known_hosts` will otherwise block `blueberry.local`.)
 
 5. Copy the backup archive from the Mac to the new Pi:
    `scp ~/offgrid-backups/<archive-filename>.tar.gz tvetter@<new-pi-ip>:~`
@@ -368,7 +373,12 @@ Once `uname -m` reports `aarch64` and telemetry is healthy:
   or serving history charts without the workstation; set `memory_limit` on a
   1 GB host.
 - Codex CLI experiment, per the secondary goal.
-- **Claude CLI setup:** install Claude CLI for on-Pi use. Steps not yet documented — Claude runs SSH commands directly from the Mac session, so on-Pi CLI is not required for the bootstrap flow.
+- ~~**Claude CLI setup**~~ **DONE 2026-06-22:** `nodejs` and `npm` added to
+  the `install-pi.sh` apt package list; `@anthropic-ai/claude-code` installed
+  globally via `sudo npm install -g` after deploy. Auth state lives in
+  `~/.claude.json` — now included in the backup/restore manifest so it
+  survives future card swaps without re-authenticating. If no auth was
+  restored, run `claude` on the Pi and follow the browser flow once.
 
 ## Rollback
 
@@ -394,10 +404,28 @@ at least one deploy, one reboot, and a representative telemetry run.
   venv, Tailscale, and runs deploy.
 - `scripts/health-check.sh` — runs the validation checks above.
 
+## Card Selection
+
+For indefinite operation until a high-endurance card is acquired: prefer the
+card currently in service over swapping back to the rollback. Both cards in
+rotation as of 2026-06-22 are mainstream consumer cards — neither is ideal for
+24/7 embedded duty — but the telemetry workload (writes) lives on the external
+SSD, so the boot card sees mostly reads. Swap only if the in-service card shows
+filesystem errors or read errors in `dmesg`. When acquiring a replacement,
+prefer a high-endurance UHS-I U3/A2 card such as the SanDisk
+`SDSQQNR-128G-GN6IA`; 64 GB is sufficient given telemetry is off-card.
+
+Benchmark both cards at each build with:
+`sudo dd if=/dev/mmcblk0 of=/dev/null bs=1M count=64`
+and record the read speed in the build history entry.
+
+| Date | Card | Read speed | Notes |
+|---|---|---|---|
+| 2026-06-13 | SP 3D NAND 32 GB | 23.8 MB/s | First 64-bit build; now rollback |
+| 2026-06-22 | Samsung EVO Select 64 GB (`GC2QT`) | 18.2 MB/s | 8 MB/s write; in service |
+
 ## Open Questions
 
 - Which exact Raspberry Pi OS Lite 64-bit image should be pinned as the
   build baseline? Record the image version in `docs/maintenance.md` after the
   next build.
-- Does local Codex CLI or Claude CLI need authenticated interactive use on
-  the Pi, or only occasional CLI runs over SSH?
