@@ -8,6 +8,39 @@ while the supervisor is offline.
 
 ## Build History
 
+**2026-06-22 — second build; Samsung EVO Select 64 GB (product `GC2QT`).**
+Card flashed and in service as `blueberry`. The SP 3D NAND 32 GB card is the
+physical rollback.
+
+Card speeds (measured): SP 3D NAND 32 GB — 23.8 MB/s read; Samsung EVO Select
+64 GB — 8 MB/s write / 18.2 MB/s read. For future builds prefer a
+high-endurance U3/A2 card; the EVO Select is a mainstream consumer card and
+notably slower on writes.
+
+Friction captured during this build and fixed in the same session:
+
+- `backup-config.sh` must run on the Pi via SSH, not locally on the Mac.
+  Running it locally produces a useless archive (wrong hostname, no Pi config).
+  Claude runs this step directly when in session.
+- After taking the Pi backup, SCP it to the Mac before swapping the card.
+  The old card's filesystem is gone once you boot the new one. The runbook
+  was missing this step (now step 1b below).
+- `git` is not installed on a fresh Raspberry Pi OS Lite image.
+  `install-pi.sh` now lists it in the apt block (it was already there; no
+  change needed — but worth noting so the operator doesn't hand-install it).
+- `install-pi.sh` called `usermod -aG offgrid` before `deploy.sh` created
+  the `offgrid` group. Fixed: `usermod` now runs after `deploy.sh`.
+- `restore-config.sh` restored `~/.local/bin/` files via `sudo cp -a`,
+  leaving the parent directory owned by root. `deploy.sh` then couldn't
+  overwrite the files. Fixed: `restore-config.sh` now `chown`s `~/.local`
+  back to the operator user after restoring home files.
+- No `~/.ssh/config` existed on the old Pi, so `git pull` failed after
+  the clone (git didn't know to use `blueberry_deploy` for GitHub). Fixed:
+  `restore-config.sh` now writes `~/.ssh/config` if the deploy key is
+  present but no config file exists.
+- Decline **Raspberry Pi Connect** in the Imager setup flow — it is not
+  needed and adds unnecessary background services.
+
 **2026-06-13 — first 64-bit build.** Dry run on the salvaged 32 GB microSD;
 card now in service as `blueberry`. The former 64 GB Samsung card is the
 physical rollback.
@@ -125,9 +158,15 @@ and a supervisor deploy.
 
 ## High-Level Procedure
 
-1. Take a fresh backup from the running Pi before touching anything:
-   `cd ~/power-system && scripts/backup-config.sh`
-   Note the archive path printed at the end — you will use it in steps 5–8.
+1. Take a fresh backup from the running Pi before touching anything.
+   Claude will run this directly when in session:
+   `ssh tvetter@blueberry.local 'cd power-system && bash scripts/backup-config.sh'`
+   Note the archive path printed at the end (e.g.
+   `/home/tvetter/offgrid-backups/offgrid-blueberry-<stamp>.tar.gz`).
+
+1b. SCP the backup archive from the Pi to the Mac **before** swapping the
+    card — the old card's filesystem is gone once the new card boots:
+    `scp tvetter@blueberry.local:<archive-path> ~/offgrid-backups/`
 
 2. Leave the current working microSD card as the physical rollback; do not
    erase it until the new card has passed all health checks.
@@ -135,11 +174,13 @@ and a supervisor deploy.
 3. Flash the target microSD card with Raspberry Pi OS Lite 64-bit. Use
    Raspberry Pi Imager; set the hostname (`blueberry`), your SSH public key,
    locale, timezone, and network in its advanced options before writing.
+   **Decline Raspberry Pi Connect** when prompted — it is not needed.
 
 4. Boot the Pi from the new card and confirm SSH access by hostname and IP.
 
-5. Copy the backup archive to the new Pi:
-   `scp <archive> <user>@blueberry.local:~`
+5. Copy the backup archive from the Mac to the new Pi:
+   `scp ~/offgrid-backups/<archive-filename>.tar.gz tvetter@<new-pi-ip>:~`
+   Use the IP address until mDNS is up (`blueberry.local` may not resolve yet).
 
 6. Extract SSH keys from the archive so the git clone can authenticate:
    ```sh
@@ -327,7 +368,7 @@ Once `uname -m` reports `aarch64` and telemetry is healthy:
   or serving history charts without the workstation; set `memory_limit` on a
   1 GB host.
 - Codex CLI experiment, per the secondary goal.
-- **Claude CLI setup:** install Claude CLI for on-Pi use. Steps not yet documented — add to this runbook after next install.
+- **Claude CLI setup:** install Claude CLI for on-Pi use. Steps not yet documented — Claude runs SSH commands directly from the Mac session, so on-Pi CLI is not required for the bootstrap flow.
 
 ## Rollback
 

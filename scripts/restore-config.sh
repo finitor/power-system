@@ -148,10 +148,21 @@ if [ -e "${ROOT}/home/offgrid-user/.ssh" ]; then
         rsync -a "${ROOT}/home/offgrid-user/.ssh/" "${HOME}/.ssh/"
         chmod 700 "${HOME}/.ssh"
         find "${HOME}/.ssh" -type f -exec chmod 600 {} \;
+        # Ensure GitHub uses the deploy key; write config if none was in the backup.
+        if [ -f "${HOME}/.ssh/blueberry_deploy" ] && [ ! -f "${HOME}/.ssh/config" ]; then
+            cat > "${HOME}/.ssh/config" <<'SSHEOF'
+Host github.com
+    IdentityFile ~/.ssh/blueberry_deploy
+    IdentitiesOnly yes
+SSHEOF
+            chmod 600 "${HOME}/.ssh/config"
+            echo "wrote ~/.ssh/config for github.com -> blueberry_deploy"
+        fi
     fi
 fi
 
 if [ "${APPLY}" -eq 1 ]; then
+    chown -R "$(id -u):$(id -g)" "${HOME}/.local" "${HOME}/.config" "${HOME}/.profile" 2>/dev/null || true
     sudo chown -R "$(id -u):$(id -g)" /srv/telemetry /var/lib/offgrid
     if [ -d /var/lib/tailscale ]; then
         sudo chown -R root:root /var/lib/tailscale
