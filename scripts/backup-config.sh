@@ -65,6 +65,7 @@ copy_if_exists "${HOME}/.local/state/offgrid/console-font-index" home/offgrid-us
 copy_if_exists "${HOME}/.profile" home/offgrid-user/.profile
 copy_if_exists "${HOME}/.config/autostart/offgrid-console.desktop" home/offgrid-user/.config/autostart/offgrid-console.desktop
 copy_if_exists "${HOME}/.ssh" home/offgrid-user/.ssh
+copy_if_exists "${HOME}/.claude.json" home/offgrid-user/.claude.json
 copy_if_exists /srv/telemetry srv/telemetry
 copy_if_exists /var/lib/offgrid var/lib/offgrid
 copy_if_exists /var/lib/tailscale var/lib/tailscale

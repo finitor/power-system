@@ -136,6 +136,7 @@ restore_path home/offgrid-user/.local/bin/offgrid-tty-console "${HOME}/.local/bi
 restore_path home/offgrid-user/.local/bin/offgrid-console-font "${HOME}/.local/bin/offgrid-console-font" 755
 restore_path home/offgrid-user/.local/state/offgrid/console-font-index "${HOME}/.local/state/offgrid/console-font-index" 644
 restore_path home/offgrid-user/.profile "${HOME}/.profile" 644
+restore_path home/offgrid-user/.claude.json "${HOME}/.claude.json" 600
 restore_path home/offgrid-user/.config/autostart/offgrid-console.desktop "${HOME}/.config/autostart/offgrid-console.desktop" 644
 restore_tree srv/telemetry /srv/telemetry
 restore_tree var/lib/offgrid /var/lib/offgrid
