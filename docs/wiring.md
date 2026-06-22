@@ -11,13 +11,19 @@ Use this file as the canonical wiring record. Update it whenever a physical conn
 
 ## Power Wiring
 
+Overcurrent-protection and grounding rationale (bidirectional battery-leg
+breakers, Classic-GFP ground reference, conductor sizing) lives in
+[DC Protection and Grounding](protection-and-grounding.md). Battery legs must use
+**bidirectional** breakers (or Class-T fuses).
+
 | From | To | Voltage | Cable Gauge | Fuse / Breaker | Notes |
 |---|---|---:|---|---|---|
 | Eco-Worthy Cubix 100 battery 1 | 48 V DC bus / battery combiner | 48 V nominal | TBD | TBD | Parallel bank is wired diagonally/cross-connected: main positive is taken from one battery end of the parallel set and main negative from the opposite battery end. This was corrected on 2026-06-03 to improve current sharing and reduce pack drift. Confirm cable gauge, equal-length interconnects, torque, and per-battery protection. |
 | Eco-Worthy Cubix 100 battery 2 | 48 V DC bus / battery combiner | 48 V nominal | TBD | TBD | Parallel bank is wired diagonally/cross-connected with the opposite main takeoff from battery 1. Do not connect both main positive and main negative to the same battery in normal operation. Confirm manufacturer guidance and document final cable lengths. |
 | PV array 0 | Midnite Solar Classic 200 PV input | PV DC | TBD | Existing 20 A 2-pole disconnect | Existing array-side disconnect; confirm DC/PV voltage rating, load-break rating, and conductor ampacity before reconfiguring array 0 |
 | 48 V DC bus | Midnite Solar Classic 200 battery terminals | 48 V nominal | TBD | Existing 100 A 2-pole disconnect | Solar charge output to battery bank; confirm DC voltage rating, polarity/wiring, and conductor ampacity |
-| 48 V DC bus | MagnaSine 4448 DC input | 48 V nominal | TBD | TBD | High-current inverter feed; document disconnect and overcurrent protection |
+| 48 V DC bus | MagnaSine 4448 DC input | 48 V nominal | 4/0 | 175 A Class-T (in +) | High-current inverter feed; Class-T is bidirectional/DC-rated. Per MS4448 Table 2-3. See [protection-and-grounding.md](protection-and-grounding.md) |
+| 48 V DC bus | EPEver TEP charge controller | 48 V nominal | TBD | Heschen 2-pole 125 A, series-opposed (in +) | Polarized 2-pole wired series-opposed for bidirectional protection; confirm 125 A coordinates with EPEver output and wire ampacity. See [protection-and-grounding.md](protection-and-grounding.md) |
 | 48 V DC bus | Victron Orion 48/12 DC-DC converter input | 48 V nominal | TBD | TBD DC fuse/breaker | Supplies 12 V control bus; confirm exact Orion model and input fuse size |
 | Victron Orion 12 V output | 12 V control bus | 12 V nominal | TBD | TBD DC fuse/breaker | Feeds thermostat, relay/driver boards, SSR control, fan/damper, and possible powered USB hub |
 | 48 V DC bus | Battery ceramic heater | 48 V nominal | TBD | 10 A DC breaker / manual disconnect | Through DC SSR and one-shot thermal fuse; heater is about 200 W / 4.2 A |

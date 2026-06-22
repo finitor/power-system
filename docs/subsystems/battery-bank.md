@@ -98,30 +98,15 @@ Document or confirm:
 
 ## Grounding And Bonding
 
-Reference: MagnaSine **MS4448PAE** installation manual §2.2 (`manuals/solar/Magnum-Inverter-Charger-MS4448PAE.pdf`).
+System-wide grounding, bonding, and overcurrent protection now live in
+**[DC Protection and Grounding](../protection-and-grounding.md)** — it is a
+cross-cutting concern (battery, controllers, inverter, AC), not battery-specific.
 
-**Current state (2026-06): the DC negative is NOT bonded to ground — the system runs floating.** This is out of spec for the MS4448, which is chassis-isolated and includes **no internal system bond** (manual §2.2.2: *"does not include an internal bond between the Grounded Conductor (AC neutral / DC negative) and the equipment grounding terminals … usually done in the main distribution panel"*). Grounding is the installer's responsibility, so both bonds must be made externally. Grounding is invisible in normal operation and only acts during a fault; "behaving as expected" is not evidence it is correct.
-
-**Single-point rule (manual §2.2.2):** exactly **one** point in each electrical system where the grounded conductor ties to ground — one AC neutral-ground bond, one DC negative-ground bond. Multiple bonds create parallel current paths (a safety hazard, and a noise source relevant to the Magnum RS485 link).
-
-Intended scheme (single shared ground bus → grounding electrode/rod; ~Method 2):
-
-| Conductor | Run | Carries fault current? | Size |
-| --- | --- | --- | --- |
-| Battery cable | battery ↔ inverter | — (operating current) | **4/0** installed (oversized; Table 2-3 base is #2/0 for ≤5 ft) |
-| DC OCPD | in the **positive** line | n/a | **175 A Class-T**, DC-rated, **bidirectional** (manual: fuse "can be energized from both directions") |
-| DC SBJ (system bond) | DC-negative bus → ground bus | **yes** | **#2 min; run #2/0–4/0 to match cable** |
-| DC EGC | inverter case → ground bus | **yes** | **#4** (base #6 per Table 2-2 @ 175 A, upsized proportionally because the cable is oversized to 4/0) |
-| AC SBJ (system bond) | neutral bus → ground bus at the **main AC panel** | **yes** | **#8** (Table 2-1, by AC hot conductor) |
-| GEC | ground bus → earth rod | **no** (earth reference only) | **#6** — capped regardless of cable size; the rod is a voltage reference, not a fault path |
-
-Principle that sets the gauges: every conductor that can carry **fault current** (both SBJs, both EGCs) is sized to the fault it must survive until the OCPD clears, and scales up when the power cable is oversized; the **GEC to the rod never scales** (fault current returns through copper, not earth). The DC OCPD and the bidirectional-fuse requirement also confirm the separate finding that **battery-leg breakers must be bidirectional** (polarized DC MCBs like the TOMZN TOB1Z are wrong here) — see [journal 2026-06-11-a](../journal/2026-06-11-a.md).
-
-**Generator/shore caveat:** the MS4448 has **no internal neutral-ground transfer relay**, so the AC bond at the main panel is permanent. A generator with its own **bonded** neutral would create a second N-G bond during pass-through (parallel neutral paths). Use a **floating-neutral generator** (or unbond it). Confirm the genset's neutral configuration before finalizing.
-
-Equipment grounding (all chassis — inverter, both charge controllers, battery enclosure metal, PV frames — to the ground bus and out to the rod) is required regardless of the bond decision; the inverter has a dedicated DC equipment-ground terminal for this.
-
-Gauges above are derived from the manual's NEC tables; **confirm against the current CEC** (this is a Canadian install) before committing copper. The principle is stable; a gauge step may differ.
+Battery-specific takeaways: the DC negative is **functionally grounded through the
+Classic's internal GFP** (no hard system-bonding jumper — that would defeat the
+GFP), and any breaker on a battery leg must be **bidirectional** (or a Class-T
+fuse). The battery-to-inverter cable is **4/0**; per-pack overcurrent protection
+and the main DC disconnect are still to be confirmed (below).
 
 ## Open Questions
 
