@@ -340,3 +340,21 @@ decisions to the cell datasheet, not forum lore.
   cool, low-rate, well-balanced, a moderate full charge cleanly terminated by the
   BMS, with the 100% touch earning SOC calibration + balancing. See the LFP
   longevity section above.
+- 2026-06-22 — Second 100% ascent (SOC 87→100% over ~70 min), reviewed at 60 s
+  sampling. Reproduced the prior result: **peak cell 3.564 V** (~86 mV below the
+  3.65 V protection), **peak delta 37 mV** at 97% that narrowed to ~26 mV while
+  holding (passive balancing pulling laggards up) and **collapsed to ~5 mV within
+  minutes of cutoff** — confirming the spread is charge polarization on the knee,
+  not real imbalance. Pack peaked 56.8 V vs CVL 58.4 V; the 57 V controller
+  setpoint, not the BMS, was the ceiling (3.564 × 16 ≈ 57.0 V). Cells 15–16 °C, no
+  protection/alarm flags, clean CCL→0 / charge_enable→0 SOC cutoff at 100%. The
+  BMS stepped CCL 200→100→40→20→0; the allocator followed.
+  - **Benign taper quirk noted:** near the top the BMS CCL *limit-cycles*
+    (observed 40→200→40 over ~5 min, ~10:43–10:48) as its voltage-threshold logic
+    fights the controllers' voltage regulation. The allocator chases that CCL
+    signal, but because charge is **voltage-limited** there (controllers held at
+    57 V), the swing produced no real current surge (~3–4 A through the re-open).
+    Harmless *only because* voltage-limiting dominates — a higher setpoint or a
+    lower pack at re-open could turn CCL hunting into current surges. Same
+    limit-cycle family as the Classic Bulk↔Resting hunting. Keep the setpoint
+    where it is.
