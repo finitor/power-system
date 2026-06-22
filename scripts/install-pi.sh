@@ -42,9 +42,6 @@ mkdir -p "${HOME}/.local/bin" "${HOME}/.config/autostart"
 # Ownership is handled by deploy.sh (service account) and the supervisor
 # unit's ExecStartPre chown; bootstrap only needs the directories to exist.
 sudo mkdir -p /srv/telemetry/data /srv/telemetry/logs /var/lib/offgrid
-# Allow the operator to create SQLite lock files without immutable=1 workaround.
-sudo chmod g+w /srv/telemetry/data
-sudo usermod -aG offgrid "$USER"
 
 echo "== python environment =="
 if [ ! -d "${VENV}" ]; then
@@ -58,3 +55,7 @@ fi
 
 echo "== deploy =="
 "${PROJECT_DIR}/scripts/deploy.sh"
+# offgrid group is created by deploy.sh (adduser --system --group); add operator now.
+sudo usermod -aG offgrid "$USER"
+# Allow the operator to create SQLite lock files without immutable=1 workaround.
+sudo chmod g+w /srv/telemetry/data
