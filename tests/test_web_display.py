@@ -24,6 +24,7 @@ from offgrid_power.web_display import (
     render_kindle_details,
     render_kindle_snapshot,
     render_kindle_weather,
+    _protection_text,
     render_snapshot_unavailable,
     route_control_request,
     route_display_request,
@@ -325,6 +326,29 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertIn("Weather service has been unreachable since", html)
         self.assertNotIn("12.4C", html)
+
+    def test_protection_text_helper(self) -> None:
+        self.assertIsNone(_protection_text(None, None))
+        self.assertEqual(_protection_text(True, False), "GFP on  Arc off")
+        self.assertEqual(_protection_text(True, True), "GFP on  Arc on")
+
+    def test_renders_classic_protection_row_when_enable_bits_present(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(
+                ground_fault_protection_enabled=True,
+                arc_fault_protection_enabled=False,
+            ),
+        )
+
+        html = render_kindle_snapshot(snapshot)
+
+        self.assertIn("Protection", html)
+        self.assertIn("GFP on  Arc off", html)
+
+    def test_omits_protection_row_when_enable_bits_unknown(self) -> None:
+        # EPEver / unread Classic -> no protection bits -> no row (no noise).
+        html = render_kindle_snapshot(make_snapshot(classic=make_classic_telemetry()))
+        self.assertNotIn("Protection", html)
 
     def test_renders_redundant_charge_controller_state_only_once(self) -> None:
         snapshot = make_snapshot(

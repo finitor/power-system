@@ -1579,6 +1579,14 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
             "state": classic.state,
             "info_flags": classic.info_flags,
             "active_flags": list(classic.active_flags),
+            "protection_enabled": {
+                "ground_fault": classic.ground_fault_protection_enabled,
+                "arc_fault": classic.arc_fault_protection_enabled,
+            },
+            "protection_text": _protection_text(
+                classic.ground_fault_protection_enabled,
+                classic.arc_fault_protection_enabled,
+            ),
             "temperatures_c": {
                 "battery": classic.battery_temp_c,
                 "fet": classic.fet_temp_c,
@@ -1933,6 +1941,9 @@ def _controller_section_lines(
 
         stage = NormalizedStage.from_dict(controller.get("charge_stage"))
         lines.append(_row("Charge Status", stage.render(controller.get("state"))))
+        protection = controller.get("protection_text")
+        if protection:
+            lines.append(_row("Protection", protection))
 
         allocation_text = _allocation_target_text(allocation_target)
         if allocation_text is not None:
@@ -1969,6 +1980,16 @@ def _charge_controller_short_name(controller: dict) -> str:
     if short_name:
         return short_name
     return " ".join(str(part).strip() for part in [device.get("vendor"), device.get("model")] if part)
+
+
+def _protection_text(ground_fault: bool | None, arc_fault: bool | None) -> str | None:
+    """Compact GFP / arc-fault armed-state line for the displays.
+
+    None when neither bit was read (e.g. EPEver, which has no such config).
+    """
+    if ground_fault is None and arc_fault is None:
+        return None
+    return f"GFP {'on' if ground_fault else 'off'}  Arc {'on' if arc_fault else 'off'}"
 
 
 def _charge_controller_settings_text(settings: dict | None) -> str | None:

@@ -106,6 +106,20 @@ class ClassicDecodeTest(unittest.TestCase):
         self.assertTrue(telemetry.is_hypervoc)
         self.assertEqual(telemetry.last_voc_v, 201.0)
         self.assertEqual(telemetry.highest_input_voltage_v, 218.0)
+        # No enable_flags supplied -> protection-enable state is unknown (None).
+        self.assertIsNone(telemetry.ground_fault_protection_enabled)
+        self.assertIsNone(telemetry.arc_fault_protection_enabled)
+
+    def test_decode_live_decodes_protection_enable_bits(self) -> None:
+        block = RegisterBlock(start_register=4115, values=[0] * 20)
+        # EnableFlagsBits (reg 4187) 0x0041 == GroundFaultEn | OCP, ArcFaultEn clear
+        # -- this is the live state observed on the bench Classic.
+        telemetry = decode_live(block, enable_flags=0x0041)
+        self.assertTrue(telemetry.ground_fault_protection_enabled)
+        self.assertFalse(telemetry.arc_fault_protection_enabled)
+        # With the arc bit set:
+        telemetry_on = decode_live(block, enable_flags=0x0043)
+        self.assertTrue(telemetry_on.arc_fault_protection_enabled)
 
     def test_decode_settings_registers_from_observed_classic_sample(self) -> None:
         block = RegisterBlock(

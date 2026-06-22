@@ -115,6 +115,9 @@ class ClassicTelemetry:
     battery_temp_c: float
     fet_temp_c: float
     pcb_temp_c: float
+    # Protection-enable bits from EnableFlagsBits (reg 4187); None when not read.
+    ground_fault_protection_enabled: bool | None = None
+    arc_fault_protection_enabled: bool | None = None
 
     @property
     def is_hypervoc(self) -> bool:
@@ -161,7 +164,16 @@ def flag_names(value: int) -> list[str]:
     return [name for bit, name in INFO_FLAGS.items() if value & bit]
 
 
-def decode_live(block: RegisterBlock, captured_at: datetime | None = None) -> ClassicTelemetry:
+# EnableFlagsBits (reg 4187) protection-enable bit masks.
+GROUND_FAULT_ENABLE_FLAG = 0x0001
+ARC_FAULT_ENABLE_FLAG = 0x0002
+
+
+def decode_live(
+    block: RegisterBlock,
+    captured_at: datetime | None = None,
+    enable_flags: int | None = None,
+) -> ClassicTelemetry:
     combo_stage = block.get(4120)
     charge_stage_code = msb(combo_stage)
     state_code = lsb(combo_stage)
@@ -189,6 +201,12 @@ def decode_live(block: RegisterBlock, captured_at: datetime | None = None) -> Cl
         battery_temp_c=block.get(4132) / 10,
         fet_temp_c=block.get(4133) / 10,
         pcb_temp_c=block.get(4134) / 10,
+        ground_fault_protection_enabled=(
+            None if enable_flags is None else bool(enable_flags & GROUND_FAULT_ENABLE_FLAG)
+        ),
+        arc_fault_protection_enabled=(
+            None if enable_flags is None else bool(enable_flags & ARC_FAULT_ENABLE_FLAG)
+        ),
     )
 
 
@@ -235,8 +253,10 @@ class ClassicClient:
             captured_at = datetime.now(timezone.utc)
             live = read_block(client, 4115, 20, self.device_id)
             settings = read_block(client, 4148, 18, self.device_id)
+            # EnableFlagsBits (reg 4187): GFP / arc-fault / OCP protection enables.
+            enables = read_block(client, 4187, 1, self.device_id)
             return (
-                decode_live(live, captured_at=captured_at),
+                decode_live(live, captured_at=captured_at, enable_flags=enables.get(4187)),
                 decode_settings(settings, captured_at=captured_at),
             )
         finally:
