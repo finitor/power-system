@@ -332,23 +332,24 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(_protection_text(True, False), "GFP on  Arc off")
         self.assertEqual(_protection_text(True, True), "GFP on  Arc on")
 
-    def test_renders_classic_protection_row_when_enable_bits_present(self) -> None:
+    def test_kindle_omits_protection_row_even_when_armed(self) -> None:
+        # The Protection row is intentionally kept off the cramped wall display,
+        # even when the enable bits are known -- it lives on the API/other views.
         snapshot = make_snapshot(
             classic=make_classic_telemetry(
                 ground_fault_protection_enabled=True,
-                arc_fault_protection_enabled=False,
+                arc_fault_protection_enabled=True,
             ),
         )
 
         html = render_kindle_snapshot(snapshot)
-
-        self.assertIn("Protection", html)
-        self.assertIn("GFP on  Arc off", html)
-
-    def test_omits_protection_row_when_enable_bits_unknown(self) -> None:
-        # EPEver / unread Classic -> no protection bits -> no row (no noise).
-        html = render_kindle_snapshot(make_snapshot(classic=make_classic_telemetry()))
         self.assertNotIn("Protection", html)
+
+        # ...but the state is still exposed in the API payload.
+        payload = snapshot_api_payload(snapshot)
+        classic = next(c for c in payload["solar"] if c["id"].startswith("classic"))
+        self.assertEqual(classic["protection_enabled"]["arc_fault"], True)
+        self.assertEqual(classic["protection_text"], "GFP on  Arc on")
 
     def test_renders_redundant_charge_controller_state_only_once(self) -> None:
         snapshot = make_snapshot(

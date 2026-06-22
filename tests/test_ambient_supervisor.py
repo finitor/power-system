@@ -508,6 +508,20 @@ class TerminalDisplayTest(unittest.TestCase):
         self.assertNotIn("Stage:", rendered)
         self.assertNotIn("State:", rendered)
 
+    def test_protection_row_renders_below_production_today(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(
+                ground_fault_protection_enabled=True,
+                arc_fault_protection_enabled=True,
+            ),
+        )
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertIn("GFP on  Arc on", rendered)
+        # Protection sits below Production Today (not up by Charge Status).
+        self.assertLess(rendered.index("Production Today"), rendered.index("Protection"))
+
 
 class HighlightChangedDigitsTest(unittest.TestCase):
     def test_highlights_changed_values(self) -> None:

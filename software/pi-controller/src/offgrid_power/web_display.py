@@ -1941,9 +1941,6 @@ def _controller_section_lines(
 
         stage = NormalizedStage.from_dict(controller.get("charge_stage"))
         lines.append(_row("Charge Status", stage.render(controller.get("state"))))
-        protection = controller.get("protection_text")
-        if protection:
-            lines.append(_row("Protection", protection))
 
         allocation_text = _allocation_target_text(allocation_target)
         if allocation_text is not None:

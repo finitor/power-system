@@ -246,13 +246,13 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V"))
         lines.append(_row("Output", f"{classic.battery_voltage_v:.1f}V  {classic.battery_current_a:.1f}A  {classic.battery_power_w}W"))
         lines.append(_row("Charge Status", classic.stage.render(classic.state)))
+        if classic.is_hypervoc:
+            lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
+        lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
         if classic.ground_fault_protection_enabled is not None or classic.arc_fault_protection_enabled is not None:
             gfp = classic.ground_fault_protection_enabled
             arc = classic.arc_fault_protection_enabled
             lines.append(_row("Protection", f"GFP {'on' if gfp else 'off'}  Arc {'on' if arc else 'off'}"))
-        if classic.is_hypervoc:
-            lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
-        lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
         if snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))
 
