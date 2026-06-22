@@ -27,17 +27,29 @@ FONT_TOOL="${HOME}/.local/bin/offgrid-console-font"
 
 ensure_session() {
   tmux -L "${SOCKET}" has-session -t "${SESSION}" 2>/dev/null && return 0
+  local total_cols total_lines right_cols
+  total_cols="$(tput cols 2>/dev/null || echo 192)"
+  total_lines="$(tput lines 2>/dev/null || echo 54)"
+  right_cols=$(( total_cols - DISPLAY_COLS - 1 ))
+  [ "${right_cols}" -lt 40 ] && right_cols=40
   # Size the detached session to this tty up front: pane geometry is laid
   # out before the first client attaches. TMUX= so the nested attach
   # inside the pane is allowed.
   tmux -L "${SOCKET}" new-session -d -s "${SESSION}" -n console \
-    -x "$(tput cols)" -y "$(tput lines)" \
+    -x "${total_cols}" -y "${total_lines}" \
     "TMUX= exec ${HOME}/.local/bin/open-offgrid-console"
   # The inner session keeps its status line; a second one is clutter.
   tmux -L "${SOCKET}" set-option -t "${SESSION}" status off
-  tmux -L "${SOCKET}" split-window -h -t "${SESSION}:console.0"
-  # Land on the shell so the keyboard is immediately useful.
-  tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1"
+  # Explicit border styling: linux console default colors make tmux borders
+  # invisible without this.
+  tmux -L "${SOCKET}" set-option -g pane-border-style "fg=colour8"
+  tmux -L "${SOCKET}" set-option -g pane-active-border-style "fg=colour7"
+  # Split at the precise right-pane width so the shell starts with correct
+  # geometry and doesn't need a post-split resize (avoids the SIGWINCH that
+  # causes bash to need Enter to redraw the prompt).
+  tmux -L "${SOCKET}" split-window -h -t "${SESSION}:console.0" -l "${right_cols}"
+  # Start with the supervisor pane focused so hotkeys are ready immediately.
+  tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.0"
 }
 
 apply_layout() {
@@ -47,7 +59,7 @@ apply_layout() {
   # largest client). Set every startup; the server outlives getty restarts.
   tmux -L "${SOCKET}" set-option -g window-size largest 2>/dev/null || true
   tmux -L "${SOCKET}" resize-pane -t "${SESSION}:console.0" -x "${DISPLAY_COLS}" 2>/dev/null || true
-  tmux -L "${SOCKET}" select-pane -t "${SESSION}:console.1" 2>/dev/null || true
+  # No select-pane here — don't fight over focus on every loop iteration.
 }
 
 # Font size hotkeys. Set on every startup — the tmux server outlives a

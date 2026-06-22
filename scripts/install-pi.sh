@@ -20,6 +20,8 @@ sudo apt-get install -y \
     git \
     iproute2 \
     nginx \
+    nodejs \
+    npm \
     python3 \
     python3-dev \
     python3-pip \
@@ -51,6 +53,12 @@ fi
 "${VENV}/bin/pip" install -e "${PROJECT_DIR}"
 if [ "${OFFGRID_INSTALL_SENSOR_EXTRAS:-1}" = "1" ]; then
     "${VENV}/bin/pip" install -e "${PROJECT_DIR}[sensors]"
+fi
+
+if [ "${OFFGRID_INSTALL_CLAUDE_CLI:-1}" = "1" ] && ! command -v claude >/dev/null 2>&1; then
+    echo "== claude cli =="
+    sudo npm install -g @anthropic-ai/claude-code
+    echo "Claude CLI installed. Run 'claude' to authenticate."
 fi
 
 echo "== deploy =="
