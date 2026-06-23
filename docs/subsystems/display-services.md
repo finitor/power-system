@@ -62,6 +62,70 @@ Guard rails, outermost last:
   backstops regardless of what the client sends; a refused write is shown in
   the overlay, and the setpoint only advances on a confirmed readback.
 
+## Status Annotations and Device Reachability
+
+### Status annotations
+
+`snapshot_status_annotations(snapshot)` in `supervisor.py` is the single source
+of truth for display-level network annotation text. All renderers (terminal,
+api_terminal_display, Kindle HTML, browser HTML, weather pages) call it rather
+than deriving annotations themselves.
+
+Rules (applied in order, first match wins):
+- `lan_reachable is False` → `["LAN offline"]`
+- `wan_reachable is False` → `["WAN offline"]`
+- otherwise → `[]`
+
+LAN supersedes WAN because WAN goes down as a side effect of LAN outage — if
+the router is off, both fail together and "LAN offline" is the root cause.
+Showing "WAN offline" during a LAN outage would be misleading.
+
+`snapshot_severity_text()` composes the parenthetical form shown on most screens
+(`"OK"`, `"WARN (LAN offline)"`, etc.). Weather pages pass annotations through
+separately so the Kindle weather header can format them as `"OFFLINE as of
+HH:MM TZ"` without the status-severity shape.
+
+### Device reachability
+
+Devices that are **configured** (not in `disabled_devices`) but **currently
+unreachable** show in all displays rather than vanishing. The mechanism:
+
+`_solar_api_payload()` in `web_display.py` emits a stub entry for each
+configured-but-unavailable device:
+
+```json
+{"id": "classic.0", "device": {"vendor": "MidNite", ...}, "status": "unreachable"}
+```
+
+All three renderers check `controller.get("status") == "unreachable"` and emit
+a heading-only row (`"Charge Controller 0 (Classic) — UNREACHABLE"`) with no
+data rows. This keeps the section at its expected index and lets operators
+confirm the system is aware of the missing device, not silently ignoring it.
+
+The `disabled_devices` frozenset on `SupervisorSnapshot` distinguishes
+"not configured" (no device installed) from "configured but offline". A device
+not in `disabled_devices` that has no data gets UNREACHABLE; a device in
+`disabled_devices` is simply absent from the payload.
+
+### Stale-cache suppression on LAN outage
+
+The reader grace window (`expire_after_s`, default 60 s for Classic) is
+designed to absorb RS485/CAN transient glitches without surfacing per-device
+errors. It is not appropriate for LAN outages:
+
+- A LAN outage is a known root cause, not a transient glitch.
+- Classic (Modbus TCP) is definitively offline when the LAN is down — there is
+  no ambiguity.
+- Showing stale cached values for the full grace window would mislead operators
+  into thinking the device is still live.
+
+`_collect_from_readers()` in `supervisor.py` therefore bypasses the cache check
+for Classic when `self._network_monitor.lan_reachable is False`. The cached
+value is dropped immediately, the device transitions to UNREACHABLE in all
+displays at the same moment the status line shows "LAN offline", and Classic
+read errors are suppressed (LAN outage is the root cause; per-device noise
+would be redundant).
+
 ## Restart Behavior
 
 `sudo systemctl restart offgrid-supervisor` is the standard deploy action and

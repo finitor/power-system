@@ -29,3 +29,5 @@ These names are transport-neutral for now. They could become MQTT topics, databa
 | `power/ambient/temperature` | number | C | Utility-room ambient air temperature from AM2302/DHT22 |
 | `power/ambient/humidity` | number | % | Utility-room ambient relative humidity from AM2302/DHT22 |
 | `power/system/health` | JSON |  | Service health summary |
+| `network/lan_reachable` | number | 0/1 | LAN gateway (router) reachability; 0.0 when gateway ping fails, 1.0 when it succeeds, sampled every 30 s |
+| `network/wan_reachable` | event |  | WAN (internet) reachability; logged as `wan_up` / `wan_down` transition events only, not per-tick samples |
