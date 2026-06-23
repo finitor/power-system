@@ -445,9 +445,14 @@ class Supervisor:
             # timestamps ("read failed" + "last good Ns ago"). Collapse them into
             # one message anchored on the age of the last good telemetry. Keep the
             # raw exception only when there is no age to report (never read).
+            # Suppress the error while the last good read is still within
+            # stale_after_s — this is what makes MAGNUM_STALE_AFTER_SECONDS work
+            # for transient glitches, not just for the poll-stalled (no-error) case.
             if reading.error is not None:
                 age = reading.age_seconds(now)
-                if age is not None:
+                if age is not None and age < reading.stale_after_s:
+                    pass  # glitch within tolerance — last good read still fresh
+                elif age is not None:
                     errors.append(
                         f"{self._READER_ERROR_PREFIXES[name]} (last good read {age:.0f}s ago)"
                     )

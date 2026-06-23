@@ -251,7 +251,7 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
         magnum_err = snapshot.reader_error_rates.get("magnum")
         if magnum_err is not None:
-            lines.append(_row("RS485 Glitches", f"Magnum {magnum_err:.1f}% (5 min)"))
+            lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
         if snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))
 

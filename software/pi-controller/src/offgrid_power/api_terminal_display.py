@@ -50,7 +50,7 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
     lines.extend(_inverter_charger_lines(payload.get("inverter")))
     magnum_err = (payload.get("reader_error_rates") or {}).get("magnum")
     if magnum_err is not None:
-        lines.append(_row("RS485 Glitches", f"Magnum {magnum_err:.1f}% (5 min)"))
+        lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
 
     if payload.get("allocation") is not None:
         lines.append("")

@@ -517,7 +517,7 @@ class TerminalDisplayTest(unittest.TestCase):
         rendered = render_snapshot(snapshot)
 
         self.assertIn("RS485 Glitches", rendered)
-        self.assertIn("Magnum 12.5% (5 min)", rendered)
+        self.assertIn("12.5% (5 min)", rendered)
 
     def test_rs485_glitches_row_absent_when_no_error_rate(self) -> None:
         snapshot = make_snapshot(classic=make_classic_telemetry())
