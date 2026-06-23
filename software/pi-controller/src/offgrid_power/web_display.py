@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from .api_terminal_display import render_api_snapshot, render_api_weather
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
-from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot
+from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot, snapshot_severity_text
 from .terminal_display import format_cell_location_for_display, format_time, format_updated_time
 from .weather import WeatherReport, weather_api_payload
 
@@ -221,20 +221,13 @@ def _browser_refresh_script(refresh_seconds: int) -> str:
     )
 
 
-def _status_display_text(snapshot: SupervisorSnapshot) -> str:
-    text = snapshot.status_text
-    if snapshot.wan_reachable is False:
-        text += " (WAN offline)"
-    return text
-
-
 def render_kindle_snapshot(
     snapshot: SupervisorSnapshot,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     load_summary: LoadSummary | None = None,
     allocation: dict | None = None,
 ) -> str:
-    status = _status_display_text(snapshot)
+    status = snapshot_severity_text(snapshot)
     updated = format_kindle_time(snapshot.captured_at)
     soc_text = _soc_text(snapshot)
     lines = [
@@ -299,7 +292,7 @@ def render_kindle_details(
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     allocation: dict | None = None,
 ) -> str:
-    status = _status_display_text(snapshot)
+    status = snapshot_severity_text(snapshot)
     updated = format_kindle_time(snapshot.captured_at)
     lines = [
         "<!doctype html>",
@@ -1478,7 +1471,7 @@ def snapshot_api_payload(
         "age_seconds": _age_seconds(snapshot.captured_at, now=now),
         "status": {
             "ok": snapshot.ok,
-            "severity": snapshot.status_text,
+            "severity": snapshot_severity_text(snapshot),
             "errors": list(snapshot.errors),
             "conditions": list(snapshot.status_conditions),
         },

@@ -24,7 +24,7 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
         lines.append("Updated: unavailable")
     else:
         lines.append(f"Updated: {format_updated_time(captured_at)}")
-    lines.append(_status_line(status, battery, wan_reachable=payload.get("wan_reachable")))
+    lines.append(_status_line(status, battery))
     lines.append("")
 
     lines.append("Load")
@@ -265,10 +265,8 @@ def _day(value: object) -> str:
     return lines
 
 
-def _status_line(status: dict, battery: dict, wan_reachable: bool | None = None) -> str:
+def _status_line(status: dict, battery: dict) -> str:
     severity = status.get("severity") or status.get("status") or "UNKNOWN"
-    if wan_reachable is False:
-        severity += " (WAN offline)"
     soc = battery.get("soc_percent")
     if soc is None:
         return f"SOC:  --  Status:  {severity}"

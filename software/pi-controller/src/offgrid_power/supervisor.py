@@ -514,6 +514,19 @@ class Supervisor:
         return conditions
 
 
+def snapshot_severity_text(snapshot: SupervisorSnapshot) -> str:
+    """Display-ready severity string for a snapshot, including runtime annotations.
+
+    This is the single source of truth for status text shown in every display.
+    All renderers (terminal, API payload, Kindle HTML) should derive status from
+    here so additions only need to be made in one place.
+    """
+    text = snapshot.status_text
+    if snapshot.wan_reachable is False:
+        text += " (WAN offline)"
+    return text
+
+
 def validated_battery_snapshot(snapshot: PylonCanSnapshot) -> PylonCanSnapshot:
     """Reject partial CAN reads so they cannot overwrite a good cache.
 

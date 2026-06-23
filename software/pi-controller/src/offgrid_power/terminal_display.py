@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .load import LoadTotals
-from .supervisor import SupervisorSnapshot
+from .supervisor import SupervisorSnapshot, snapshot_severity_text
 
 if TYPE_CHECKING:
     from .classic import ClassicChargeSettings
@@ -173,10 +173,7 @@ def render_snapshot(
 
 
 def _status_line(snapshot: SupervisorSnapshot) -> str:
-    status_text = snapshot.status_text
-    if snapshot.wan_reachable is False:
-        status_text += " (WAN offline)"
-    status = f"Status:  {status_text}"
+    status = f"Status:  {snapshot_severity_text(snapshot)}"
     if snapshot.battery is None or snapshot.battery.state_of_charge is None:
         return f"SOC:  --  {status}"
     return f"SOC: {snapshot.battery.state_of_charge.soc_percent:3d}%  {status}"
