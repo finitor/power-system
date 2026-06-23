@@ -4,9 +4,9 @@ How the Raspberry Pi supervisor is launched — from "it normally runs itself" t
 "rebuild it from scratch in a cold cabin." Written for someone who has not
 touched the project in a while (or ever).
 
-Throughout: the Pi is `blueberry.local`, you log in as **`tvetter`**, the repo
-lives at **`~/power-system`**, and the service itself runs as the **`offgrid`**
-system user. Adjust if your install differs.
+Throughout: the Pi is `blueberry.local`, you log in as **`<user>`** (the account
+you created in Pi Imager), the repo lives at **`~/power-system`**, and the
+service itself runs as the **`offgrid`** system user. Adjust if your install differs.
 
 ---
 
@@ -16,7 +16,7 @@ The supervisor is a **systemd service** named `offgrid-supervisor`. It starts on
 boot, restarts on failure, and you almost never launch it by hand. Day-to-day:
 
 ```sh
-ssh tvetter@blueberry.local
+ssh <user>@blueberry.local
 
 systemctl status offgrid-supervisor        # is it running?
 journalctl -u offgrid-supervisor -f        # live logs (Ctrl-C to stop watching)

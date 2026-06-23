@@ -160,13 +160,13 @@ and a supervisor deploy.
 
 1. Take a fresh backup from the running Pi before touching anything.
    Claude will run this directly when in session:
-   `ssh tvetter@blueberry.local 'cd power-system && bash scripts/backup-config.sh'`
+   `ssh <user>@blueberry.local 'cd power-system && bash scripts/backup-config.sh'`
    Note the archive path printed at the end (e.g.
-   `/home/tvetter/offgrid-backups/offgrid-blueberry-<stamp>.tar.gz`).
+   `/home/<user>/offgrid-backups/offgrid-blueberry-<stamp>.tar.gz`).
 
 1b. SCP the backup archive from the Pi to the Mac **before** swapping the
     card — the old card's filesystem is gone once the new card boots:
-    `scp tvetter@blueberry.local:<archive-path> ~/offgrid-backups/`
+    `scp <user>@blueberry.local:<archive-path> ~/offgrid-backups/`
 
 2. Leave the current working microSD card as the physical rollback; do not
    erase it until the new card has passed all health checks.
@@ -192,7 +192,7 @@ and a supervisor deploy.
    ssh-add --apple-use-keychain ~/.ssh/id_ed25519
    ```
 
-4. Boot the Pi from the new card and confirm SSH access: `ssh tvetter@blueberry.local`.
+4. Boot the Pi from the new card and confirm SSH access: `ssh <user>@blueberry.local`.
    `blueberry.local` may not resolve immediately — use the IP address from
    `arp -a | grep b8:27` on the Mac. Once connected, clear the stale host key:
    `ssh-keygen -R blueberry.local`
@@ -200,7 +200,7 @@ and a supervisor deploy.
    keys so the Mac's `known_hosts` will otherwise block `blueberry.local`.)
 
 5. Copy the backup archive from the Mac to the new Pi:
-   `scp ~/offgrid-backups/<archive-filename>.tar.gz tvetter@<new-pi-ip>:~`
+   `scp ~/offgrid-backups/<archive-filename>.tar.gz <user>@<new-pi-ip>:~`
    Use the IP address until mDNS is up (`blueberry.local` may not resolve yet).
 
 6. Extract SSH keys from the archive so the git clone can authenticate.
