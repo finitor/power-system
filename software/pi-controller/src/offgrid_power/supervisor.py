@@ -522,7 +522,9 @@ def snapshot_status_annotations(snapshot: SupervisorSnapshot) -> list[str]:
     into its own layout (severity line, weather header, etc.) independently.
     """
     annotations: list[str] = []
-    if snapshot.wan_reachable is False:
+    if snapshot.lan_reachable is False:
+        annotations.append("LAN offline")
+    elif snapshot.wan_reachable is False:
         annotations.append("WAN offline")
     return annotations
 

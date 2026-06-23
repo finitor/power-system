@@ -321,7 +321,11 @@ def _solar_lines(solar: list[dict]) -> list[str]:
     for index, controller in enumerate(solar):
         if lines:
             lines.append("")
-        lines.append(_charge_controller_title(index, controller))
+        title = _charge_controller_title(index, controller)
+        if controller.get("status") == "unreachable":
+            lines.append(f"{title} — UNREACHABLE")
+            continue
+        lines.append(title)
         for condition in controller.get("conditions") or []:
             lines.append(_row("Alert", condition))
         pv_parts = [

@@ -165,6 +165,7 @@ class WebDisplayTest(unittest.TestCase):
                 ]
             ),
             magnum=make_magnum_snapshot(),
+            disabled_devices=frozenset(["classic", "epever"]),
         )
 
         html = render_kindle_snapshot(
@@ -371,6 +372,9 @@ class WebDisplayTest(unittest.TestCase):
                 equalize_voltage_v=54.7,
                 charging_limit_voltage_v=60.0,
             ),
+            # Classic is not installed on this system — mark it disabled so the
+            # renderer doesn't inject an UNREACHABLE stub and shift EPEver's index.
+            disabled_devices=frozenset(["classic"]),
         )
 
         html = render_kindle_snapshot(snapshot)
@@ -857,7 +861,10 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(payload["conditions"], ["Battery cell overvoltage"])
 
     def test_snapshot_api_payload_includes_status_conditions(self) -> None:
-        snapshot = make_snapshot(status_conditions=["Charge controller 0 CVS exceeds battery CVL"])
+        snapshot = make_snapshot(
+            status_conditions=["Charge controller 0 CVS exceeds battery CVL"],
+            disabled_devices=frozenset(["classic", "epever"]),
+        )
 
         payload = snapshot_api_payload(snapshot)
 

@@ -1559,6 +1559,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
     payload: list[dict] = []
     if snapshot.classic is not None:
         classic = snapshot.classic
+
         settings = snapshot.classic_settings
         conditions: list[str] = []
         if classic.is_hypervoc:
@@ -1615,6 +1616,12 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
             },
         }
         )
+    elif "classic" not in snapshot.disabled_devices:
+        payload.append({
+            "id": "classic.0",
+            "device": {"vendor": "MidNite", "model": "Classic 200", "short_name": "Classic"},
+            "status": "unreachable",
+        })
     if snapshot.epever is not None:
         epever = snapshot.epever
         settings = snapshot.epever_settings
@@ -1666,6 +1673,12 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 },
             }
         )
+    elif "epever" not in snapshot.disabled_devices:
+        payload.append({
+            "id": "epever.1",
+            "device": {"vendor": "EPEver", "model": "TEP10425", "short_name": "Epever"},
+            "status": "unreachable",
+        })
     return payload
 
 
@@ -1928,6 +1941,8 @@ def _controller_section_lines(
 ) -> list[str]:
     name = _charge_controller_short_name(controller)
     title = f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
+    if controller.get("status") == "unreachable":
+        return [f"<h2>{escape(title)} — UNREACHABLE</h2>"]
     lines = [f"<h2>{escape(title)}</h2>", "<table>"]
 
     if include_live:

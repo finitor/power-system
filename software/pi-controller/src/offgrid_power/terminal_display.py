@@ -240,7 +240,7 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
     lines: list[str] = []
     lines.append("Charge Controller 0 (Classic)")
     if snapshot.classic is None:
-        lines.append("  No data")
+        lines.append("  UNREACHABLE" if "classic" not in snapshot.disabled_devices else "  No data")
     else:
         classic = snapshot.classic
         lines.append(_row("PV", f"{classic.pv_voltage_v:.1f}V  {classic.pv_current_a:.1f}A  Voc {classic.last_voc_v:.1f}V"))
@@ -258,7 +258,7 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
     lines.append("")
     lines.append("Charge Controller 1 (Epever)")
     if snapshot.epever is None:
-        lines.append("  No data")
+        lines.append("  UNREACHABLE" if "epever" not in snapshot.disabled_devices else "  No data")
     else:
         epever = snapshot.epever
         lines.append(_row("PV", f"{epever.pv_voltage_v:.1f}V  {epever.pv_current_a:.1f}A  {epever.pv_power_w}W"))
