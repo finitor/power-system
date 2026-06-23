@@ -374,9 +374,10 @@ def render_kindle_weather(
         and observed_at is not None
         and reference.astimezone() - observed_at.astimezone() >= WEATHER_STALE_AFTER
     )
-    # Abbreviated for Kindle header width — full text would wrap and add a scrollbar.
-    # "OFFLINE" is unambiguous on the weather page; all data here is internet-sourced.
-    annotation_html = "<br>(OFFLINE)" if annotations else ""
+    # "OFFLINE as of 13:35" scans better than "As of: 13:35 (OFFLINE)" and fits the
+    # Kindle header cell without wrapping. All data here is internet-sourced so
+    # the context makes "OFFLINE" unambiguous without qualification.
+    timestamp_line = (f"OFFLINE as of {escape(updated)}" if annotations else f"As of: {escape(updated)}")
     lines = [
         "<!doctype html>",
         "<html>",
@@ -430,7 +431,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">As of: {escape(updated)}{annotation_html}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">{timestamp_line}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Conditions</h2>",
                 "<p>Weather unavailable.</p>",
@@ -444,7 +445,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>As of: {escape(updated)}{annotation_html}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>{timestamp_line}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Current</h2>",
                 "<table>",
