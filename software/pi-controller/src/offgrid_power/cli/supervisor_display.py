@@ -38,6 +38,7 @@ from offgrid_power.charger_taper import (
 from offgrid_power.classic import ClassicClient
 from offgrid_power.epever import EpeverClient
 from offgrid_power.magnum import InverterEventTracker, MagnumClient
+from offgrid_power.network_monitor import WanReachabilityTracker
 from offgrid_power.config import load_config
 from offgrid_power.load import estimate_load_current_a, LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
@@ -313,6 +314,7 @@ def main() -> int:
         sample_buffer=load_sample_buffer,
     )
     inverter_event_tracker = InverterEventTracker()
+    wan_reachability_tracker = WanReachabilityTracker()
     snapshot_cache = SnapshotCache()
     weather_service = build_weather_service(args)
     charger_current_taper_enabled = args.charger_current_taper or args.classic_current_taper
@@ -412,6 +414,7 @@ def main() -> int:
             snapshot_cache.set(display_snapshot, load_summary, allocation=allocation_detail_payload)
             record_weather_metrics(metric_recorder, weather_service)
             record_inverter_event(metric_recorder, inverter_event_tracker, snapshot)
+            record_wan_transition(metric_recorder, wan_reachability_tracker, snapshot)
             next_read = time.monotonic() + args.interval
             if args.no_terminal_display:
                 if args.once:
@@ -517,6 +520,19 @@ def record_inverter_event(
             metric_recorder.record_event(event)
     except Exception as exc:  # noqa: BLE001 - event logging should not affect live supervision.
         print(f"Inverter event record failed: {exc}", file=sys.stderr)
+
+
+def record_wan_transition(
+    metric_recorder: MetricRecorder,
+    tracker: WanReachabilityTracker,
+    snapshot,
+) -> None:
+    try:
+        event = tracker.observe(snapshot.wan_reachable)
+        if event is not None:
+            metric_recorder.record_event(event)
+    except Exception as exc:  # noqa: BLE001 - event logging should not affect live supervision.
+        print(f"WAN reachability event record failed: {exc}", file=sys.stderr)
 
 
 def apply_charger_current_taper(

@@ -42,6 +42,7 @@ class SupervisorSnapshot:
     disabled_devices: frozenset[str] = field(default_factory=frozenset)
     reader_error_rates: dict[str, float | None] = field(default_factory=dict)
     lan_reachable: bool | None = None
+    wan_reachable: bool | None = None
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:
@@ -343,6 +344,7 @@ class Supervisor:
             disabled_devices=self._disabled_devices(),
             reader_error_rates=self._reader_error_rates(),
             lan_reachable=self._network_monitor.lan_reachable if self._network_monitor else None,
+            wan_reachable=self._network_monitor.wan_reachable if self._network_monitor else None,
         )
 
     def _reader_error_rates(self, window_s: float = 300.0) -> dict[str, float | None]:

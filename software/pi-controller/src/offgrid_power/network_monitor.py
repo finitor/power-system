@@ -13,10 +13,15 @@ wan_reachable is False rather than logging noise.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import socket
 import subprocess
 from threading import Event, Lock, Thread
 import time
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .metrics import TelemetryEvent
 
 
 class NetworkMonitor:
@@ -88,3 +93,30 @@ class NetworkMonitor:
                 return True
         except OSError:
             return False
+
+
+class WanReachabilityTracker:
+    """Emits a TelemetryEvent on each WAN up/down transition.
+
+    WAN is expected to be down for long periods (Starlink not active), so
+    per-tick sampling would produce mostly redundant rows. Tracking only
+    transitions keeps the event store informative without noise.
+    """
+
+    def __init__(self) -> None:
+        self._was_reachable: bool | None = None
+
+    def observe(self, wan_reachable: bool | None) -> TelemetryEvent | None:
+        if wan_reachable is None:
+            return None
+        previous = self._was_reachable
+        self._was_reachable = wan_reachable
+        if previous is None or previous == wan_reachable:
+            return None
+        from .metrics import TelemetryEvent  # avoid circular import (metrics -> load -> supervisor -> network_monitor)
+        return TelemetryEvent(
+            captured_at=datetime.now(timezone.utc),
+            source="network",
+            event="wan_up" if wan_reachable else "wan_down",
+            detail={},
+        )
