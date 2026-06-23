@@ -192,9 +192,9 @@ and a supervisor deploy.
    ssh-add --apple-use-keychain ~/.ssh/id_ed25519
    ```
 
-4. Boot the Pi from the new card and confirm SSH access. `blueberry.local` may
-   not resolve immediately — use the IP address from `arp -a | grep b8:27` on
-   the Mac. Once connected, clear the stale host key on the Mac:
+4. Boot the Pi from the new card and confirm SSH access: `ssh tvetter@blueberry.local`.
+   `blueberry.local` may not resolve immediately — use the IP address from
+   `arp -a | grep b8:27` on the Mac. Once connected, clear the stale host key:
    `ssh-keygen -R blueberry.local`
    (Claude handles this when in session; the new card generates fresh SSH host
    keys so the Mac's `known_hosts` will otherwise block `blueberry.local`.)
