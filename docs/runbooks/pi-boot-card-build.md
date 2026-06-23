@@ -176,6 +176,22 @@ and a supervisor deploy.
    locale, timezone, and network in its advanced options before writing.
    **Decline Raspberry Pi Connect** when prompted — it is not needed.
 
+   The SSH public key to paste is the Mac's `~/.ssh/id_ed25519.pub` (run
+   `cat ~/.ssh/id_ed25519.pub` to get it). Imager injects it into the Pi's
+   `authorized_keys` on first boot.
+
+   Also confirm the Mac's `~/.ssh/config` loads the key persistently:
+   ```sh
+   grep -q "UseKeychain" ~/.ssh/config 2>/dev/null || cat >> ~/.ssh/config <<'EOF'
+
+   Host *
+       AddKeysToAgent yes
+       UseKeychain yes
+       IdentityFile ~/.ssh/id_ed25519
+   EOF
+   ssh-add --apple-use-keychain ~/.ssh/id_ed25519
+   ```
+
 4. Boot the Pi from the new card and confirm SSH access. `blueberry.local` may
    not resolve immediately — use the IP address from `arp -a | grep b8:27` on
    the Mac. Once connected, clear the stale host key on the Mac:
@@ -187,13 +203,21 @@ and a supervisor deploy.
    `scp ~/offgrid-backups/<archive-filename>.tar.gz tvetter@<new-pi-ip>:~`
    Use the IP address until mDNS is up (`blueberry.local` may not resolve yet).
 
-6. Extract SSH keys from the archive so the git clone can authenticate:
+6. Extract SSH keys from the archive so the git clone can authenticate.
+   The restore overwrites `~/.ssh/` from the bundle, which would clobber the
+   `authorized_keys` Imager just injected — save it first, then merge it back:
    ```sh
    ARCHIVE=~/<archive-filename>.tar.gz
    BUNDLE="$(tar -tzf "${ARCHIVE}" | head -1 | cut -d/ -f1)"
+   IMAGER_AUTHKEYS="$(cat ~/.ssh/authorized_keys 2>/dev/null)"
    tar -xzf "${ARCHIVE}" --strip-components=3 -C "${HOME}" \
        "${BUNDLE}/home/offgrid-user/.ssh"
    chmod 700 "${HOME}/.ssh" && find "${HOME}/.ssh" -type f -exec chmod 600 {} \;
+   # Re-merge the Imager-injected key if the restore dropped it
+   if [ -n "${IMAGER_AUTHKEYS}" ]; then
+       grep -qF "${IMAGER_AUTHKEYS}" ~/.ssh/authorized_keys 2>/dev/null \
+           || echo "${IMAGER_AUTHKEYS}" >> ~/.ssh/authorized_keys
+   fi
    ```
 
 7. Clone the repo:
