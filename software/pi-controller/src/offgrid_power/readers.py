@@ -134,6 +134,13 @@ class PollingReader:
         """Fraction of poll attempts that failed in the last window_s seconds, as a percentage.
 
         Returns None if no polls have been recorded yet.
+
+        This is a poll-failure rate, not a glitch count. It does not distinguish
+        a single dropped frame that recovered immediately from a sustained outage —
+        both contribute equally per sample. Useful for tracking the trend of Magnum
+        RS485 noise over time. If you want to isolate transient glitches from
+        sustained failures, count distinct error runs (consecutive-failure spans)
+        instead of aggregating all failures into one fraction.
         """
         cutoff = time.monotonic() - window_s
         with self._lock:
