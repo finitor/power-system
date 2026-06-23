@@ -508,19 +508,23 @@ class TerminalDisplayTest(unittest.TestCase):
         self.assertNotIn("Stage:", rendered)
         self.assertNotIn("State:", rendered)
 
-    def test_protection_row_renders_below_production_today(self) -> None:
+    def test_rs485_glitches_row_renders_when_error_rate_known(self) -> None:
         snapshot = make_snapshot(
-            classic=make_classic_telemetry(
-                ground_fault_protection_enabled=True,
-                arc_fault_protection_enabled=True,
-            ),
+            classic=make_classic_telemetry(),
+            reader_error_rates={"magnum": 12.5},
         )
 
         rendered = render_snapshot(snapshot)
 
-        self.assertIn("GFP on  Arc on", rendered)
-        # Protection sits below Production Today (not up by Charge Status).
-        self.assertLess(rendered.index("Production Today"), rendered.index("Protection"))
+        self.assertIn("RS485 Glitches", rendered)
+        self.assertIn("Magnum 12.5% (5 min)", rendered)
+
+    def test_rs485_glitches_row_absent_when_no_error_rate(self) -> None:
+        snapshot = make_snapshot(classic=make_classic_telemetry())
+
+        rendered = render_snapshot(snapshot)
+
+        self.assertNotIn("RS485 Glitches", rendered)
 
 
 class HighlightChangedDigitsTest(unittest.TestCase):

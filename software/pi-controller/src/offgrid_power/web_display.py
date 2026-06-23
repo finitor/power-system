@@ -1481,6 +1481,7 @@ def snapshot_api_payload(
         "load": _load_api_payload(load_summary),
         "allocation": allocation,
         "ambient": _ambient_api_payload(snapshot),
+        "reader_error_rates": snapshot.reader_error_rates,
     }
 
 

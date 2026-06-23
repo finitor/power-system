@@ -163,6 +163,9 @@ class FakeReader:
     def reading(self) -> DeviceReading:
         return self._reading
 
+    def error_rate_pct(self, window_s: float = 300.0) -> float | None:
+        return None
+
     def stop(self, timeout_s: float = 2.0) -> None:
         pass
 

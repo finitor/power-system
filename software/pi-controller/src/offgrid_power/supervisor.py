@@ -39,6 +39,7 @@ class SupervisorSnapshot:
     # health reporting say "disabled" rather than "offline" (which implies a
     # read was tried and returned nothing).
     disabled_devices: frozenset[str] = field(default_factory=frozenset)
+    reader_error_rates: dict[str, float | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:
@@ -95,7 +96,12 @@ class Supervisor:
         self._status_condition_counts: dict[str, int] = {}
         self._readers: dict[str, PollingReader] | None = None
 
-    def start_readers(self, interval_s: float = 5.0, expire_after_s: float | None = None) -> None:
+    def start_readers(
+        self,
+        interval_s: float = 5.0,
+        expire_after_s: float | None = None,
+        magnum_stale_after_s: float | None = None,
+    ) -> None:
         """Switch to per-device actor threads.
 
         Each configured adapter is owned by one thread: it polls on an
@@ -126,7 +132,11 @@ class Supervisor:
             readers["ambient"] = PollingReader("ambient", self.ambient.read, interval_s)
         if self.magnum is not None:
             readers["magnum"] = PollingReader(
-                "magnum", self.magnum.read, interval_s, expire_after_s=expire_after_s
+                "magnum",
+                self.magnum.read,
+                interval_s,
+                stale_after_s=magnum_stale_after_s,
+                expire_after_s=expire_after_s,
             )
         for reader in readers.values():
             reader.start()
@@ -313,7 +323,13 @@ class Supervisor:
             status_conditions=status_conditions,
             status_severity=status_severity,
             disabled_devices=self._disabled_devices(),
+            reader_error_rates=self._reader_error_rates(),
         )
+
+    def _reader_error_rates(self, window_s: float = 300.0) -> dict[str, float | None]:
+        if self._readers is None:
+            return {}
+        return {name: reader.error_rate_pct(window_s) for name, reader in self._readers.items()}
 
     def _disabled_devices(self) -> frozenset[str]:
         return frozenset(

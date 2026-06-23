@@ -13,6 +13,7 @@ decide what staleness means for them.
 
 from __future__ import annotations
 
+from collections import deque
 from concurrent.futures import Future
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -94,6 +95,9 @@ class PollingReader:
         self._commands: queue.Queue[tuple[Callable[[], object], Future]] = queue.Queue()
         self._stop = Event()
         self._thread: Thread | None = None
+        # Ring buffer of (monotonic_timestamp, was_success) for error rate calc.
+        # 720 entries ≈ 1 hour at 5 s interval — enough for any display window.
+        self._poll_history: deque[tuple[float, bool]] = deque(maxlen=720)
 
     def read_now(self) -> None:
         """Perform one read attempt synchronously (also used by the thread loop)."""
@@ -102,15 +106,18 @@ class PollingReader:
         except Exception as exc:  # noqa: BLE001 - reader must survive any adapter failure.
             with self._lock:
                 self._error = str(exc) or type(exc).__name__
+                self._poll_history.append((time.monotonic(), False))
             return
         if value is None:
             with self._lock:
                 self._error = "no reading"
+                self._poll_history.append((time.monotonic(), False))
             return
         with self._lock:
             self._value = value
             self._captured_at = datetime.now(timezone.utc)
             self._error = None
+            self._poll_history.append((time.monotonic(), True))
 
     def reading(self) -> DeviceReading:
         with self._lock:
@@ -122,6 +129,19 @@ class PollingReader:
                 stale_after_s=self.stale_after_s,
                 expire_after_s=self.expire_after_s,
             )
+
+    def error_rate_pct(self, window_s: float = 300.0) -> float | None:
+        """Fraction of poll attempts that failed in the last window_s seconds, as a percentage.
+
+        Returns None if no polls have been recorded yet.
+        """
+        cutoff = time.monotonic() - window_s
+        with self._lock:
+            window = [(t, ok) for t, ok in self._poll_history if t >= cutoff]
+        if not window:
+            return None
+        failures = sum(1 for _, ok in window if not ok)
+        return failures / len(window) * 100.0
 
     def submit(self, fn: Callable[[], object], timeout_s: float = 10.0) -> object:
         """Run fn on the device thread and return its result.

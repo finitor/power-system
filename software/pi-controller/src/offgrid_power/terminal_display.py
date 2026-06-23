@@ -249,10 +249,9 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         if classic.is_hypervoc:
             lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
         lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
-        if classic.ground_fault_protection_enabled is not None or classic.arc_fault_protection_enabled is not None:
-            gfp = classic.ground_fault_protection_enabled
-            arc = classic.arc_fault_protection_enabled
-            lines.append(_row("Protection", f"GFP {'on' if gfp else 'off'}  Arc {'on' if arc else 'off'}"))
+        magnum_err = snapshot.reader_error_rates.get("magnum")
+        if magnum_err is not None:
+            lines.append(_row("RS485 Glitches", f"Magnum {magnum_err:.1f}% (5 min)"))
         if snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))
 

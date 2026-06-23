@@ -66,6 +66,12 @@ def parse_args() -> argparse.Namespace:
         default=config.display.unavailable_after_seconds,
         help="Drop a device's cached readings (render 'No data') after this many seconds without a good read",
     )
+    parser.add_argument(
+        "--magnum-stale-after-seconds",
+        type=float,
+        default=config.display.magnum_stale_after_seconds,
+        help="Warn after this many seconds without a good Magnum RS485 read (default 60)",
+    )
     parser.add_argument("--web-display", action="store_true", help="Serve the same supervisor snapshots over HTTP")
     parser.add_argument("--web-host", default="0.0.0.0", help="HTTP display bind address")
     parser.add_argument("--web-port", type=int, default=8080, help="HTTP display port")
@@ -351,7 +357,9 @@ def main() -> int:
     # single probe reads every device exactly once.
     if not args.no_device_readers and not args.once:
         supervisor.start_readers(
-            interval_s=args.interval, expire_after_s=args.unavailable_after_seconds
+            interval_s=args.interval,
+            expire_after_s=args.unavailable_after_seconds,
+            magnum_stale_after_s=args.magnum_stale_after_seconds,
         )
         supervisor.wait_for_initial_readings()
 

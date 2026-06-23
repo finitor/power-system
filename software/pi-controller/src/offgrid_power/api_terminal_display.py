@@ -48,6 +48,9 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
 
     lines.append("")
     lines.extend(_inverter_charger_lines(payload.get("inverter")))
+    magnum_err = (payload.get("reader_error_rates") or {}).get("magnum")
+    if magnum_err is not None:
+        lines.append(_row("RS485 Glitches", f"Magnum {magnum_err:.1f}% (5 min)"))
 
     if payload.get("allocation") is not None:
         lines.append("")
@@ -351,8 +354,6 @@ def _solar_lines(solar: list[dict]) -> list[str]:
             lines.append(_row("Production Today", "  ".join(parts)))
         elif controller.get("daily_energy_unavailable_reason"):
             lines.append(_row("Production Today", str(controller.get("daily_energy_unavailable_reason"))))
-        if controller.get("protection_text"):
-            lines.append(_row("Protection", controller.get("protection_text")))
         if controller.get("rated_pv_voltage_v") is not None or controller.get("rated_charging_current_a") is not None:
             lines.append(
                 _row(
