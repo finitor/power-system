@@ -1483,6 +1483,7 @@ def snapshot_api_payload(
         "ambient": _ambient_api_payload(snapshot),
         "reader_error_rates": snapshot.reader_error_rates,
         "lan_reachable": snapshot.lan_reachable,
+        "wan_reachable": snapshot.wan_reachable,
     }
 
 

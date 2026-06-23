@@ -173,7 +173,10 @@ def render_snapshot(
 
 
 def _status_line(snapshot: SupervisorSnapshot) -> str:
-    status = f"Status:  {snapshot.status_text}"
+    status_text = snapshot.status_text
+    if snapshot.wan_reachable is False:
+        status_text += " (WAN offline)"
+    status = f"Status:  {status_text}"
     if snapshot.battery is None or snapshot.battery.state_of_charge is None:
         return f"SOC:  --  {status}"
     return f"SOC: {snapshot.battery.state_of_charge.soc_percent:3d}%  {status}"
