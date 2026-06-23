@@ -72,6 +72,17 @@ def parse_args() -> argparse.Namespace:
         default=config.display.magnum_stale_after_seconds,
         help="Warn after this many seconds without a good Magnum RS485 read (default 60)",
     )
+    parser.add_argument(
+        "--lan-gateway",
+        default=config.network.lan_gateway,
+        help="LAN gateway address to probe for reachability (default 192.168.0.1)",
+    )
+    parser.add_argument(
+        "--lan-check-interval-seconds",
+        type=float,
+        default=config.network.lan_check_interval_s,
+        help="Seconds between LAN/WAN reachability probes (default 30)",
+    )
     parser.add_argument("--web-display", action="store_true", help="Serve the same supervisor snapshots over HTTP")
     parser.add_argument("--web-host", default="0.0.0.0", help="HTTP display bind address")
     parser.add_argument("--web-port", type=int, default=8080, help="HTTP display port")
@@ -361,6 +372,10 @@ def main() -> int:
             expire_after_s=args.unavailable_after_seconds,
             magnum_stale_after_s=args.magnum_stale_after_seconds,
         )
+        supervisor.start_network_monitor(
+            gateway=args.lan_gateway,
+            interval_s=args.lan_check_interval_seconds,
+        )
         supervisor.wait_for_initial_readings()
 
     try:
@@ -430,6 +445,7 @@ def main() -> int:
         return 0
     finally:
         supervisor.stop_readers()
+        supervisor.stop_network_monitor()
 
 
 def start_web_display(

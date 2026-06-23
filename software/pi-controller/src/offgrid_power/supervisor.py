@@ -11,6 +11,7 @@ from .ambient import AmbientDhtClient, AmbientDs18b20Client, AmbientProbeDisconn
 from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_health
 from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
 from .epever import EpeverChargeSettings, EpeverClient, EpeverTelemetry
+from .network_monitor import NetworkMonitor
 from .readers import DeviceReading, PollingReader
 
 if TYPE_CHECKING:
@@ -40,6 +41,7 @@ class SupervisorSnapshot:
     # read was tried and returned nothing).
     disabled_devices: frozenset[str] = field(default_factory=frozenset)
     reader_error_rates: dict[str, float | None] = field(default_factory=dict)
+    lan_reachable: bool | None = None
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:
@@ -95,6 +97,7 @@ class Supervisor:
         self.epever = epever
         self._status_condition_counts: dict[str, int] = {}
         self._readers: dict[str, PollingReader] | None = None
+        self._network_monitor: NetworkMonitor | None = None
 
     def start_readers(
         self,
@@ -148,6 +151,17 @@ class Supervisor:
         for reader in self._readers.values():
             reader.stop()
         self._readers = None
+
+    def start_network_monitor(self, gateway: str = "192.168.0.1", interval_s: float = 30.0) -> None:
+        if self._network_monitor is not None:
+            return
+        self._network_monitor = NetworkMonitor(gateway=gateway, check_interval_s=interval_s)
+        self._network_monitor.start()
+
+    def stop_network_monitor(self) -> None:
+        if self._network_monitor is not None:
+            self._network_monitor.stop()
+            self._network_monitor = None
 
     def wait_for_initial_readings(self, timeout_s: float = 10.0) -> None:
         """Block until every reader has either a value or an error.
@@ -306,6 +320,10 @@ class Supervisor:
         status_condition_candidates.extend(battery_protection_status_condition_candidates(battery))
         status_condition_candidates.extend(charge_controller_fault_status_condition_candidates(devices["classic"]))
         status_condition_candidates.extend(stale_candidates)
+        if self._network_monitor is not None and self._network_monitor.lan_reachable is False:
+            status_condition_candidates.append(
+                StatusConditionCandidate("network.lan_unreachable", "LAN unreachable", severity=STATUS_ERROR)
+            )
         status_conditions = [candidate.text for candidate in status_condition_candidates]
         status_severity = status_condition_severity(status_condition_candidates)
 
@@ -324,6 +342,7 @@ class Supervisor:
             status_severity=status_severity,
             disabled_devices=self._disabled_devices(),
             reader_error_rates=self._reader_error_rates(),
+            lan_reachable=self._network_monitor.lan_reachable if self._network_monitor else None,
         )
 
     def _reader_error_rates(self, window_s: float = 300.0) -> dict[str, float | None]:
@@ -450,7 +469,12 @@ class Supervisor:
             # for transient glitches, not just for the poll-stalled (no-error) case.
             if reading.error is not None:
                 age = reading.age_seconds(now)
-                if age is not None and age < reading.stale_after_s:
+                lan_down = name == "classic" and self._network_monitor is not None and self._network_monitor.lan_reachable is False
+                if lan_down:
+                    # LAN outage explains the Classic failure; suppress per-device noise.
+                    # The LAN condition below covers it.
+                    pass
+                elif age is not None and age < reading.stale_after_s:
                     pass  # glitch within tolerance — last good read still fresh
                 elif age is not None:
                     errors.append(

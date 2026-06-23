@@ -75,7 +75,11 @@ def main() -> int:
     uploaded_batches = 0
     uploaded_rows = 0
     while args.max_batches == 0 or uploaded_batches < args.max_batches:
-        result = export_metrics_once(Path(args.metrics_db_path), config, limit=args.limit)
+        try:
+            result = export_metrics_once(Path(args.metrics_db_path), config, limit=args.limit)
+        except OSError as exc:
+            print(f"WAN unreachable, skipping export: {exc}")
+            return 0
         if not result.uploaded:
             if uploaded_batches == 0:
                 print("No unexported metric records")

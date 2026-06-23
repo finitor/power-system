@@ -45,12 +45,19 @@ class AmbientConfig:
 
 
 @dataclass(frozen=True)
+class NetworkConfig:
+    lan_gateway: str = "192.168.0.1"
+    lan_check_interval_s: float = 30.0
+
+
+@dataclass(frozen=True)
 class SupervisorConfig:
     classic: ClassicConfig
     epever: EpeverConfig
     display: DisplayConfig
     battery_can: BatteryCanConfig
     ambient: AmbientConfig
+    network: NetworkConfig = NetworkConfig()
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -99,5 +106,9 @@ def load_config() -> SupervisorConfig:
             kind=os.getenv("AMBIENT_SENSOR_KIND", "ds18b20"),
             gpio_pin=env_int("AMBIENT_DHT22_GPIO", 4),
             ds18b20_device_id=os.getenv("AMBIENT_DS18B20_DEVICE_ID", ""),
+        ),
+        network=NetworkConfig(
+            lan_gateway=os.getenv("LAN_GATEWAY", "192.168.0.1"),
+            lan_check_interval_s=env_float("LAN_CHECK_INTERVAL_SECONDS", 30.0),
         ),
     )

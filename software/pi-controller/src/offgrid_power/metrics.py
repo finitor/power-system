@@ -620,6 +620,8 @@ def snapshot_metric_samples(
         yield from _magnum_samples(snapshot.magnum.captured_at.astimezone(timezone.utc), snapshot.magnum)
     if snapshot.ambient is not None:
         yield from _ambient_samples(snapshot.ambient.captured_at.astimezone(timezone.utc), snapshot.ambient)
+    if snapshot.lan_reachable is not None:
+        yield MetricSample(captured_at, "network", "lan_reachable", value=1.0 if snapshot.lan_reachable else 0.0)
 
 
 def weather_metric_samples(report: WeatherReport) -> Iterable[MetricSample]:
