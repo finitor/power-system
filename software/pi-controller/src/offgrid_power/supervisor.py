@@ -514,16 +514,30 @@ class Supervisor:
         return conditions
 
 
-def snapshot_severity_text(snapshot: SupervisorSnapshot) -> str:
-    """Display-ready severity string for a snapshot, including runtime annotations.
+def snapshot_status_annotations(snapshot: SupervisorSnapshot) -> list[str]:
+    """Runtime qualifier strings for a snapshot (e.g. ["WAN offline"]).
 
-    This is the single source of truth for status text shown in every display.
-    All renderers (terminal, API payload, Kindle HTML) should derive status from
-    here so additions only need to be made in one place.
+    This is the single place where display-level annotations are derived from
+    snapshot state. All renderers read from here — each composes the strings
+    into its own layout (severity line, weather header, etc.) independently.
+    """
+    annotations: list[str] = []
+    if snapshot.wan_reachable is False:
+        annotations.append("WAN offline")
+    return annotations
+
+
+def snapshot_severity_text(snapshot: SupervisorSnapshot) -> str:
+    """Standard power-screen severity line: 'OK (WAN offline)' etc.
+
+    Convenience helper for displays that want severity + annotations in the
+    standard parenthetical form. Renderers that compose annotations differently
+    (e.g. weather header) should call snapshot_status_annotations() directly.
     """
     text = snapshot.status_text
-    if snapshot.wan_reachable is False:
-        text += " (WAN offline)"
+    annotations = snapshot_status_annotations(snapshot)
+    if annotations:
+        text += " (" + ", ".join(annotations) + ")"
     return text
 
 

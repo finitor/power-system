@@ -16,7 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from .api_terminal_display import render_api_snapshot, render_api_weather
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
-from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot, snapshot_severity_text
+from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot, snapshot_severity_text, snapshot_status_annotations
 from .terminal_display import format_cell_location_for_display, format_time, format_updated_time
 from .weather import WeatherReport, weather_api_payload
 
@@ -352,6 +352,7 @@ def render_kindle_weather(
     payload: dict | None,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     now: datetime | None = None,
+    annotations: list[str] | None = None,
 ) -> str:
     # Consumes the normalized weather API payload (weather.weather_api_payload),
     # so this renderer holds no knowledge of the upstream weather provider.
@@ -373,6 +374,7 @@ def render_kindle_weather(
         and observed_at is not None
         and reference.astimezone() - observed_at.astimezone() >= WEATHER_STALE_AFTER
     )
+    annotation_html = ("<br>" + escape("(" + ", ".join(annotations) + ")")) if annotations else ""
     lines = [
         "<!doctype html>",
         "<html>",
@@ -426,7 +428,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">As of: {escape(updated)}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">As of: {escape(updated)}{annotation_html}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Conditions</h2>",
                 "<p>Weather unavailable.</p>",
@@ -440,7 +442,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>As of: {escape(updated)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>As of: {escape(updated)}{annotation_html}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Current</h2>",
                 "<table>",
@@ -523,7 +525,7 @@ def _trim_browser_snapshot_header(rendered: str) -> str:
     return rendered
 
 
-def render_browser_weather(payload: dict | None) -> str:
+def render_browser_weather(payload: dict | None, annotations: list[str] | None = None) -> str:
     payload = payload or {}
     current = payload.get("current")
     observed_at = _parse_payload_time(payload.get("observed_at"))
@@ -536,6 +538,7 @@ def render_browser_weather(payload: dict | None) -> str:
         primary = _format_number(current.get("temperature_c"), "C", decimals=1) or "--"
         condition = (current.get("condition") or {}).get("text") or "unknown"
         status_text = f"{label}: {condition}"
+    annotation_suffix = (" (" + ", ".join(annotations) + ")") if annotations else ""
     rendered = _trim_browser_weather_header(render_api_weather(payload))
     lines = [
         "<!doctype html>",
@@ -550,7 +553,7 @@ def render_browser_weather(payload: dict | None) -> str:
         "</style>",
         "</head>",
         "<body>",
-        _browser_weather_header(primary, updated, status_text, "/"),
+        _browser_weather_header(primary, updated + annotation_suffix, status_text, "/"),
         f"<pre>{escape(rendered)}</pre>",
         "</body>",
         "</html>",
@@ -661,14 +664,15 @@ def route_display_request(
         html = render_kindle_details(snapshot, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     if parsed_path == "/kindle/weather":
-        html = render_kindle_weather(weather_api_payload(weather_report))
+        html = render_kindle_weather(weather_api_payload(weather_report), annotations=snapshot_status_annotations(snapshot))
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
 
     # "/", "/display", "/weather": shared paths, negotiated by user-agent
     # (browser by default; Kindle markup when the UA is recognized).
     if parsed_path == "/weather":
         payload = weather_api_payload(weather_report)
-        html = render_kindle_weather(payload) if is_kindle else render_browser_weather(payload)
+        annotations = snapshot_status_annotations(snapshot)
+        html = render_kindle_weather(payload, annotations=annotations) if is_kindle else render_browser_weather(payload, annotations=annotations)
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     if is_kindle:
         html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
@@ -1471,7 +1475,8 @@ def snapshot_api_payload(
         "age_seconds": _age_seconds(snapshot.captured_at, now=now),
         "status": {
             "ok": snapshot.ok,
-            "severity": snapshot_severity_text(snapshot),
+            "severity": snapshot.status_text,
+            "annotations": snapshot_status_annotations(snapshot),
             "errors": list(snapshot.errors),
             "conditions": list(snapshot.status_conditions),
         },

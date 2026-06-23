@@ -267,6 +267,9 @@ def _day(value: object) -> str:
 
 def _status_line(status: dict, battery: dict) -> str:
     severity = status.get("severity") or status.get("status") or "UNKNOWN"
+    annotations = status.get("annotations") or []
+    if annotations:
+        severity += " (" + ", ".join(annotations) + ")"
     soc = battery.get("soc_percent")
     if soc is None:
         return f"SOC:  --  Status:  {severity}"
