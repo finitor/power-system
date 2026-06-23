@@ -374,7 +374,9 @@ def render_kindle_weather(
         and observed_at is not None
         and reference.astimezone() - observed_at.astimezone() >= WEATHER_STALE_AFTER
     )
-    annotation_html = ("<br>" + escape("(" + ", ".join(annotations) + ")")) if annotations else ""
+    # Abbreviated for Kindle header width — full text would wrap and add a scrollbar.
+    # "OFFLINE" is unambiguous on the weather page; all data here is internet-sourced.
+    annotation_html = "<br>(OFFLINE)" if annotations else ""
     lines = [
         "<!doctype html>",
         "<html>",
