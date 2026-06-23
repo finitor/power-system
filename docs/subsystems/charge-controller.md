@@ -76,7 +76,7 @@ mode is not that authority with this bank).
 
 | Measurement | Source | Priority | Notes |
 |---|---|---|---|
-| PV voltage | Classic 200 | High | Useful for array state and troubleshooting |
+| PV voltage | Classic 200 | High | Useful for array state and troubleshooting. **Note: Classic reports ~21 V at night** (phantom voltage from battery bleeding through FET body diodes into the PV measurement circuit — a known Classic hardware characteristic). Do not use Classic PV voltage to infer day/night state; use PV current or power instead. EPEver correctly reports 0 V at night. |
 | PV current | Classic 200 | High |  |
 | Charge output current | Classic 200 | High | Current into battery bus |
 | Charge stage/state | Classic 200 | High | Bulk, absorb, float, resting, fault, etc. |
