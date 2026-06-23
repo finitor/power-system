@@ -221,13 +221,20 @@ def _browser_refresh_script(refresh_seconds: int) -> str:
     )
 
 
+def _status_display_text(snapshot: SupervisorSnapshot) -> str:
+    text = snapshot.status_text
+    if snapshot.wan_reachable is False:
+        text += " (WAN offline)"
+    return text
+
+
 def render_kindle_snapshot(
     snapshot: SupervisorSnapshot,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     load_summary: LoadSummary | None = None,
     allocation: dict | None = None,
 ) -> str:
-    status = snapshot.status_text
+    status = _status_display_text(snapshot)
     updated = format_kindle_time(snapshot.captured_at)
     soc_text = _soc_text(snapshot)
     lines = [
@@ -292,7 +299,7 @@ def render_kindle_details(
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     allocation: dict | None = None,
 ) -> str:
-    status = snapshot.status_text
+    status = _status_display_text(snapshot)
     updated = format_kindle_time(snapshot.captured_at)
     lines = [
         "<!doctype html>",
