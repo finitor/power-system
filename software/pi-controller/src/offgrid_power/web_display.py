@@ -488,11 +488,11 @@ def render_browser_snapshot(
             "<html>",
             "<head>",
             '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
             _browser_refresh_script(BROWSER_POWER_REFRESH_SECONDS),
             "<title>Off-Grid Power</title>",
             "<style>",
             _browser_display_css(),
-            "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
             "</style>",
             "</head>",
             "<body>",
@@ -548,11 +548,11 @@ def render_browser_weather(payload: dict | None, annotations: list[str] | None =
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
         _browser_refresh_script(BROWSER_WEATHER_REFRESH_SECONDS),
         "<title>Off-Grid Weather</title>",
         "<style>",
         _browser_display_css(),
-        "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}",
         "</style>",
         "</head>",
         "<body>",
@@ -596,6 +596,27 @@ def _browser_display_css() -> str:
         ".browser-summary .meta-cell{text-align:left;}"
         ".browser-summary .button-cell{text-align:right;white-space:nowrap;}"
         "table{border-collapse:collapse;width:100%;}"
+        # The terminal block. pre-wrap on the desktop (wide) view; the narrow
+        # media query below overrides it. Defined here (not per-page) so it sits
+        # ahead of the @media rule in source order and the override wins.
+        "pre{font:16px/1.25 monospace;white-space:pre-wrap;margin:0;}"
+        # On a phone the 3-up grid can't fit the 24ch primary cell, the meta
+        # column, and the nav button on one row. Collapse to two columns: the
+        # primary value spans the top row, with the meta text and nav button
+        # sharing the row below. width=device-width (set in the page head) is
+        # what makes this media query fire at the real screen size.
+        "@media (max-width:480px){"
+        "body{margin:8px;}"
+        ".browser-summary{grid-template-columns:minmax(0,1fr) auto;}"
+        ".browser-summary .primary-cell{grid-column:1 / -1;font-size:30px;margin:0 0 4px 0;}"
+        # The widest terminal row is ~63 monospace chars — ~600px at 16px, far
+        # past a phone's ~390px. Shrink the type to fit the viewport with the
+        # columns intact: white-space:pre (NOT pre-wrap) so a row never breaks
+        # mid-value, and a vw-scaled size so the widest row lands inside the
+        # screen. overflow-x is a safety net for any row the clamp can't quite
+        # fit; pinch-zoom (left enabled) is then for reading, not for fitting.
+        "pre{white-space:pre;font-size:clamp(8px,2.4vw,13px);overflow-x:auto;}"
+        "}"
     )
 
 

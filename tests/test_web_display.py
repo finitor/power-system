@@ -530,6 +530,11 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b'<div class="primary-cell">SOC 92%</div>', response.body)
         self.assertIn(b'<div class="meta-cell">Updated:', response.body)
         self.assertIn(b'<div class="button-cell"><a class="nav-button" href="/weather">Weather</a>', response.body)
+        # Viewport meta keeps iOS Safari from rendering at its 980px default and
+        # scaling the whole page down (tiny text, big right-hand gutter), and
+        # arms the narrow-screen media query.
+        self.assertIn(b'<meta name="viewport" content="width=device-width, initial-scale=1">', response.body)
+        self.assertIn(b"@media (max-width:480px)", response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
         self.assertIn(b"var LIVE_MS = 30000, RETRY_MS = 5000;", response.body)
         self.assertIn(b"XMLHttpRequest", response.body)
@@ -561,6 +566,9 @@ class WebDisplayTest(unittest.TestCase):
                 # Kindle markup (page-turn tap zones), not the browser <pre> view.
                 self.assertNotIn(b"<pre>", response.body)
                 self.assertIn(b"page-turn", response.body)
+                # The viewport meta is browser-only; the 2011 Kindle WebKit must
+                # not get it.
+                self.assertNotIn(b'name="viewport"', response.body)
 
         main = route_display_request(snapshot, "/kindle", browser_ua).body
         details = route_display_request(snapshot, "/kindle/details", browser_ua).body
@@ -600,6 +608,8 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"background:#111", response.body)
         self.assertIn(b'class="browser-summary weather-summary"', response.body)
         self.assertIn(b'<div class="primary-cell">11.0C</div>', response.body)
+        self.assertIn(b'<meta name="viewport" content="width=device-width, initial-scale=1">', response.body)
+        self.assertIn(b"@media (max-width:480px)", response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
         self.assertIn(b'<a class="nav-button" href="/">Power</a>', response.body)
         self.assertIn(b"var LIVE_MS = 300000, RETRY_MS = 5000;", response.body)
