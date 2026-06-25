@@ -573,6 +573,17 @@ class HighlightChangedDigitsTest(unittest.TestCase):
         self.assertIn(f"{CHANGED_DIGIT_START}16mV{CHANGED_DIGIT_END}", highlighted)
         self.assertIn(UP_ARROW, highlighted)
 
+    def test_does_not_split_irradiance_unit(self) -> None:
+        # "746W/m2" must not be treated as a "746W" measurement, which would
+        # inject a marker (space or arrow) between "W" and "/m2".
+        highlighted = highlight_changed_digits(
+            previous="  Global Horizontal     746W/m2",
+            current="  Global Horizontal     746W/m2",
+        )
+
+        self.assertIn("746W/m2", highlighted)
+        self.assertNotIn("746W /m2", highlighted)
+
     def test_pads_unchanged_value_arrow_slots(self) -> None:
         highlighted = highlight_changed_digits(
             previous="Output:  54.2V    3.6A",

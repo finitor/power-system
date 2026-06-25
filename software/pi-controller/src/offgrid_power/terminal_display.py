@@ -20,7 +20,7 @@ CHANGED_DIGIT_END = "\033[0m"
 DIRECTION_ARROW_START = "\033[92m"
 UP_ARROW = f"{DIRECTION_ARROW_START}↑{CHANGED_DIGIT_END}"
 DOWN_ARROW = f"{DIRECTION_ARROW_START}↓{CHANGED_DIGIT_END}"
-MEASUREMENT_PATTERN = re.compile(r"(?<![\w-])(-?\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?)(kWh|mV|Ah|[VAWCs%])(?![\w-])")
+MEASUREMENT_PATTERN = re.compile(r"(?<![\w-])(-?\d+(?:\.\d+)?(?:-\d+(?:\.\d+)?)?)(kWh|mV|Ah|[VAWCs%])(?![\w/-])")
 ROW_LABEL_WIDTH = 21
 BATTERY_IDLE_CURRENT_A = 0.5
 
