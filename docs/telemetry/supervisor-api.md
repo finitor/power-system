@@ -31,18 +31,26 @@ thread that performs polling, so reads and writes to a device cannot race.
 | `GET` | `/healthz` | Liveness probe (process up and producing snapshots) |
 | `GET` | `/api/v1/health` | Machine-readable health: degraded vs down, with per-device checks |
 | `GET` | `/api/v1/snapshot` | Complete latest display snapshot |
-| `POST` | `/api/v1/control/charge-controller/voltage` | Write one scalar charge voltage to Classic (`0`) or EPEver (`1`) |
+| `POST` | `/api/v1/control/charge-controller/voltage` | Write one scalar charge voltage, addressed by controller number |
+| `POST` | `/api/v1/control/charge-controller/charge-settings` | Write charge settings to a controller addressed by number |
+| `POST` | `/api/v1/control/charge-controller/charging` | Enable/disable a controller's charge output, addressed by number |
+| `POST` | `/api/v1/control/charge-controller/sync` | Copy charge settings from one controller to another by number |
 | `POST` | `/api/v1/control/ccl-scaling-factor` | Set/nudge the CCL scaling factor (allocator policy, in-memory) |
-| `POST` | `/api/v1/control/classic/charge-settings` | Write Classic charge voltage/current/time settings |
-| `POST` | `/api/v1/control/epever/charge-settings` | Write EPEver boost/float/equalize voltage and/or max charge current |
-| `POST` | `/api/v1/control/epever/sync-from-classic` | Copy Classic charge targets to EPEver, with optional voltage offset |
-| `POST` | `/api/v1/control/epever/charging` | Enable/disable EPEver charging coil `0x0000` |
+| `GET` | `/api/v1/control/allocation/status` | Return current allocation override state (paused, manual ceilings) |
+| `POST` | `/api/v1/control/allocation/pause` | Pause or resume allocator writes (evaluation continues) |
+| `POST` | `/api/v1/control/allocation/manual-limit` | Set or clear a per-controller current ceiling |
 | `POST` | `/api/v1/control/magnum/charge-settings` | Reserved Magnum charge-setting surface; currently returns `501 not_implemented` |
 | `GET` | `/api/v1/status` | Future supervisor/export/storage status |
 | `GET` | `/api/v1/metrics/latest` | Future normalized latest metric sample list |
 
 Only the endpoints listed above are implemented today; `/api/v1/status` and
 `/api/v1/metrics/latest` are placeholders.
+
+**Controller numbers:** `0` = MidNite Classic, `1` = EPEver. The canonical
+parameter name is `"controller"` (integer). Brand-name path aliases
+(`/classic/charge-settings`, `/epever/charge-settings`, `/epever/sync-from-classic`,
+`/epever/charging`) are kept for backward compatibility but the number-based paths
+are preferred for scripts and future automation.
 
 ## HTTP Behavior
 
@@ -226,17 +234,34 @@ The EPEver equalize target is also raised to at least the target boost voltage,
 because the controller rejects boost above equalize. The same BMS CVL guard is
 applied before writing.
 
-`POST /api/v1/control/epever/charging` accepts:
+`POST /api/v1/control/charge-controller/charge-settings` is the canonical
+number-addressed form. Pass `"controller": 0` for Classic settings or
+`"controller": 1` for EPEver settings, alongside any subset of the
+device-specific fields described above for the brand-name aliases. The
+brand-name paths `/api/v1/control/classic/charge-settings` and
+`/api/v1/control/epever/charge-settings` are backward-compatible aliases that
+route to the same handlers without requiring a `"controller"` field.
+
+`POST /api/v1/control/charge-controller/charging` accepts:
 
 ```json
-{ "enabled": false }
+{ "controller": 1, "enabled": false }
 ```
 
-and returns:
+Currently only controller `1` (EPEver) supports a hardware charging toggle via
+its charge coil; a request for controller `0` returns `400`. The alias
+`/api/v1/control/epever/charging` is kept for backward compatibility.
+
+`POST /api/v1/control/charge-controller/sync` copies charge settings from one
+controller to another. The canonical form accepts:
 
 ```json
-{ "ok": true, "device": "epever", "enabled": false }
+{ "source": 0, "target": 1, "voltage_offset_v": 0.3, "no_current": false }
 ```
+
+Currently only `source: 0, target: 1` (Classic → EPEver) is supported. The alias
+`/api/v1/control/epever/sync-from-classic` is kept for backward compatibility and
+implies `source: 0, target: 1`.
 
 `POST /api/v1/control/magnum/charge-settings` accepts the planned shape:
 
@@ -255,6 +280,72 @@ library can send remote packets, but this system has not yet verified a safe
 read-modify-write primitive that preserves the active remote configuration.
 Voltage targets sent to this endpoint are still checked against BMS CVL before
 the backend returns `501`.
+
+### Allocation override
+
+Three endpoints let an operator pause the allocator or cap individual controller
+outputs without stopping the supervisor. All state is **in-memory only** — it
+resets to allocator-controlled on supervisor restart. The display immediately
+reflects any override (no waiting for the next allocation cycle).
+
+`GET /api/v1/control/allocation/status` returns current override state:
+
+```json
+{
+  "paused": false,
+  "manual_limits_a": { "0": null, "1": null }
+}
+```
+
+Keys in `manual_limits_a` are string controller numbers. `null` means
+allocator-controlled; a number means a manual ceiling is in effect.
+
+`POST /api/v1/control/allocation/pause` pauses or resumes allocator writes:
+
+```json
+{ "paused": true }
+```
+
+While paused, the allocator continues to evaluate and log decisions but writes
+nothing to either controller. Returns `409` if charge allocation is not enabled.
+Response: `{ "ok": true, "previous_paused": false, "paused": true }`.
+
+`POST /api/v1/control/allocation/manual-limit` sets or clears a per-controller
+current ceiling:
+
+```json
+{ "controller": 0, "limit_a": 5.0 }
+```
+
+Pass `"limit_a": null` to clear the ceiling and return to allocator control. A
+manual ceiling acts as a hard cap: the allocator evaluates normally and its
+output for that controller is clamped to `min(allocator_target, ceiling)`. The
+ceiling is written to the device immediately and on every subsequent allocation
+cycle. Returns `409` if charge allocation is not enabled. Response:
+
+```json
+{ "ok": true, "controller": 0, "previous_limit_a": null, "limit_a": 5.0 }
+```
+
+**`scripts/allocation-override.py`** is the operator CLI for these endpoints:
+
+```
+# Status
+python scripts/allocation-override.py status
+
+# Pause / resume allocator writes
+python scripts/allocation-override.py pause
+python scripts/allocation-override.py resume
+
+# Set a per-controller ceiling
+python scripts/allocation-override.py limit 0 5     # cap Classic at 5 A
+python scripts/allocation-override.py limit 0 --clear  # restore allocator control
+python scripts/allocation-override.py limit 1 30    # cap EPEver at 30 A
+```
+
+The Charge Allocation display group shows `(paused)` in the header when the
+allocator is paused, and `→ N A manual ceiling` on a controller row when a
+ceiling is active for that controller.
 
 ## Health
 

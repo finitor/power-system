@@ -193,3 +193,76 @@ Jr** battery-current shunt, which the BMS's own current/SOC telemetry has
 effectively obsoleted. Retiring the WBjr would free Aux 1 to give the Classic a
 true supervisor-commanded on/off at CCL=0 — a future development, not currently
 planned.
+
+## Cold-Weather Operation: VOC as Irradiance Proxy and the Battery Heater Heuristic
+
+LiFePO4 cells cannot safely accept charge below 0 °C. The `ChargeCeiling`
+low-temperature stop latches all charging at or below 0 °C pack temperature and
+holds the latch until recovery to 2 °C. A 200 W ceramic heater in the battery
+compartment can bring the pack above the recovery threshold and restore charging
+within minutes of sunrise on a good solar day — but running the heater when
+there is no solar income can drain the pack further.
+
+### What signals irradiance while charging is disabled?
+
+When pack temperature is below 0 °C, the low-temperature stop is active and the
+BMS charge-enable is false. The EPEver coil is open; the Classic floor-trickles
+into the load bus. Neither charger's output current is a meaningful irradiance
+signal in this state.
+
+**The Classic's `last_voc` register (4122) continues to update every ~60 seconds
+regardless of whether charging is active.** The Classic performs open-circuit
+voltage (VOC) sweeps internally as part of its MPPT tracking algorithm and
+records the result to this register continuously — it is not gated by charge
+stage, CCL, or the allocator's current-limit register. This was confirmed
+empirically on 2026-06-26: with Classic commanded to 0 A via the allocation
+override API, `last_voc` updated every minute and tracked cloud cover in real
+time (131.4 → 131.2 → 131.0 → 129.8 V over eight minutes).
+
+Additionally, `pv_voltage` (register 4116) — the real-time PV bus voltage — rises
+toward VOC whenever the Classic is at or near 0 A output, making it a second
+real-time proxy for the same quantity during charge-disabled periods.
+
+### VOC–irradiance relationship
+
+VOC follows a logarithmic relationship with irradiance. The useful empirical
+threshold from historical data (Bulk stage, allocator target ≥ 25 A to exclude
+severely-limited periods):
+
+| `last_voc` | Reliability of ≥ 200 W Classic output |
+|---|---|
+| < 130 V | Low / unlikely |
+| 130–132 V | 50–83% of samples show ≥ 200 W |
+| 134 V+ | 100% of samples show ≥ 200 W |
+
+The 132 V threshold is a reasonable conservative trigger: most days that clear
+to 132 V VOC will produce net positive energy even accounting for a 200 W heater
+draw. Clear mornings reach 132 V within 15–30 minutes of the Classic entering
+Bulk from the dawn HyperVoc sweep (~80% of the measured morning VOC).
+
+### Proposed heater heuristic
+
+Run the 200 W ceramic heater when **all** of the following hold:
+
+1. Pack temperature ≤ 0 °C (charging is disabled — there is a reason to run the heater)
+2. Current time is between sunrise and sunset (from the weather data already polled)
+3. `pv_voltage` (Classic, register 4116) > 132 V, or `last_voc` > 132 V
+
+Condition 3 uses `pv_voltage` as the real-time irradiance proxy during
+charge-disabled periods because it tracks irradiance moment-to-moment; `last_voc`
+is updated every ~60 seconds and is also suitable. The EPEver cannot serve as a
+corroborating signal because EPEver charging is disabled (coil open) at sub-zero
+pack temperatures.
+
+**This heuristic is not yet implemented.** The heater is currently operated
+manually. Automating it requires a relay or smart-plug control surface and a
+supervisor process that monitors pack temperature and PV voltage together.
+
+### Note on the Classic 0 A floor during charge-disabled periods
+
+As noted in the section above, the Classic does not honor 0 A as a true shutoff:
+it trickles up to a few tens of watts into the load bus even when the allocator
+has written 0 to its current-limit register. During sub-zero pack temperatures
+this trickle feeds household load rather than the battery (the BMS charge-enable
+is false, so the battery absorbs no charge), and is harmless. It does not
+meaningfully reduce the load that a heater decision needs to account for.
