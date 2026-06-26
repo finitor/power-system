@@ -52,10 +52,11 @@ class DisplayResponse:
 
 
 class SnapshotCache:
-    def __init__(self) -> None:
+    def __init__(self, allocation_override=None) -> None:
         self._snapshot: SupervisorSnapshot | None = None
         self._load_summary: LoadSummary | None = None
         self._allocation: dict | None = None
+        self._allocation_override = allocation_override
         self._lock = Lock()
 
     def set(
@@ -81,7 +82,25 @@ class SnapshotCache:
 
     def get_allocation(self) -> dict | None:
         with self._lock:
-            return self._allocation
+            if self._allocation is None:
+                return None
+            if self._allocation_override is None:
+                return self._allocation
+            status = self._allocation_override.status()
+            result = {**self._allocation, "allocator_paused": status["paused"]}
+            manual_limits = status["manual_limits_a"]
+            from .charge_allocator import AllocationOverride
+
+            targets = {}
+            for name, target in (result.get("targets") or {}).items():
+                try:
+                    idx = AllocationOverride.CONTROLLER_NAMES.index(name)
+                    ceiling = manual_limits.get(str(idx))
+                except ValueError:
+                    ceiling = None
+                targets[name] = {**target, "manual_ceiling_a": ceiling}
+            result["targets"] = targets
+            return result
 
 
 def is_kindle_user_agent(user_agent: str) -> bool:

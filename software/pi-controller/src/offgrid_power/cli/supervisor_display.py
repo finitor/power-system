@@ -340,6 +340,7 @@ def main() -> int:
         ceiling_config = dataclasses.replace(ceiling_config, bms_ccl_scaling_factor=persisted_scaling)
     on_scaling_change = (lambda value: save_ccl_scaling_factor(state_path, value)) if state_path else None
     allocation_override = AllocationOverride() if args.charge_allocation or args.charge_allocation_dry_run else None
+    snapshot_cache._allocation_override = allocation_override
     charge_allocation_logger = (
         ChargeAllocationLogger(
             ChargeCurrentAllocator(_config_from_env(ChargeAllocatorConfig, "CHARGE_ALLOC_")),

@@ -351,7 +351,10 @@ def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
 
 
 def _allocation_lines(allocation: dict) -> list[str]:
-    lines = ["Charge Allocation"]
+    header = "Charge Allocation"
+    if allocation.get("allocator_paused"):
+        header += "  (paused)"
+    lines = [header]
     reason = allocation.get("reason") or "?"
     lines.append(_row("Limit", _allocation_limit_text(allocation)))
     lines.append(_row("Budget", _allocation_budget_text(allocation)))
@@ -443,16 +446,21 @@ def _allocation_mechanisms_text(allocation: dict) -> str:
 def _allocation_target_text(target: dict, *, global_reason: str) -> str:
     reason = target.get("reason")
     target_a = target.get("target_a")
+    ceiling = target.get("manual_ceiling_a")
     if target.get("disable"):
         return _with_local_reason("off", reason, global_reason)
     if target_a is None:
         return _with_local_reason("--", reason, global_reason)
     value = f"{_fmt_value(target_a, 1)}A"
     if reason in {"unconstrained", "charger inactive", "charger unavailable"}:
-        return f"{value} released"
-    if reason in {"charger offline", "missing BMS CCL", "missing battery current"}:
-        return _with_local_reason(value, reason, global_reason)
-    return f"{value} limited"
+        base = f"{value} released"
+    elif reason in {"charger offline", "missing BMS CCL", "missing battery current"}:
+        base = _with_local_reason(value, reason, global_reason)
+    else:
+        base = f"{value} limited"
+    if ceiling is not None:
+        return f"{base} → {_fmt_value(ceiling, 0)}A ceiling"
+    return base
 
 
 def _with_local_reason(value: str, reason: str | None, global_reason: str) -> str:

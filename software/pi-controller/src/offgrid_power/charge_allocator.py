@@ -415,6 +415,10 @@ def allocation_detail(
 
     ``ccl_scaling_factor`` is the live operator knob from the ChargeCeiling; it
     is surfaced here so the display can show and tune it alongside the allocation.
+
+    Override state (manual ceilings, paused) is NOT included here; it is merged
+    live by SnapshotCache.get_allocation() so it reflects immediately after any
+    API write without waiting for the next allocation cycle.
     """
     return {
         "mode": "dry-run" if dry_run else "live",
@@ -434,6 +438,7 @@ def allocation_detail(
                 "disable": target.disable,
                 "should_write": target.should_write,
                 "reason": target.reason,
+                "manual_ceiling_a": None,
             }
             for name, target in decision.targets.items()
         },
