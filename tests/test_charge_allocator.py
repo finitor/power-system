@@ -10,9 +10,11 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 
 from offgrid_power.charge_allocator import (  # noqa: E402
+    AllocationOverride,
     ChargeAllocatorConfig,
     ChargeCurrentAllocator,
     ChargerAllocationInput,
+    ChargerAllocationTarget,
     allocation_detail,
     charge_allocation_event,
 )
@@ -478,6 +480,95 @@ def _charger(
         enabled=enabled,
         active=active,
     )
+
+
+def _targets(*names_and_currents: tuple[str, float]) -> dict[str, ChargerAllocationTarget]:
+    return {
+        name: ChargerAllocationTarget(target_current_a=amps, should_write=True, reason="test")
+        for name, amps in names_and_currents
+    }
+
+
+class TestAllocationOverride(unittest.TestCase):
+    def test_initial_state(self):
+        o = AllocationOverride()
+        self.assertFalse(o.paused)
+        self.assertEqual(o.status(), {"paused": False, "manual_limits_a": {"0": None, "1": None}})
+
+    def test_pause_suppresses_writes(self):
+        o = AllocationOverride()
+        o.set_paused(True)
+        targets = _targets(("classic", 80.0), ("epever", 50.0))
+        result = o.apply(targets)
+        self.assertFalse(result["classic"].should_write)
+        self.assertFalse(result["epever"].should_write)
+        self.assertEqual(result["classic"].target_current_a, 80.0)
+
+    def test_resume_restores_writes(self):
+        o = AllocationOverride()
+        o.set_paused(True)
+        o.set_paused(False)
+        targets = _targets(("classic", 80.0))
+        result = o.apply(targets)
+        self.assertTrue(result["classic"].should_write)
+
+    def test_manual_limit_clamps_target(self):
+        o = AllocationOverride()
+        previous = o.set_manual_limit(0, 0.0)
+        self.assertIsNone(previous)
+        targets = _targets(("classic", 80.0), ("epever", 50.0))
+        result = o.apply(targets)
+        self.assertEqual(result["classic"].target_current_a, 0.0)
+        self.assertTrue(result["classic"].should_write)
+        self.assertEqual(result["epever"].target_current_a, 50.0)
+
+    def test_manual_limit_does_not_raise_target(self):
+        o = AllocationOverride()
+        o.set_manual_limit(0, 100.0)
+        targets = _targets(("classic", 60.0))
+        result = o.apply(targets)
+        self.assertEqual(result["classic"].target_current_a, 60.0)
+
+    def test_clear_manual_limit(self):
+        o = AllocationOverride()
+        o.set_manual_limit(0, 10.0)
+        previous = o.set_manual_limit(0, None)
+        self.assertEqual(previous, 10.0)
+        targets = _targets(("classic", 80.0))
+        result = o.apply(targets)
+        self.assertEqual(result["classic"].should_write, True)
+        self.assertEqual(result["classic"].target_current_a, 80.0)
+        self.assertNotIn("manual_limit", result["classic"].reason)
+
+    def test_invalid_index_raises(self):
+        o = AllocationOverride()
+        with self.assertRaises(ValueError):
+            o.set_manual_limit(99, 10.0)
+
+    def test_negative_limit_raises(self):
+        o = AllocationOverride()
+        with self.assertRaises(ValueError):
+            o.set_manual_limit(0, -1.0)
+
+    def test_set_paused_returns_previous(self):
+        o = AllocationOverride()
+        self.assertFalse(o.set_paused(True))
+        self.assertTrue(o.set_paused(False))
+
+    def test_pause_takes_priority_over_manual_limit(self):
+        o = AllocationOverride()
+        o.set_manual_limit(0, 5.0)
+        o.set_paused(True)
+        targets = _targets(("classic", 80.0))
+        result = o.apply(targets)
+        self.assertFalse(result["classic"].should_write)
+
+    def test_unknown_controller_names_passed_through(self):
+        o = AllocationOverride()
+        targets = {"unknown": ChargerAllocationTarget(target_current_a=30.0, should_write=True, reason="x")}
+        result = o.apply(targets)
+        self.assertIn("unknown", result)
+        self.assertEqual(result["unknown"].target_current_a, 30.0)
 
 
 if __name__ == "__main__":

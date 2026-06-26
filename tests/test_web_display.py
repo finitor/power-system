@@ -1357,5 +1357,96 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIs(cache.get_load_summary(), load_summary)
 
 
+class TestAllocationOverrideAPI(unittest.TestCase):
+    def _supervisor(self):
+        return FakeControlSupervisor()
+
+    def test_pause_sets_paused(self):
+        from offgrid_power.charge_allocator import AllocationOverride
+        override = AllocationOverride()
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/pause", {"paused": True},
+            allocation_override=override,
+        )
+        payload = json.loads(response.body)
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(payload["previous_paused"])
+        self.assertTrue(payload["paused"])
+        self.assertTrue(override.paused)
+
+    def test_resume_clears_paused(self):
+        from offgrid_power.charge_allocator import AllocationOverride
+        override = AllocationOverride()
+        override.set_paused(True)
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/pause", {"paused": False},
+            allocation_override=override,
+        )
+        payload = json.loads(response.body)
+        self.assertTrue(payload["ok"])
+        self.assertFalse(override.paused)
+
+    def test_pause_missing_field_is_bad_request(self):
+        from offgrid_power.charge_allocator import AllocationOverride
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/pause", {},
+            allocation_override=AllocationOverride(),
+        )
+        self.assertEqual(response.status.value, 400)
+
+    def test_pause_without_override_is_conflict(self):
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/pause", {"paused": True},
+            allocation_override=None,
+        )
+        self.assertEqual(response.status.value, 409)
+
+    def test_manual_limit_sets_ceiling(self):
+        from offgrid_power.charge_allocator import AllocationOverride
+        override = AllocationOverride()
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/manual-limit",
+            {"controller": 0, "limit_a": 0.0},
+            allocation_override=override,
+        )
+        payload = json.loads(response.body)
+        self.assertEqual(response.status.value, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["controller"], 0)
+        self.assertIsNone(payload["previous_limit_a"])
+        self.assertEqual(payload["limit_a"], 0.0)
+
+    def test_manual_limit_clear(self):
+        from offgrid_power.charge_allocator import AllocationOverride
+        override = AllocationOverride()
+        override.set_manual_limit(0, 5.0)
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/manual-limit",
+            {"controller": 0, "limit_a": None},
+            allocation_override=override,
+        )
+        payload = json.loads(response.body)
+        self.assertEqual(response.status.value, 200)
+        self.assertIsNone(payload["limit_a"])
+
+    def test_manual_limit_invalid_index_is_bad_request(self):
+        from offgrid_power.charge_allocator import AllocationOverride
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/manual-limit",
+            {"controller": 99, "limit_a": 10.0},
+            allocation_override=AllocationOverride(),
+        )
+        self.assertEqual(response.status.value, 400)
+
+    def test_manual_limit_without_override_is_conflict(self):
+        response = route_control_request(
+            self._supervisor(), "/api/v1/control/allocation/manual-limit",
+            {"controller": 0, "limit_a": 0.0},
+            allocation_override=None,
+        )
+        self.assertEqual(response.status.value, 409)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,7 @@ from offgrid_power.canbus import (
     socketcan_interfaces,
 )
 from offgrid_power.charge_allocator import (
+    AllocationOverride,
     ChargeAllocatorConfig,
     ChargeAllocationDecision,
     ChargeCurrentAllocator,
@@ -338,6 +339,7 @@ def main() -> int:
     if persisted_scaling is not None:
         ceiling_config = dataclasses.replace(ceiling_config, bms_ccl_scaling_factor=persisted_scaling)
     on_scaling_change = (lambda value: save_ccl_scaling_factor(state_path, value)) if state_path else None
+    allocation_override = AllocationOverride() if args.charge_allocation or args.charge_allocation_dry_run else None
     charge_allocation_logger = (
         ChargeAllocationLogger(
             ChargeCurrentAllocator(_config_from_env(ChargeAllocatorConfig, "CHARGE_ALLOC_")),
@@ -350,6 +352,7 @@ def main() -> int:
             target_quantum_a=_env_float("CHARGE_ALLOC_TARGET_QUANTUM_A", 5.0),
             classic_sleep_debounce_s=_env_float("CHARGE_ALLOC_CLASSIC_SLEEP_DEBOUNCE_S", 180.0),
             epever_sleep_debounce_s=_env_float("CHARGE_ALLOC_EPEVER_SLEEP_DEBOUNCE_S", 180.0),
+            override=allocation_override,
         )
         if args.charge_allocation or args.charge_allocation_dry_run
         else None
@@ -361,6 +364,7 @@ def main() -> int:
             snapshot_cache,
             weather_service,
             charge_ceiling=charge_allocation_logger.ceiling if charge_allocation_logger is not None else None,
+            allocation_override=allocation_override,
         )
     previous_poll_render: str | None = None
 
@@ -457,6 +461,7 @@ def start_web_display(
     snapshot_cache: SnapshotCache,
     weather_service: WeatherService | None = None,
     charge_ceiling: ChargeCeiling | None = None,
+    allocation_override: AllocationOverride | None = None,
 ) -> None:
     thread = Thread(
         target=run_display_server,
@@ -470,6 +475,7 @@ def start_web_display(
             "weather_provider": None if weather_service is None else weather_service.get,
             "weather_refresh_hook": None if weather_service is None else weather_service.request_refresh,
             "charge_ceiling": charge_ceiling,
+            "allocation_override": allocation_override,
         },
         daemon=True,
     )
@@ -641,6 +647,7 @@ class ChargeAllocationLogger:
         target_quantum_a: float = 5.0,
         classic_sleep_debounce_s: float = 180.0,
         epever_sleep_debounce_s: float = 180.0,
+        override: AllocationOverride | None = None,
     ) -> None:
         self.allocator = allocator
         self.heartbeat_s = heartbeat_s
@@ -658,6 +665,7 @@ class ChargeAllocationLogger:
         self._last_logged_monotonic: float | None = None
         self._epever_charging_state: bool | None = None
         self._inactive_since: dict[str, datetime] = {}
+        self.override = override
 
     def _debounced_inputs(
         self, chargers: list[ChargerAllocationInput], captured_at: datetime
@@ -828,7 +836,7 @@ class ChargeAllocationLogger:
         recorder: MetricRecorder | None = None,
         captured_at: datetime | None = None,
     ) -> None:
-        targets = decision.targets
+        targets = self.override.apply(decision.targets) if self.override is not None else decision.targets
         # Reconcile the EPEver charge coil to the disable intent, toggling only on
         # change (the limit register can't reach 0, so off/on is the coil's job).
         epever = targets.get("epever")

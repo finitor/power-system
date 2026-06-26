@@ -727,11 +727,56 @@ def route_api_request(
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
 
+def _control_allocation_pause(allocation_override, payload: dict) -> DisplayResponse:
+    try:
+        if allocation_override is None:
+            raise RuntimeError("charge allocation is not enabled; allocation override has no effect")
+        if "paused" not in payload:
+            raise ValueError("'paused' (bool) is required")
+        paused = bool(payload["paused"])
+        previous = allocation_override.set_paused(paused)
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
+    logger.info("Allocation pause write: %s -> %s", previous, paused)
+    return _json_response(HTTPStatus.OK, {"ok": True, "previous_paused": previous, "paused": paused})
+
+
+def _control_allocation_manual_limit(allocation_override, payload: dict) -> DisplayResponse:
+    try:
+        if allocation_override is None:
+            raise RuntimeError("charge allocation is not enabled; allocation override has no effect")
+        if "controller" not in payload:
+            raise ValueError("'controller' (integer index) is required")
+        try:
+            index = int(payload["controller"])
+        except (TypeError, ValueError):
+            raise ValueError(f"'controller' must be an integer, got {payload['controller']!r}")
+        limit_a = payload.get("limit_a")
+        if limit_a is not None:
+            try:
+                limit_a = float(limit_a)
+            except (TypeError, ValueError):
+                raise ValueError(f"'limit_a' must be a number or null, got {limit_a!r}")
+        previous = allocation_override.set_manual_limit(index, limit_a)
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
+    logger.info("Allocation manual limit write: controller %d: %s -> %s", index, previous, limit_a)
+    return _json_response(
+        HTTPStatus.OK,
+        {"ok": True, "controller": index, "previous_limit_a": previous, "limit_a": limit_a},
+    )
+
+
 def route_control_request(
     supervisor: Supervisor,
     path: str,
     payload: dict,
     charge_ceiling=None,
+    allocation_override=None,
 ) -> DisplayResponse:
     if path == "/api/v1/control/ccl-scaling-factor":
         return _control_ccl_scaling_factor(charge_ceiling, payload)
@@ -747,6 +792,10 @@ def route_control_request(
         return _control_epever_charging(supervisor, payload)
     if path == "/api/v1/control/magnum/charge-settings":
         return _control_magnum_charge_settings(supervisor, payload)
+    if path == "/api/v1/control/allocation/pause":
+        return _control_allocation_pause(allocation_override, payload)
+    if path == "/api/v1/control/allocation/manual-limit":
+        return _control_allocation_manual_limit(allocation_override, payload)
     return _json_response(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
 
 
@@ -1780,6 +1829,7 @@ def run_display_server(
     weather_refresh_hook: Callable[[], None] | None = None,
     allocation_provider: Callable[[], dict | None] | None = None,
     charge_ceiling=None,
+    allocation_override=None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
     refresh = refresh_hook or supervisor.request_refresh
@@ -1829,6 +1879,13 @@ def run_display_server(
                 load_summary = load_tracker.update(snapshot)
                 weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in _WEATHER_VIEW_PATHS else None
             allocation_path = urlparse(self.path).path
+            if allocation_path == "/api/v1/control/allocation/status":
+                response = _json_response(
+                    HTTPStatus.OK,
+                    allocation_override.status() if allocation_override is not None else {"paused": False, "manual_limits_a": {}},
+                )
+                self._send_display_response(response)
+                return
             allocation = (
                 allocation_provider()
                 if allocation_provider is not None
@@ -1871,7 +1928,7 @@ def run_display_server(
                 response = _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
                 self._send_display_response(response)
                 return
-            response = route_control_request(supervisor, parsed_path, payload, charge_ceiling=charge_ceiling)
+            response = route_control_request(supervisor, parsed_path, payload, charge_ceiling=charge_ceiling, allocation_override=allocation_override)
             self._send_display_response(response)
 
         def _send_display_response(self, response: DisplayResponse) -> None:

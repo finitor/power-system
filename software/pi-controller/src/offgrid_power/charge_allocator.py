@@ -5,8 +5,109 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import math
+import threading
 
 from .metrics import TelemetryEvent
+
+
+class AllocationOverride:
+    """Thread-safe operator knobs for pausing allocator writes and capping per-controller current.
+
+    Controllers are addressed by index (0 = classic, 1 = epever, ...) matching the
+    order chargers are appended in ``_allocation_inputs()``.  Using indices rather
+    than names keeps the API stable across hardware swaps.
+
+    Manual limits act as a ceiling: the allocator still runs and computes targets,
+    but any controller whose index has a manual limit set will be clamped to at most
+    that value, and the write is forced regardless of the deadband.
+
+    When paused, all ``should_write`` flags are suppressed — the allocator keeps
+    evaluating and logging decisions, but nothing is sent to the controllers.
+    """
+
+    # Ordered names in the same sequence as _allocation_inputs builds chargers.
+    # Update this list if a new charger type is added to the supervisor.
+    CONTROLLER_NAMES: list[str] = ["classic", "epever"]
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._paused: bool = False
+        self._manual_limits_a: dict[int, float] = {}
+
+    @property
+    def paused(self) -> bool:
+        with self._lock:
+            return self._paused
+
+    def set_paused(self, paused: bool) -> bool:
+        """Set pause state; returns previous value."""
+        with self._lock:
+            previous = self._paused
+            self._paused = paused
+            return previous
+
+    def set_manual_limit(self, index: int, limit_a: float | None) -> float | None:
+        """Set or clear a per-controller ceiling; returns previous value."""
+        if index < 0 or index >= len(self.CONTROLLER_NAMES):
+            raise ValueError(f"controller index {index} out of range (0–{len(self.CONTROLLER_NAMES) - 1})")
+        if limit_a is not None and limit_a < 0:
+            raise ValueError(f"limit_a must be >= 0, got {limit_a}")
+        with self._lock:
+            previous = self._manual_limits_a.get(index)
+            if limit_a is None:
+                self._manual_limits_a.pop(index, None)
+            else:
+                self._manual_limits_a[index] = limit_a
+            return previous
+
+    def status(self) -> dict:
+        with self._lock:
+            return {
+                "paused": self._paused,
+                "manual_limits_a": {str(i): self._manual_limits_a.get(i) for i in range(len(self.CONTROLLER_NAMES))},
+            }
+
+    def apply(
+        self,
+        targets: dict[str, ChargerAllocationTarget],
+    ) -> dict[str, ChargerAllocationTarget]:
+        """Apply pause and manual-ceiling overrides to a set of allocation targets.
+
+        Returns a new dict; input is not mutated.
+        """
+        with self._lock:
+            paused = self._paused
+            limits = dict(self._manual_limits_a)
+
+        out: dict[str, ChargerAllocationTarget] = {}
+        for idx, name in enumerate(self.CONTROLLER_NAMES):
+            target = targets.get(name)
+            if target is None:
+                continue
+            if paused:
+                out[name] = ChargerAllocationTarget(
+                    target_current_a=target.target_current_a,
+                    should_write=False,
+                    reason=target.reason,
+                    disable=target.disable,
+                )
+                continue
+            if idx in limits:
+                ceiling = limits[idx]
+                clamped_a = min(target.target_current_a, ceiling) if target.target_current_a is not None else ceiling
+                out[name] = ChargerAllocationTarget(
+                    target_current_a=clamped_a,
+                    should_write=True,
+                    reason=f"manual_limit({ceiling}A)",
+                    disable=target.disable,
+                )
+            else:
+                out[name] = target
+        # Pass through any chargers not in CONTROLLER_NAMES unchanged.
+        for name, target in targets.items():
+            if name not in out:
+                out[name] = target
+        return out
 
 
 @dataclass(frozen=True)
