@@ -5,7 +5,7 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .charge_allocator import ChargeAllocationDecision
+    from .charge_allocator import AllocationOverride, ChargeAllocationDecision
     from .relay import RelayController
     from .supervisor import SupervisorSnapshot
 
@@ -25,9 +25,8 @@ class RelaySupervisor:
       On  when pack temp < 0 °C AND Classic VOC > 134 V
       Off when pack temp > 5 °C OR  Classic VOC < 130 V
 
-    Relay 2 (charge_disable): mirrors the Classic allocator hard-disable.
-      On  when the CCL allocator sets Classic to 0 A (disable=True)
-      Off otherwise
+    Relay 2 (charge_disable): activates whenever Classic is commanded to 0 A,
+      via the allocator (disable flag or 0 A target) or a manual ceiling override.
     """
 
     def __init__(self, relay_controller: RelayController) -> None:
@@ -38,9 +37,10 @@ class RelaySupervisor:
         self,
         snapshot: SupervisorSnapshot,
         allocation_decision: ChargeAllocationDecision | None,
+        allocation_override: AllocationOverride | None = None,
     ) -> None:
         self._update_heat_fan(snapshot)
-        self._update_charge_disable(allocation_decision)
+        self._update_charge_disable(allocation_decision, allocation_override)
 
     def _update_heat_fan(self, snapshot: SupervisorSnapshot) -> None:
         temp_c = _pack_temp(snapshot)
@@ -69,14 +69,23 @@ class RelaySupervisor:
                 log.error("relay heat_fan set failed: %s", exc)
 
     def _update_charge_disable(
-        self, allocation_decision: ChargeAllocationDecision | None
+        self,
+        allocation_decision: ChargeAllocationDecision | None,
+        allocation_override: AllocationOverride | None,
     ) -> None:
         if allocation_decision is None:
             return
-        classic_target = allocation_decision.targets.get("classic")
+        # Apply override (manual ceilings) to get the effective targets — the
+        # same view that _apply() uses when writing to the Classic.
+        targets = (
+            allocation_override.apply(allocation_decision.targets)
+            if allocation_override is not None
+            else allocation_decision.targets
+        )
+        classic_target = targets.get("classic")
         if classic_target is None:
             return
-        want = classic_target.disable
+        want = classic_target.disable or classic_target.target_current_a == 0.0
         current = self._relay.state()["charge_disable"]
         if want != current:
             log.info(

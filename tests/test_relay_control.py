@@ -10,7 +10,7 @@ sys.path.insert(0, str(PACKAGE_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from offgrid_power.canbus import CanFrame, PylonMeasurements, PylonCanSnapshot, decode_pylon_snapshot
-from offgrid_power.charge_allocator import ChargeAllocationDecision, ChargerAllocationTarget
+from offgrid_power.charge_allocator import AllocationOverride, ChargeAllocationDecision, ChargerAllocationTarget
 from offgrid_power.relay_control import RelaySupervisor
 from snapshot_helpers import make_classic_telemetry, make_snapshot
 
@@ -127,6 +127,43 @@ class TestChargeDisable(unittest.TestCase):
     def test_clears_when_classic_reenabled(self):
         self.rs.update(_snapshot(), _decision(classic_disable=True))
         self.rs.update(_snapshot(), _decision(classic_disable=False))
+        self.assertFalse(self.relay.state()["charge_disable"])
+
+    def test_activates_via_zero_target_current(self):
+        # Allocator returns 0A target without disable=True (e.g. manual ceiling clamped to 0)
+        decision = _decision(classic_disable=False)
+        # Patch target_current_a to 0.0 without disable
+        target = decision.targets["classic"]
+        patched = ChargerAllocationTarget(
+            target_current_a=0.0,
+            should_write=True,
+            reason="manual_limit(0A)",
+            disable=False,
+        )
+        decision = ChargeAllocationDecision(
+            targets={"classic": patched},
+            reason=decision.reason,
+            budget_a=decision.budget_a,
+            bms_ccl_a=decision.bms_ccl_a,
+            load_allowance_a=decision.load_allowance_a,
+            battery_current_a=decision.battery_current_a,
+            battery_charge_a=decision.battery_charge_a,
+        )
+        self.rs.update(_snapshot(), decision)
+        self.assertTrue(self.relay.state()["charge_disable"])
+
+    def test_activates_via_manual_ceiling_zero(self):
+        # AllocationOverride with 0A ceiling for Classic (index 0) clamps the target
+        override = AllocationOverride()
+        override.set_manual_limit(0, 0.0)
+        # Base decision has non-zero target (disable=False)
+        self.rs.update(_snapshot(), _decision(classic_disable=False), allocation_override=override)
+        self.assertTrue(self.relay.state()["charge_disable"])
+
+    def test_non_zero_manual_ceiling_does_not_activate(self):
+        override = AllocationOverride()
+        override.set_manual_limit(0, 10.0)
+        self.rs.update(_snapshot(), _decision(classic_disable=False), allocation_override=override)
         self.assertFalse(self.relay.state()["charge_disable"])
 
 

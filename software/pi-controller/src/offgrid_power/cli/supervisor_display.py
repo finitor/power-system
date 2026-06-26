@@ -416,7 +416,7 @@ def main() -> int:
                         dry_run=not charge_allocation_logger.live,
                         ccl_scaling_factor=charge_allocation_logger.ceiling.scaling_factor,
                     )
-            relay_supervisor.update(snapshot, allocation_decision)
+            relay_supervisor.update(snapshot, allocation_decision, allocation_override)
             # Derive the EPEver "today" from its monotonic lifetime total (its own
             # daily register doesn't reset); the load cumulative needs it too, so
             # build the display copy before computing the load summary.
