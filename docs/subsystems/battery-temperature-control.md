@@ -142,9 +142,11 @@ Winter deadlock is possible if the batteries cold-lock and cannot discharge to p
 
 Classic AUX1 is used as the hardware charge-disable line, driven by relay CH2. The relay NO contacts provide a contact closure to AUX1 when the supervisor commands 0 A to the Classic.
 
-**TODO:** Reconfigure Classic AUX1 from its current function (register 4165 = 0x5201) to Logic Input 1 (high input → Resting/Stop Charge). Validate the target register value against the Classic Modbus register map PDF before writing. Confirm the setting persists across Classic power cycles and that AUX1 pin behaviour matches expectations before relying on it for charge disable.
+**TODO:** Remove WhizBang Jr wiring from Classic AUX1 terminal. WhizBang Jr is currently on AUX1 and must be physically cleared before AUX1 can be used as the charge-disable line. The Eco-Worthy BMS/ESM-100 over CAN makes it redundant.
 
-**TODO:** Remove WhizBang Jr from Classic AUX2 if installed — it is not needed. The Eco-Worthy BMS/ESM-100 over CAN is the primary battery current and SOC source. Freeing AUX2 leaves it available for future Classic auxiliary functions.
+**TODO:** Reconfigure Classic AUX1 from WhizBang Jr (register 4165 = 0x5201) to Logic Input 1 (high input → Resting/Stop Charge). Validate the target function code against the Classic Modbus register map PDF, write via the existing `unlock_ethernet_writes` + `write_register` path, and confirm persistence across a Classic power cycle.
+
+**TODO:** Wire relay CH2 NO contacts to Classic AUX1 terminals (contact closure, no external voltage).
 
 Preferred path:
 

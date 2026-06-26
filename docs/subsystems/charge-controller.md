@@ -153,13 +153,15 @@ The Eco-Worthy ESM-100/BMS should be the first battery SOC/current source for th
 
 See [Charge Management](../charge-management.md) for the policy that compares Classic charge settings against BMS-advertised CVL/CCL and raises read-only alerts for cell-voltage and cell-delta conditions.
 
-WhizBang Jr is not installed and not planned. The Eco-Worthy BMS/ESM-100 over CAN is the primary battery current and SOC source, making WhizBang Jr redundant. AUX2 remains free for future Classic auxiliary functions.
+WhizBang Jr is currently connected to AUX1 and is the reason AUX1 must be physically cleared before it can be used as the charge-disable line. The Eco-Worthy BMS/ESM-100 over CAN is the primary battery current and SOC source, making WhizBang Jr redundant. AUX2 is free.
 
 ## AUX1 — Hardware Charge Disable
 
 AUX1 is the selected hardware charge-disable line. The supervisor drives relay CH2 (GPIO 27) to produce a contact closure on AUX1 whenever it commands 0 A to the Classic, providing a hardware-level backstop independent of Modbus write success.
 
-**TODO:** Reconfigure AUX1 to Logic Input 1 function (high input → Resting/Stop Charge). Current register 4165 value is 0x5201 (set during LiFePO4 changeover). Validate the Logic Input 1 function code against the Classic Modbus register map PDF, write to register 4165 via the existing `unlock_ethernet_writes` + `write_register` path, then verify via Classic front panel or `scripts/classic-probe.py` that the function changed and persists across a Classic power cycle.
+**TODO:** Remove WhizBang Jr wiring from Classic AUX1 terminal.
+
+**TODO:** Reconfigure AUX1 to Logic Input 1 function (high input → Resting/Stop Charge). Current register 4165 value is 0x5201 (set during LiFePO4 changeover — encodes WhizBang Jr on AUX1). Validate the Logic Input 1 function code against the Classic Modbus register map PDF, write to register 4165 via the existing `unlock_ethernet_writes` + `write_register` path, then verify via Classic front panel or `scripts/classic-probe.py` that the function changed and persists across a Classic power cycle.
 
 **TODO:** Wire relay CH2 NO contacts to Classic AUX1 terminals. Contact closure is the correct interface — no external voltage on the AUX1 wiring. Confirm AUX1 pin assignment and polarity on the Classic terminal strip before wiring.
 
@@ -167,8 +169,8 @@ Known AUX functions relevant to this project:
 
 | AUX function | Input behavior | Status |
 |---|---|---|
-| Logic Input 1 | High input forces Resting/Stop Charge; low input allows Charge | **Selected for AUX1** — TODO: reconfigure register 4165 |
-| WhizBang Jr | Uses AUX2 for the external shunt accessory | Not installed, not needed |
+| WhizBang Jr | Uses AUX1 for the external shunt accessory | **Currently wired** — remove to free AUX1 |
+| Logic Input 1 | High input forces Resting/Stop Charge; low input allows Charge | **Selected for AUX1** — TODO: reconfigure register 4165 after removing WhizBang Jr |
 | Logic Input 2 | High input forces Charge; low input forces Resting/Stop Charge | AUX2, available for future use |
 | Force Float | Input above ~6 V forces Float | AUX2, not planned |
 
