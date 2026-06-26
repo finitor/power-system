@@ -45,6 +45,12 @@ class AmbientConfig:
 
 
 @dataclass(frozen=True)
+class RelayConfig:
+    heat_fan_gpio: int = 17
+    charge_disable_gpio: int = 27
+
+
+@dataclass(frozen=True)
 class NetworkConfig:
     lan_gateway: str = "192.168.0.1"
     lan_check_interval_s: float = 30.0
@@ -111,4 +117,11 @@ def load_config() -> SupervisorConfig:
             lan_gateway=os.getenv("LAN_GATEWAY", "192.168.0.1"),
             lan_check_interval_s=env_float("LAN_CHECK_INTERVAL_SECONDS", 30.0),
         ),
+    )
+
+
+def load_relay_config() -> RelayConfig:
+    return RelayConfig(
+        heat_fan_gpio=env_int("RELAY_HEAT_FAN_GPIO", 17),
+        charge_disable_gpio=env_int("RELAY_CHARGE_DISABLE_GPIO", 27),
     )

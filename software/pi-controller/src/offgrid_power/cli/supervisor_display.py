@@ -40,7 +40,8 @@ from offgrid_power.classic import ClassicClient
 from offgrid_power.epever import EpeverClient
 from offgrid_power.magnum import InverterEventTracker, MagnumClient
 from offgrid_power.network_monitor import WanReachabilityTracker
-from offgrid_power.config import load_config
+from offgrid_power.config import load_config, load_relay_config
+from offgrid_power.relay import RelayController
 from offgrid_power.load import estimate_load_current_a, LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
 from offgrid_power.runtime_state import load_ccl_scaling_factor, save_ccl_scaling_factor
@@ -359,6 +360,11 @@ def main() -> int:
         else None
     )
     if args.web_display:
+        relay_cfg = load_relay_config()
+        relay_controller = RelayController(
+            heat_fan_gpio=relay_cfg.heat_fan_gpio,
+            charge_disable_gpio=relay_cfg.charge_disable_gpio,
+        )
         start_web_display(
             args,
             supervisor,
@@ -366,6 +372,7 @@ def main() -> int:
             weather_service,
             charge_ceiling=charge_allocation_logger.ceiling if charge_allocation_logger is not None else None,
             allocation_override=allocation_override,
+            relay_controller=relay_controller,
         )
     previous_poll_render: str | None = None
 
@@ -463,6 +470,7 @@ def start_web_display(
     weather_service: WeatherService | None = None,
     charge_ceiling: ChargeCeiling | None = None,
     allocation_override: AllocationOverride | None = None,
+    relay_controller: RelayController | None = None,
 ) -> None:
     thread = Thread(
         target=run_display_server,
@@ -477,6 +485,7 @@ def start_web_display(
             "weather_refresh_hook": None if weather_service is None else weather_service.request_refresh,
             "charge_ceiling": charge_ceiling,
             "allocation_override": allocation_override,
+            "relay_controller": relay_controller,
         },
         daemon=True,
     )

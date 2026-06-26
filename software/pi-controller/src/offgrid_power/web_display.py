@@ -746,6 +746,20 @@ def route_api_request(
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
 
+def _control_relay(relay_controller, payload: dict) -> DisplayResponse:
+    if relay_controller is None:
+        return _json_response(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "relay controller not configured"})
+    try:
+        name = payload.get("relay")
+        on = payload.get("on")
+        if not isinstance(on, bool):
+            raise ValueError("'on' must be a boolean")
+        relay_controller.set(name, on)
+        return _json_response(HTTPStatus.OK, {"ok": True, "relay": name, "on": on, "stub": relay_controller.is_stub})
+    except (ValueError, KeyError) as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+
+
 def _control_allocation_pause(allocation_override, payload: dict) -> DisplayResponse:
     try:
         if allocation_override is None:
@@ -796,6 +810,7 @@ def route_control_request(
     payload: dict,
     charge_ceiling=None,
     allocation_override=None,
+    relay_controller=None,
 ) -> DisplayResponse:
     if path == "/api/v1/control/ccl-scaling-factor":
         return _control_ccl_scaling_factor(charge_ceiling, payload)
@@ -813,6 +828,8 @@ def route_control_request(
         return _control_allocation_pause(allocation_override, payload)
     if path == "/api/v1/control/allocation/manual-limit":
         return _control_allocation_manual_limit(allocation_override, payload)
+    if path == "/api/v1/control/relay":
+        return _control_relay(relay_controller, payload)
     return _json_response(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
 
 
@@ -1895,6 +1912,7 @@ def run_display_server(
     allocation_provider: Callable[[], dict | None] | None = None,
     charge_ceiling=None,
     allocation_override=None,
+    relay_controller=None,
 ) -> None:
     provider = snapshot_provider or supervisor.read_snapshot
     refresh = refresh_hook or supervisor.request_refresh
@@ -1951,6 +1969,13 @@ def run_display_server(
                 )
                 self._send_display_response(response)
                 return
+            if allocation_path == "/api/v1/relay/state":
+                if relay_controller is None:
+                    response = _json_response(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": "relay controller not configured"})
+                else:
+                    response = _json_response(HTTPStatus.OK, {"ok": True, "stub": relay_controller.is_stub, **relay_controller.state()})
+                self._send_display_response(response)
+                return
             allocation = (
                 allocation_provider()
                 if allocation_provider is not None
@@ -1993,7 +2018,7 @@ def run_display_server(
                 response = _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
                 self._send_display_response(response)
                 return
-            response = route_control_request(supervisor, parsed_path, payload, charge_ceiling=charge_ceiling, allocation_override=allocation_override)
+            response = route_control_request(supervisor, parsed_path, payload, charge_ceiling=charge_ceiling, allocation_override=allocation_override, relay_controller=relay_controller)
             self._send_display_response(response)
 
         def _send_display_response(self, response: DisplayResponse) -> None:
