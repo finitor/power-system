@@ -42,6 +42,7 @@ from offgrid_power.magnum import InverterEventTracker, MagnumClient
 from offgrid_power.network_monitor import WanReachabilityTracker
 from offgrid_power.config import load_config, load_relay_config
 from offgrid_power.relay import RelayController
+from offgrid_power.relay_control import RelaySupervisor
 from offgrid_power.load import estimate_load_current_a, LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
 from offgrid_power.runtime_state import load_ccl_scaling_factor, save_ccl_scaling_factor
@@ -359,12 +360,13 @@ def main() -> int:
         if args.charge_allocation or args.charge_allocation_dry_run
         else None
     )
+    relay_cfg = load_relay_config()
+    relay_controller = RelayController(
+        heat_fan_gpio=relay_cfg.heat_fan_gpio,
+        charge_disable_gpio=relay_cfg.charge_disable_gpio,
+    )
+    relay_supervisor = RelaySupervisor(relay_controller)
     if args.web_display:
-        relay_cfg = load_relay_config()
-        relay_controller = RelayController(
-            heat_fan_gpio=relay_cfg.heat_fan_gpio,
-            charge_disable_gpio=relay_cfg.charge_disable_gpio,
-        )
         start_web_display(
             args,
             supervisor,
@@ -405,6 +407,7 @@ def main() -> int:
                 recorder=metric_recorder,
             )
             allocation_detail_payload = None
+            allocation_decision = None
             if charge_allocation_logger is not None:
                 allocation_decision = charge_allocation_logger.record(snapshot, metric_recorder)
                 if allocation_decision is not None:
@@ -413,6 +416,7 @@ def main() -> int:
                         dry_run=not charge_allocation_logger.live,
                         ccl_scaling_factor=charge_allocation_logger.ceiling.scaling_factor,
                     )
+            relay_supervisor.update(snapshot, allocation_decision)
             # Derive the EPEver "today" from its monotonic lifetime total (its own
             # daily register doesn't reset); the load cumulative needs it too, so
             # build the display copy before computing the load summary.
