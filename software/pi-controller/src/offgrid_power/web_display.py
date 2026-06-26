@@ -801,14 +801,12 @@ def route_control_request(
         return _control_ccl_scaling_factor(charge_ceiling, payload)
     if path == "/api/v1/control/charge-controller/voltage":
         return _control_charge_controller_voltage(supervisor, payload)
-    if path == "/api/v1/control/classic/charge-settings":
-        return _control_classic_charge_settings(supervisor, payload)
-    if path == "/api/v1/control/epever/charge-settings":
-        return _control_epever_charge_settings(supervisor, payload)
-    if path == "/api/v1/control/epever/sync-from-classic":
-        return _control_epever_sync_from_classic(supervisor, payload)
-    if path == "/api/v1/control/epever/charging":
-        return _control_epever_charging(supervisor, payload)
+    if path in ("/api/v1/control/charge-controller/charge-settings", "/api/v1/control/classic/charge-settings", "/api/v1/control/epever/charge-settings"):
+        return _control_charge_controller_charge_settings(supervisor, payload, path)
+    if path in ("/api/v1/control/charge-controller/charging", "/api/v1/control/epever/charging"):
+        return _control_charge_controller_charging(supervisor, payload, path)
+    if path in ("/api/v1/control/charge-controller/sync", "/api/v1/control/epever/sync-from-classic"):
+        return _control_charge_controller_sync(supervisor, payload, path)
     if path == "/api/v1/control/magnum/charge-settings":
         return _control_magnum_charge_settings(supervisor, payload)
     if path == "/api/v1/control/allocation/pause":
@@ -1030,6 +1028,54 @@ def _log_scalar_change(
     move = f"{previous_v:.2f}->{voltage_v:.2f}V" if previous_v is not None else f"{voltage_v:.2f}V"
     delta = f" (delta {delta_v:+.2f}V)" if delta_v is not None else ""
     logger.info("scalar charge voltage write: %s %s%s confirmed=%s", device, move, delta, confirmed)
+
+
+def _control_charge_controller_charge_settings(supervisor: Supervisor, payload: dict, path: str) -> DisplayResponse:
+    # Brand-name paths are aliases; canonical path requires "controller" number.
+    if path == "/api/v1/control/classic/charge-settings":
+        controller = 0
+    elif path == "/api/v1/control/epever/charge-settings":
+        controller = 1
+    else:
+        try:
+            controller = _controller_number(payload)
+        except ValueError as exc:
+            return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+    if controller == 0:
+        return _control_classic_charge_settings(supervisor, payload)
+    if controller == 1:
+        return _control_epever_charge_settings(supervisor, payload)
+    return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"unknown charge controller number: {controller}"})
+
+
+def _control_charge_controller_charging(supervisor: Supervisor, payload: dict, path: str) -> DisplayResponse:
+    if path == "/api/v1/control/epever/charging":
+        controller = 1
+    else:
+        try:
+            controller = _controller_number(payload)
+        except ValueError as exc:
+            return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+    if controller == 1:
+        return _control_epever_charging(supervisor, payload)
+    return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"controller {controller} does not support charging toggle"})
+
+
+def _control_charge_controller_sync(supervisor: Supervisor, payload: dict, path: str) -> DisplayResponse:
+    # Canonical: {"source": 0, "target": 1}. Legacy path implies source=0, target=1.
+    if path == "/api/v1/control/epever/sync-from-classic":
+        source, target = 0, 1
+    else:
+        try:
+            source = int(payload.get("source", -1))
+            target = int(payload.get("target", -1))
+        except (TypeError, ValueError):
+            return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "source and target must be controller numbers"})
+        if source < 0 or target < 0:
+            return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": "source and target controller numbers are required"})
+    if source == 0 and target == 1:
+        return _control_epever_sync_from_classic(supervisor, payload)
+    return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"sync from controller {source} to controller {target} is not supported"})
 
 
 def _control_classic_charge_settings(supervisor: Supervisor, payload: dict) -> DisplayResponse:

@@ -179,8 +179,8 @@ def main() -> int:
     else:
         response = api_json(
             args.api_url,
-            "/api/v1/control/epever/charge-settings",
-            {"boost_voltage_v": target_boost, "equalize_voltage_v": target_equalize},
+            "/api/v1/control/charge-controller/charge-settings",
+            {"controller": 1, "boost_voltage_v": target_boost, "equalize_voltage_v": target_equalize},
         )
         readback_settings = response["settings"]
     print(

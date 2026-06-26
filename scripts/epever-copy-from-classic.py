@@ -205,8 +205,8 @@ def main() -> int:
         else:
             response = api_json(
                 args.api_url,
-                "/api/v1/control/epever/sync-from-classic",
-                {"voltage_offset_v": args.voltage_offset, "no_current": args.no_current},
+                "/api/v1/control/charge-controller/sync",
+                {"source": 0, "target": 1, "voltage_offset_v": args.voltage_offset, "no_current": args.no_current},
             )
             readback = response["settings"]
             current_change = None
@@ -225,8 +225,8 @@ def main() -> int:
         else:
             settings = api_json(
                 args.api_url,
-                "/api/v1/control/epever/charge-settings",
-                {"max_charging_current_a": current_change},
+                "/api/v1/control/charge-controller/charge-settings",
+                {"controller": 1, "max_charging_current_a": current_change},
             )["settings"]
             max_current = settings["max_charging_current_a"]
         print(f"Wrote max charging current -> {max_current:.1f}A")

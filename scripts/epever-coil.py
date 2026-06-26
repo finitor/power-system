@@ -124,7 +124,7 @@ def main() -> int:
         if args.direct:
             state = client.set_charging(want)
         else:
-            state = api_json(args.api_url, "/api/v1/control/epever/charging", {"enabled": want})["enabled"]
+            state = api_json(args.api_url, "/api/v1/control/charge-controller/charging", {"controller": 1, "enabled": want})["enabled"]
         print(f"charge coil (0x0000) now: {'ON' if state else 'OFF'}")
         return 0
 

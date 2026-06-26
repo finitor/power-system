@@ -459,7 +459,7 @@ def _allocation_target_text(target: dict, *, global_reason: str) -> str:
     else:
         base = f"{value} limited"
     if ceiling is not None:
-        return f"{base} → {_fmt_value(ceiling, 0)}A ceiling"
+        return f"{base} → {_fmt_value(ceiling, 0)}A manual ceiling"
     return base
 
 
