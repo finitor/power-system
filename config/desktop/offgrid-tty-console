@@ -44,6 +44,13 @@ ensure_session() {
   # invisible without this.
   tmux -L "${SOCKET}" set-option -g pane-border-style "fg=colour8"
   tmux -L "${SOCKET}" set-option -g pane-active-border-style "fg=colour7"
+  # With exactly two panes, tmux's default pane-border-indicators=colour marks
+  # the active pane by colouring only its HALF of the divider in the active
+  # style, leaving the other half in pane-border-style (colour8) — which is
+  # invisible on the framebuffer console. The result is a half-height divider
+  # that jumps ends as focus changes. Turn the indicator off so the whole
+  # divider draws in one (visible) style.
+  tmux -L "${SOCKET}" set-option -g pane-border-indicators off
   # Split at the precise right-pane width so the shell starts with correct
   # geometry and doesn't need a post-split resize (avoids the SIGWINCH that
   # causes bash to need Enter to redraw the prompt).
