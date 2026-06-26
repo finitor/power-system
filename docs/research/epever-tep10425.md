@@ -45,8 +45,17 @@ the generic EPEver/Tracer map. Confirmed live during the array-1 dry-run:
   - `0x3313` (=200) is a constant field, **not** energy.
   - Scaling provisional (`/100` = kWh); the magnitude reads low vs energy
     delivered, so confirm against the panel's accumulated-kWh.
-- **`0x311A` is not SOC** (read 1727%); the controller has no BMS link, so it
-  can't know SOC. Code guards it to `None`.
+- **`0x3118..0x311A` is the live temperature / SOC block (confirmed 2026-06-26):**
+  `0x3118` = battery temp ×100 °C, `0x3119` = SOC %, `0x311A` = PCB/device temp ×100 °C.
+  The generic Tracer map (`0x3110` = battery temp, `0x3111` = device temp) reads zero on
+  this unit. Code reads a 3-register block starting at `0x3118`.
+  - `0x311B..0x311C` mirror `0x311A` (same value on probe — not distinct sensors).
+  - **No live MOSFET/power-component temperature register found.** `0x901B` reads
+    6662 = `(26<<8)|6` — this is the RTC year/month word (June 2026), not a temperature.
+    `0x901E` / `0x901F` are temperature *thresholds* (85.00 °C upper limit, 75.00 °C
+    recovery), not live readings. The only live thermal channels are `0x3118` (battery
+    probe) and `0x311A` (PCB), exposed in the API as `temperatures_c.battery` and
+    `temperatures_c.pcb`.
 - **RTC at holding `0x9019..0x901B`.** Encoding (confirmed by readback):
   `r0 = minute<<8 | second`, `r1 = day<<8 | hour`, `r2 = (year-2000)<<8 | month`.
   Found mis-set to **2024-10-06** (~20 months + ~12 h off) — the crystal keeps
@@ -258,7 +267,7 @@ Current and related control registers:
 | `0x9013` | BAT Max Charging Current | centiamps (`raw / 100 = A`) | Write 99 A -> 100 A produced raw `0x2710` = 10000 = 100.00 A. This is the primary taper knob. |
 | `0x9014` | Bulk Charging Time | minutes | Read back 10. |
 | `0x9015` | Equalize Charging Time | minutes | Read back 10. |
-| `0x9019..0x901B` | Device Time | encoded date/time | Read as a 3-register block; encoding not decoded yet. |
+| `0x9019..0x901B` | Device Time | encoded date/time | `r0=minute<<8\|second`, `r1=day<<8\|hour`, `r2=(year-2000)<<8\|month`. `0x901B`=6662 decoded as June 2026 — confirms encoding and rules out MOSFET-temp rumour. |
 | `0x901E` | Device Temperature Upper Limit | centidegrees C | Read back 8500 = 85.00 C. |
 | `0x901F` | Device Over Temperature Recovery | centidegrees C | Read back 7500 = 75.00 C. |
 | `0x9038` | Battery Charging Mode | enum | Read `0`, displayed as Voltage. |

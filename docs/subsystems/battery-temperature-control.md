@@ -140,13 +140,13 @@ Winter deadlock is possible if the batteries cold-lock and cannot discharge to p
 
 ## Charge Inhibit
 
-Classic AUX1 is used as the hardware charge-disable line, driven by relay CH2. The relay NO contacts provide a contact closure to AUX1 when the supervisor commands 0 A to the Classic.
+Classic AUX2 is used as the hardware charge-disable line, driven by relay CH2. When the relay closes, 12 V is applied to AUX2+ (threshold >6 V), forcing the Classic to Resting.
 
-**TODO:** Remove WhizBang Jr wiring from Classic AUX1 terminal. WhizBang Jr is currently on AUX1 and must be physically cleared before AUX1 can be used as the charge-disable line. The Eco-Worthy BMS/ESM-100 over CAN makes it redundant.
+**TODO:** Remove WhizBang Jr wiring from Classic AUX2 terminals. WhizBang Jr is currently on AUX2 and must be physically cleared before AUX2 can be used as the charge-disable input. The Eco-Worthy BMS/ESM-100 over CAN makes WhizBang Jr redundant.
 
-**TODO:** Reconfigure Classic AUX1 from WhizBang Jr (register 4165 = 0x5201) to Logic Input 1 (high input → Resting/Stop Charge). Validate the target function code against the Classic Modbus register map PDF, write via the existing `unlock_ethernet_writes` + `write_register` path, and confirm persistence across a Classic power cycle.
+**TODO:** Reconfigure Classic AUX2 from WhizBang Jr (register 4165 = 0x5201) to "Active HIGH (input) turn off" (function value 15, target register value 0x4F01). Write via the existing `unlock_ethernet_writes` + `write_register` path and force EEprom save. Confirm persistence across a Classic power cycle.
 
-**TODO:** Wire relay CH2 NO contacts to Classic AUX1 terminals (contact closure, no external voltage).
+**TODO:** Wire relay CH2: COM → 12 V supply (GND shared with Classic); NO → Classic AUX2+ terminal; Classic AUX2− → GND.
 
 Preferred path:
 
@@ -222,13 +222,13 @@ The Pi drives a **Javino 2-channel optocoupler-isolated relay module** (SRD-05VD
 | Pin 2 | 5 V power | — | Relay board VCC |
 | Pin 6 | GND | — | Relay board GND (common with 12 V supply GND) |
 | Pin 11 | GPIO 17 | CH1 | heat_fan — heater SSR control + 12 V fan |
-| Pin 13 | GPIO 27 | CH2 | charge_disable — Classic AUX1 charge inhibit |
+| Pin 13 | GPIO 27 | CH2 | charge_disable — Classic AUX2 charge inhibit (>6 V on AUX2+) |
 
 GPIO pins are configurable via `RELAY_HEAT_FAN_GPIO` and `RELAY_CHARGE_DISABLE_GPIO` env vars.
 
 **TODO:** Wire relay CH1 NO contacts → 12 V bus → SSR MRD-060D10 control+ (pin 3) and fan+ in parallel; SSR control− and fan− to common GND. The relay contacts switch the 12 V control supply into the SSR input; the relay board's 5 V VCC is separate from the switched 12 V load.
 
-**TODO:** Wire relay CH2 NO contacts → Classic AUX1 terminals (contact closure; no external voltage on AUX1 wiring).
+**TODO:** Wire relay CH2: COM → 12 V supply (GND shared with Classic); NO → Classic AUX2+ terminal; Classic AUX2− → GND.
 
 ## DC Switching — Selected Parts
 
