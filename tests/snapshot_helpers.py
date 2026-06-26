@@ -144,12 +144,24 @@ def make_epever_settings(captured_at: datetime | None = None, **overrides) -> Ep
     return EpeverChargeSettings(**fields)
 
 
-def make_battery_snapshot(soc_percent: int = 92):
-    """Battery snapshot with the given SOC, fixed flow, and 200Ah capacity."""
-    return decode_pylon_snapshot(
-        [
-            CanFrame(0x355, bytes([soc_percent, 0, 100, 0, 0, 0, 0, 0])),
-            CanFrame(0x356, bytes.fromhex("B814D8FFA4000000")),
-            CanFrame(0x379, bytes.fromhex("C800000000000000")),
-        ]
-    )
+def make_battery_snapshot(
+    soc_percent: int = 92,
+    min_cell_temperature_c: float | None = None,
+    max_cell_temperature_c: float | None = None,
+):
+    """Battery snapshot with the given SOC, fixed flow, and 200Ah capacity.
+
+    Pass min/max cell temperatures in °C to include extended measurements.
+    """
+    frames = [
+        CanFrame(0x355, bytes([soc_percent, 0, 100, 0, 0, 0, 0, 0])),
+        CanFrame(0x356, bytes.fromhex("B814D8FFA4000000")),
+        CanFrame(0x379, bytes.fromhex("C800000000000000")),
+    ]
+    if min_cell_temperature_c is not None or max_cell_temperature_c is not None:
+        min_k = round((min_cell_temperature_c or 0.0) + 273.15)
+        max_k = round((max_cell_temperature_c or min_cell_temperature_c or 0.0) + 273.15)
+        frames.append(CanFrame(0x373, b"\x00\x00\x00\x00"
+                               + min_k.to_bytes(2, "little")
+                               + max_k.to_bytes(2, "little")))
+    return decode_pylon_snapshot(frames)

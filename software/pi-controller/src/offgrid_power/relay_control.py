@@ -12,8 +12,9 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Relay 1 (heat_fan) thresholds
-_HEAT_ON_TEMP_C = 2.0      # activate below this pack temperature
-_HEAT_OFF_TEMP_C = 5.0     # deactivate above this pack temperature
+# DRY RUN values — revert to 2.0/5.0/134.0/130.0 before live use
+_HEAT_ON_TEMP_C = 17.5     # activate below this minimum cell temperature
+_HEAT_OFF_TEMP_C = 20.0    # deactivate above this minimum cell temperature
 _HEAT_ON_VOC_V = 134.0     # activate above this Classic VOC
 _HEAT_OFF_VOC_V = 130.0    # deactivate below this Classic VOC
 
@@ -22,11 +23,12 @@ class RelaySupervisor:
     """Evaluates relay states each supervisor tick and drives the RelayController.
 
     Relay 1 (heat_fan): heater + fan, hysteresis control.
-      On  when pack temp < 0 °C AND Classic VOC > 134 V
-      Off when pack temp > 5 °C OR  Classic VOC < 130 V
+      On  when min cell temp < 2 °C AND Classic VOC > 134 V
+      Off when min cell temp > 5 °C OR  Classic VOC < 130 V
 
     Relay 2 (charge_disable): activates whenever Classic is commanded to 0 A,
       via the allocator (disable flag or 0 A target) or a manual ceiling override.
+      Applies >6 V to Classic AUX2+ (Active HIGH input turn off, function 15).
     """
 
     def __init__(self, relay_controller: RelayController) -> None:
@@ -103,6 +105,4 @@ class RelaySupervisor:
 def _pack_temp(snapshot: SupervisorSnapshot) -> float | None:
     if snapshot.battery is None:
         return None
-    if snapshot.battery.measurements is None:
-        return None
-    return snapshot.battery.measurements.temperature_c
+    return snapshot.battery.min_cell_temperature_c

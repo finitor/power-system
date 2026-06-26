@@ -128,8 +128,9 @@ class EpeverClient:
             captured_at = datetime.now(timezone.utc)
             rated = read_input_registers(client, 0x3000, 9, self.unit)
             live = read_input_registers(client, 0x3100, 8, self.unit)
-            temperatures = read_input_registers(client, 0x3110, 2, self.unit)
-            soc = read_input_registers(client, 0x311A, 1, self.unit)
+            # 0x3118 = battery temp (×100 °C), 0x3119 = SOC %, 0x311A = device temp (×100 °C).
+            # Confirmed live on TEP10425: 0x3110/0x3111 (generic Tracer map) read 0 on this unit.
+            temperatures = read_input_registers(client, 0x3118, 3, self.unit)
             # The TEP10425's status block is offset by one from the generic
             # Tracer map: the "charging equipment status" word the generic doc
             # places at 0x3201 actually lives at 0x3202 here (0x3201 reads a
@@ -144,7 +145,7 @@ class EpeverClient:
             energy = read_input_registers(client, 0x3300, 18, self.unit)
             settings = read_holding_registers(client, 0x9000, 22, self.unit)
             return (
-                decode_telemetry(rated, live, temperatures, soc, status, energy, captured_at),
+                decode_telemetry(rated, live, temperatures, status, energy, captured_at),
                 decode_settings(settings, captured_at),
             )
         finally:
@@ -408,7 +409,6 @@ def decode_telemetry(
     rated: list[int],
     live: list[int],
     temperatures: list[int],
-    soc: list[int],
     status: list[int],
     energy: list[int],
     captured_at: datetime | None = None,
@@ -444,9 +444,9 @@ def decode_telemetry(
         battery_voltage_v=battery_voltage_v,
         battery_current_a=battery_current_a,
         battery_power_w=round(battery_voltage_v * battery_current_a),
-        battery_soc_percent=soc[0] if 0 <= soc[0] <= 100 else None,
+        battery_soc_percent=temperatures[1] if 0 <= temperatures[1] <= 100 else None,
         battery_temp_c=_signed_16(temperatures[0]) / 100,
-        device_temp_c=_signed_16(temperatures[1]) / 100,
+        device_temp_c=_signed_16(temperatures[2]) / 100,
         status_raw=status_raw,
         charging_status=CHARGING_STATUS.get(charging_code, "unknown"),
         rated_battery_voltage_v=rated[6] / 100,

@@ -204,8 +204,7 @@ class EpeverDecodeTest(unittest.TestCase):
         telemetry = decode_telemetry(
             rated=[42, 4, 25000, 10000, 61248, 7, 4800, 10000, 61248],
             live=[0, 0, 0, 0, 5311, 0, 0, 0],
-            temperatures=[0, 0],
-            soc=[2055],
+            temperatures=[0, 2055, 0],
             # status is 0x3200..0x3202; the charging-equipment-status word is
             # 0x3202 (status[2]) on the TEP, not 0x3201 (which reads zero).
             status=[0, 0, 0],
@@ -233,8 +232,7 @@ class EpeverDecodeTest(unittest.TestCase):
         telemetry = decode_telemetry(
             rated=[42, 4, 25000, 10000, 61248, 7, 4800, 10000, 61248],
             live=[16320, 113, 18600, 0, 5436, 343, 0, 0],
-            temperatures=[0, 0],
-            soc=[2055],
+            temperatures=[0, 2055, 0],
             status=[0, 0, 0x0009],
             energy=[0] * 18,
             captured_at=CAPTURED_AT,
@@ -253,14 +251,28 @@ class EpeverDecodeTest(unittest.TestCase):
         telemetry = decode_telemetry(
             rated=[42, 4, 25000, 10000, 61248, 7, 4800, 10000, 61248],
             live=[0, 0, 0, 0, 5311, 0, 0, 0],
-            temperatures=[0, 0],
-            soc=[2055],
+            temperatures=[0, 2055, 0],
             status=[0, 0, 0],
             energy=energy,
             captured_at=CAPTURED_AT,
         )
         self.assertAlmostEqual(telemetry.generated_today_kwh, 3.18)
         self.assertAlmostEqual(telemetry.generated_total_kwh, 3.32)
+
+    def test_decodes_temperature_and_soc_from_correct_registers(self) -> None:
+        # Live observed 2026-06-26: 0x3118=2500 (25.0°C battery), 0x3119=59 (SOC%),
+        # 0x311A=2053 (20.53°C device). 0x3110/0x3111 (generic Tracer map) read 0.
+        telemetry = decode_telemetry(
+            rated=[42, 4, 25000, 10000, 61248, 7, 4800, 10000, 61248],
+            live=[0, 0, 0, 0, 5311, 0, 0, 0],
+            temperatures=[2500, 59, 2053],
+            status=[0, 0, 0],
+            energy=[0] * 18,
+            captured_at=CAPTURED_AT,
+        )
+        self.assertAlmostEqual(telemetry.battery_temp_c, 25.0)
+        self.assertAlmostEqual(telemetry.device_temp_c, 20.53)
+        self.assertEqual(telemetry.battery_soc_percent, 59)
 
     def test_decodes_battery_settings(self) -> None:
         settings = decode_settings(

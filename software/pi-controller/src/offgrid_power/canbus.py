@@ -150,6 +150,20 @@ class PylonCanSnapshot:
     extended_measurements: PylonExtendedMeasurements | None = None
     raw_frames: dict[int, bytes] | None = None
 
+    @property
+    def temperature_c(self) -> float | None:
+        return self.measurements.temperature_c if self.measurements is not None else None
+
+    @property
+    def min_cell_temperature_c(self) -> float | None:
+        ext = self.extended_measurements
+        return ext.min_cell_temperature_c if ext is not None else None
+
+    @property
+    def max_cell_temperature_c(self) -> float | None:
+        ext = self.extended_measurements
+        return ext.max_cell_temperature_c if ext is not None else None
+
     def summary_lines(self) -> list[str]:
         lines: list[str] = []
         if self.charge_limits is not None:

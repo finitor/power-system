@@ -9,10 +9,9 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from offgrid_power.canbus import CanFrame, PylonMeasurements, PylonCanSnapshot, decode_pylon_snapshot
 from offgrid_power.charge_allocator import AllocationOverride, ChargeAllocationDecision, ChargerAllocationTarget
-from offgrid_power.relay_control import RelaySupervisor
-from snapshot_helpers import make_classic_telemetry, make_snapshot
+from offgrid_power.relay_control import RelaySupervisor, _HEAT_ON_TEMP_C, _HEAT_OFF_TEMP_C, _HEAT_ON_VOC_V, _HEAT_OFF_VOC_V
+from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_snapshot
 
 
 class StubRelay:
@@ -29,17 +28,9 @@ class StubRelay:
 
 
 def _snapshot(temp_c=10.0, voc_v=120.0):
-    battery = decode_pylon_snapshot([
-        CanFrame(0x356, _encode_measurements(temp_c)),
-    ])
+    battery = make_battery_snapshot(min_cell_temperature_c=temp_c)
     classic = make_classic_telemetry(last_voc_v=voc_v)
     return make_snapshot(battery=battery, classic=classic)
-
-
-def _encode_measurements(temp_c: float) -> bytes:
-    # 0x356: voltage (2B), current (2B), temperature (2B) all s16 * 0.1
-    temp_raw = round(temp_c * 10)
-    return b"\x00\x00\x00\x00" + temp_raw.to_bytes(2, "big", signed=True) + b"\x00\x00"
 
 
 def _decision(classic_disable: bool, classic_reason: str = "test") -> ChargeAllocationDecision:
@@ -61,44 +52,52 @@ def _decision(classic_disable: bool, classic_reason: str = "test") -> ChargeAllo
     )
 
 
+_COLD = _HEAT_ON_TEMP_C - 2.0       # clearly below cut-in
+_WARM = _HEAT_OFF_TEMP_C + 1.0      # clearly above cut-out
+_MID = (_HEAT_ON_TEMP_C + _HEAT_OFF_TEMP_C) / 2  # inside hysteresis band
+_VOC_HI = _HEAT_ON_VOC_V + 1.0     # above VOC cut-in
+_VOC_MID = (_HEAT_ON_VOC_V + _HEAT_OFF_VOC_V) / 2  # inside VOC hysteresis
+_VOC_LO = _HEAT_OFF_VOC_V - 1.0    # below VOC cut-out
+
+
 class TestHeatFanHysteresis(unittest.TestCase):
     def setUp(self):
         self.relay = StubRelay()
         self.rs = RelaySupervisor(self.relay)
 
     def test_activates_when_cold_and_sunny(self):
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=135.0), None)
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
         self.assertTrue(self.relay.state()["heat_fan"])
 
     def test_no_activation_warm(self):
-        self.rs.update(_snapshot(temp_c=2.0, voc_v=135.0), None)
+        self.rs.update(_snapshot(temp_c=_WARM, voc_v=_VOC_HI), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_no_activation_low_voc(self):
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=133.0), None)
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_LO), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_stays_on_within_hysteresis(self):
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=135.0), None)
-        # VOC drops to between 130 and 134 — should stay on
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=132.0), None)
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        # VOC drops into hysteresis band — should stay on
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_MID), None)
         self.assertTrue(self.relay.state()["heat_fan"])
 
     def test_cuts_out_below_voc_floor(self):
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=135.0), None)
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=129.0), None)
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_LO), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_cuts_out_when_warm(self):
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=135.0), None)
-        self.rs.update(_snapshot(temp_c=6.0, voc_v=135.0), None)
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        self.rs.update(_snapshot(temp_c=_WARM, voc_v=_VOC_HI), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_does_not_reactivate_within_hysteresis(self):
-        # Turn on, then warm up to 6°C (cuts out), then cool back to 3°C — stays off
-        self.rs.update(_snapshot(temp_c=-1.0, voc_v=135.0), None)
-        self.rs.update(_snapshot(temp_c=6.0, voc_v=135.0), None)
-        self.rs.update(_snapshot(temp_c=3.0, voc_v=135.0), None)
+        # Turn on, warm past cut-out, cool back into band — stays off
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        self.rs.update(_snapshot(temp_c=_WARM, voc_v=_VOC_HI), None)
+        self.rs.update(_snapshot(temp_c=_MID, voc_v=_VOC_HI), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_no_data_no_change(self):
