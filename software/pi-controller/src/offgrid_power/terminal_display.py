@@ -504,16 +504,18 @@ def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
         lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
         lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
+    if snapshot.epever is not None and snapshot.epever.device_temp_c is not None:
+        lines.append(_row("CC1 PCB", f"{snapshot.epever.device_temp_c:.1f}C"))
     if snapshot.magnum is not None:
         inv = snapshot.magnum
         lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))
         lines.append(_row("INV transformer", f"{inv.transformer_temp_c}C"))
         lines.append(_row("INV FET", f"{inv.fet_temp_c}C"))
     if snapshot.ambient is None:
-        lines.append(_row("Sensor 0 ambient temp", "disconnected"))
+        lines.append(_row("Sensor 0 ambient", "disconnected"))
     else:
         ambient = snapshot.ambient
-        lines.append(_row("Sensor 0 ambient temp", f"{ambient.temperature_c:.1f}C"))
+        lines.append(_row("Sensor 0 ambient", f"{ambient.temperature_c:.1f}C"))
         if ambient.humidity_percent is not None:
             lines.append(_row("Humidity", f"{ambient.humidity_percent:.1f}%"))
     return lines

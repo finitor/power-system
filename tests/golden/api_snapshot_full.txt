@@ -38,4 +38,4 @@ Temperatures
   CC0 PCB               29.0C
   INV transformer       37C
   INV FET               30C
-  Sensor 0 ambient temp 18.2C
+  Sensor 0 ambient      18.2C

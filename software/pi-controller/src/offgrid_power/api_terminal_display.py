@@ -617,9 +617,9 @@ def _temperature_lines(payload: dict) -> list[str]:
     if inverter.get("fet_temp_c") is not None:
         lines.append(_row("INV FET", f"{_fmt(inverter.get('fet_temp_c'), 0)}C"))
     if ambient.get("temperature_c") is None:
-        lines.append(_row("Sensor 0 ambient temp", "disconnected"))
+        lines.append(_row("Sensor 0 ambient", "disconnected"))
     else:
-        lines.append(_row("Sensor 0 ambient temp", f"{_fmt(ambient.get('temperature_c'), 1)}C"))
+        lines.append(_row("Sensor 0 ambient", f"{_fmt(ambient.get('temperature_c'), 1)}C"))
         if ambient.get("humidity_percent") is not None:
             lines.append(_row("Humidity", f"{_fmt(ambient.get('humidity_percent'), 1)}%"))
     return lines

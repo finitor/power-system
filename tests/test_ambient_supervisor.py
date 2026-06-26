@@ -334,7 +334,8 @@ class TerminalDisplayTest(unittest.TestCase):
     def test_renders_disconnected_ambient_probe(self) -> None:
         rendered = render_snapshot(Supervisor(classic=None, ambient=None).read_snapshot())
 
-        self.assertIn("Sensor 0 ambient temp: disconnected", rendered)
+        self.assertIn("Sensor 0 ambient:", rendered)
+        self.assertIn("disconnected", rendered)
 
     def test_renders_load_totals(self) -> None:
         rendered = render_snapshot(
@@ -530,8 +531,8 @@ class TerminalDisplayTest(unittest.TestCase):
 class HighlightChangedDigitsTest(unittest.TestCase):
     def test_highlights_changed_values(self) -> None:
         highlighted = highlight_changed_digits(
-            previous="Sensor 0 ambient temp:  21.5C",
-            current="Sensor 0 ambient temp:  23.5C",
+            previous="Sensor 0 ambient:  21.5C",
+            current="Sensor 0 ambient:  23.5C",
         )
 
         self.assertIn(f"{CHANGED_DIGIT_START}23.5C{CHANGED_DIGIT_END}", highlighted)
