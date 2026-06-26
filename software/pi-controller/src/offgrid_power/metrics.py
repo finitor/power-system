@@ -736,8 +736,8 @@ def _epever_samples(captured_at: datetime, epever) -> Iterable[MetricSample]:
         yield MetricSample(captured_at, source, "battery_soc", value=float(epever.battery_soc_percent), unit="%")
     if epever.battery_temp_c is not None:
         yield MetricSample(captured_at, source, "battery_temperature", value=epever.battery_temp_c, unit="C")
-    if epever.device_temp_c is not None:
-        yield MetricSample(captured_at, source, "device_temperature", value=epever.device_temp_c, unit="C")
+    if epever.pcb_temp_c is not None:
+        yield MetricSample(captured_at, source, "pcb_temperature", value=epever.pcb_temp_c, unit="C")
     yield MetricSample(captured_at, source, "status_raw", value=float(epever.status_raw))
     yield MetricSample(captured_at, source, "charge_stage", text=epever.canonical_stage.value)
     yield MetricSample(captured_at, source, "charge_stage_vendor", text=epever.charging_status)

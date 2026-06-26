@@ -201,7 +201,7 @@ class WebDisplayTest(unittest.TestCase):
     def test_kindle_snapshot_hides_untrusted_cc1_temperature_rows(self) -> None:
         snapshot = make_snapshot(
             classic=make_classic_telemetry(),
-            epever=make_epever_telemetry(battery_temp_c=0.0, device_temp_c=0.0),
+            epever=make_epever_telemetry(battery_temp_c=0.0, pcb_temp_c=0.0),
         )
 
         html = render_kindle_details(snapshot)

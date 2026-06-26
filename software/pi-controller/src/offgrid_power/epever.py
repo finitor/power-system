@@ -53,7 +53,7 @@ class EpeverTelemetry:
     battery_power_w: int
     battery_soc_percent: int | None
     battery_temp_c: float | None
-    device_temp_c: float | None
+    pcb_temp_c: float | None
     status_raw: int
     charging_status: str
     rated_battery_voltage_v: float
@@ -446,7 +446,7 @@ def decode_telemetry(
         battery_power_w=round(battery_voltage_v * battery_current_a),
         battery_soc_percent=temperatures[1] if 0 <= temperatures[1] <= 100 else None,
         battery_temp_c=_signed_16(temperatures[0]) / 100,
-        device_temp_c=_signed_16(temperatures[2]) / 100,
+        pcb_temp_c=_signed_16(temperatures[2]) / 100,
         status_raw=status_raw,
         charging_status=CHARGING_STATUS.get(charging_code, "unknown"),
         rated_battery_voltage_v=rated[6] / 100,

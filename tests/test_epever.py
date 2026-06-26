@@ -271,7 +271,7 @@ class EpeverDecodeTest(unittest.TestCase):
             captured_at=CAPTURED_AT,
         )
         self.assertAlmostEqual(telemetry.battery_temp_c, 25.0)
-        self.assertAlmostEqual(telemetry.device_temp_c, 20.53)
+        self.assertAlmostEqual(telemetry.pcb_temp_c, 20.53)
         self.assertEqual(telemetry.battery_soc_percent, 59)
 
     def test_decodes_battery_settings(self) -> None:

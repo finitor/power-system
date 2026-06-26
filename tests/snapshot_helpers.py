@@ -106,7 +106,7 @@ def make_epever_telemetry(captured_at: datetime | None = None, **overrides) -> E
         "battery_power_w": 0,
         "battery_soc_percent": None,
         "battery_temp_c": 0.0,
-        "device_temp_c": 0.0,
+        "pcb_temp_c": 0.0,
         "status_raw": 0,
         "charging_status": "No charging",
         "rated_battery_voltage_v": 4.2,

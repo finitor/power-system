@@ -1802,7 +1802,7 @@ def _solar_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
                 "generated_total_kwh": epever.generated_total_kwh,
                 "temperatures_c": {
                     "battery": epever.battery_temp_c,
-                    "pcb": epever.device_temp_c,
+                    "pcb": epever.pcb_temp_c,
                 },
                 "settings": None
                 if settings is None
@@ -2383,8 +2383,8 @@ def _temperature_section(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))
         lines.append(_row("CC0 FET", f"{classic.fet_temp_c:.1f}C"))
         lines.append(_row("CC0 PCB", f"{classic.pcb_temp_c:.1f}C"))
-    if snapshot.epever is not None and snapshot.epever.device_temp_c is not None:
-        lines.append(_row("CC1 PCB", f"{snapshot.epever.device_temp_c:.1f}C"))
+    if snapshot.epever is not None and snapshot.epever.pcb_temp_c is not None:
+        lines.append(_row("CC1 PCB", f"{snapshot.epever.pcb_temp_c:.1f}C"))
     if snapshot.magnum is not None:
         inv = snapshot.magnum
         lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))
