@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # Relay 1 (heat_fan) thresholds
-_HEAT_ON_TEMP_C = 0.0      # activate below this pack temperature
+_HEAT_ON_TEMP_C = 2.0      # activate below this pack temperature
 _HEAT_OFF_TEMP_C = 5.0     # deactivate above this pack temperature
 _HEAT_ON_VOC_V = 134.0     # activate above this Classic VOC
 _HEAT_OFF_VOC_V = 130.0    # deactivate below this Classic VOC

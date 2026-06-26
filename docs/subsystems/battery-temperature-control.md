@@ -110,24 +110,41 @@ If future summer water heating is desired, design it as a separate high-current 
 
 ## Control Behavior
 
-Draft thresholds:
+The Pi supervisor (`RelaySupervisor` in `relay_control.py`) evaluates relay states every tick.
+
+### Heater + Fan (relay CH1 — heat_fan)
+
+Hysteresis control on pack temperature and Classic VOC (as irradiance proxy):
 
 | Condition | Action |
 |---|---|
-| Battery/enclosure below 0 C | Inhibit or avoid charging; allow heat if energy source/SOC permits |
-| Below 3 C | Thermostat calls for heat |
-| Above 6-10 C | Thermostat stops heat; charging may resume if BMS agrees |
-| Above 35 C | Heater locked out; warm-temperature warning |
-| Above 40 C | High-temperature warning; investigate ventilation/charging |
-| Above battery manufacturer limit | Inhibit or derate charging if possible |
-| Any heater sensor fault | Heater off |
-| BMS low-temperature charge fault | Keep Classic inhibited and heat only if safe |
+| Pack temp < 2 °C **and** Classic VOC > 134 V | Activate relay (heater + fan on) |
+| Pack temp > 5 °C **or** Classic VOC < 130 V | Deactivate relay (heater + fan off) |
+| No battery or Classic telemetry | No change (hold current state) |
+
+The VOC gate ensures the heater only runs when there is enough irradiance to sustain the load without draining the battery. The 4 V hysteresis on VOC and 3 °C hysteresis on temperature prevent chatter. Cut-in at 2 °C rather than 0 °C provides headroom above the BMS low-temperature charge cutout.
+
+The fan runs in tandem with the heater to circulate warm air through the battery compartment. Both are on the same relay contact.
+
+### Charge Disable (relay CH2 — charge_disable)
+
+Activates the Classic AUX1 hardware charge inhibit whenever the supervisor commands Classic to 0 A, via any path:
+
+- CCL allocator hard-disables Classic (`disable=True`)
+- CCL allocator or manual ceiling override produces a 0 A effective target
+- Manual `/api/v1/control/allocation/manual-limit` sets Classic ceiling to 0 A
+
+The relay provides a hardware-level backstop that mirrors the software limit without depending on Modbus write success.
 
 Winter deadlock is possible if the batteries cold-lock and cannot discharge to power their own heater. This is acceptable if telemetry loss is the only consequence, but the system should recover cleanly when temperatures rise.
 
 ## Charge Inhibit
 
-Do not depend on Classic AUX2 for charge inhibit until its best use is settled. WhizBang Jr would consume AUX2, but leaving WhizBang Jr out may preserve AUX2 for charge inhibit or other high-level Classic control functions.
+Classic AUX1 is used as the hardware charge-disable line, driven by relay CH2. The relay NO contacts provide a contact closure to AUX1 when the supervisor commands 0 A to the Classic.
+
+**TODO:** Reconfigure Classic AUX1 from its current function (register 4165 = 0x5201) to Logic Input 1 (high input → Resting/Stop Charge). Validate the target register value against the Classic Modbus register map PDF before writing. Confirm the setting persists across Classic power cycles and that AUX1 pin behaviour matches expectations before relying on it for charge disable.
+
+**TODO:** Remove WhizBang Jr from Classic AUX2 if installed — it is not needed. The Eco-Worthy BMS/ESM-100 over CAN is the primary battery current and SOC source. Freeing AUX2 leaves it available for future Classic auxiliary functions.
 
 Preferred path:
 
@@ -196,44 +213,36 @@ Do not rely on the Pi as the only over-temperature protection. Also do not rely 
 
 ## Pi Control Interface
 
-Candidate Pi-side control interface:
+The Pi drives a **Javino 2-channel optocoupler-isolated relay module** (SRD-05VDC-SL-C relays, on-hand) directly from GPIO. Both jumpers S1/S2 are set to high-level trigger so relays fail off if the Pi resets or GPIO floats low.
 
-| Candidate | Role | Notes |
-|---|---|---|
-| 8-channel PC817 optocoupler isolation board, 3.3-30 V signal adapter | GPIO isolation / level shifting | Maximum output current is about 10 mA/channel; suitable for SSR inputs only if SSR input current is below that, otherwise add a transistor/MOSFET driver |
+| Pi pin | GPIO (BCM) | Relay channel | Function |
+|---|---|---|---|
+| Pin 2 | 5 V power | — | Relay board VCC |
+| Pin 6 | GND | — | Relay board GND (common with 12 V supply GND) |
+| Pin 11 | GPIO 17 | CH1 | heat_fan — heater SSR control + 12 V fan |
+| Pin 13 | GPIO 27 | CH2 | charge_disable — Classic AUX1 charge inhibit |
 
-Use the optocoupler board as a signal layer:
+GPIO pins are configurable via `RELAY_HEAT_FAN_GPIO` and `RELAY_CHARGE_DISABLE_GPIO` env vars.
 
-```text
-Pi GPIO
-  -> optocoupler input
-  -> isolated output using 5 V or 12 V control rail
-  -> optional transistor/MOSFET driver
-  -> thermostat / over-temp interlock chain
-  -> DC SSR input
-```
+**TODO:** Wire relay CH1 NO contacts → 12 V bus → SSR MRD-060D10 control+ (pin 3) and fan+ in parallel; SSR control− and fan− to common GND. The relay contacts switch the 12 V control supply into the SSR input; the relay board's 5 V VCC is separate from the switched 12 V load.
 
-Do not use the optocoupler board to switch the 48 V heater load directly.
+**TODO:** Wire relay CH2 NO contacts → Classic AUX1 terminals (contact closure; no external voltage on AUX1 wiring).
 
-## DC Switching Candidates
+## DC Switching — Selected Parts
 
-Candidate DC SSR/MOSFET switches:
+The **MRD-060D10** DC solid-state relay is on hand and selected for bench and initial install use.
 
-| Candidate | Rating | Control input | Notes |
-|---|---:|---|---|
-| Sensata/Crydom EL100D10-12 | 10 A, 3-100 VDC | 10-14 VDC | Preferred 12 V-control candidate for 48 V / 200 W heater; input current is around 10 mA minimum, so use a driver if the opto board is limited to 10 mA |
-| Sensata/Crydom EL100D20-12 | 20 A, 3-100 VDC | 10-14 VDC | More current headroom for future modest DC loads; still use heatsinking/derating |
-| Sensata/Crydom GN 84134860 | 15 A, 100 VDC | 3.5-32 VDC | Good headroom for 48 V heater loads |
-| Sensata/Crydom GN 84134850 | 10 A, 200 VDC | 3.5-32 VDC | More voltage headroom |
-| MRD-060D10 | 10 A, 60 VDC class | TBD | On hand; useful for bench tests, but validate datasheet, input current, heatsinking, and voltage margin before final installation |
-| Generic SSR-10DD / SSR-25DD | 10-25 A, often 5-60 VDC | 3-32 VDC | Bench-only unless source is trusted; many listings exaggerate ratings |
+| Parameter | Value |
+|---|---|
+| Output (load side) | 1–60 VDC, 10 A |
+| Control input | 4–32 VDC, 12 mA |
+| Control path | 12 V bus via relay CH1 contacts (4.2 A heater load, well within rating) |
 
-Avoid:
+The 12 V relay contact switches the SSR control input. The SSR in turn switches the 48 V heater load. Verify heatsinking before sustained use at 48 V / 4.2 A.
 
-- AC-output SSRs such as `SSR-25DA`.
-- Listings that say SCR, triac, or zero-cross for DC heater switching.
-- Mystery SSRs without a real datasheet, derating, and output topology.
-- 60 VDC output SSRs for final install if better 100 VDC parts are available; the 48 V LiFePO4 bank can reach about 58.4 V while charging.
+Voltage margin note: 48 V LiFePO4 can reach ~58.4 V charging. MRD-060D10 is rated 60 VDC class — acceptable for initial use but monitor. Higher-margin alternatives (100+ VDC class) preferred for permanent install.
+
+**TODO:** Validate MRD-060D10 heatsinking requirements at 4.2 A continuous. Mount on heatsink or chassis if needed before sustained heater use.
 
 ## Ventilation / Cooling
 

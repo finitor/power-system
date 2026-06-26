@@ -153,22 +153,24 @@ The Eco-Worthy ESM-100/BMS should be the first battery SOC/current source for th
 
 See [Charge Management](../charge-management.md) for the policy that compares Classic charge settings against BMS-advertised CVL/CCL and raises read-only alerts for cell-voltage and cell-delta conditions.
 
-Avoid or defer WhizBang Jr unless its benefits clearly outweigh the loss of AUX2. The WhizBang Jr uses Classic AUX2, and AUX2 may be more valuable as a control channel for high-level charge inhibit or other Classic functions in this LiFePO4 retrofit.
+WhizBang Jr is not installed and not planned. The Eco-Worthy BMS/ESM-100 over CAN is the primary battery current and SOC source, making WhizBang Jr redundant. AUX2 remains free for future Classic auxiliary functions.
 
-## AUX2 Input Functions
+## AUX1 — Hardware Charge Disable
 
-AUX2 can be configured as either an output/input port for Classic auxiliary functions or as the WhizBang Jr current-shunt input. These uses are mutually exclusive in normal planning: using AUX2 for WhizBang Jr means it is not available as a simple charge-control input.
+AUX1 is the selected hardware charge-disable line. The supervisor drives relay CH2 (GPIO 27) to produce a contact closure on AUX1 whenever it commands 0 A to the Classic, providing a hardware-level backstop independent of Modbus write success.
 
-Known AUX2 input functions from the Classic documentation:
+**TODO:** Reconfigure AUX1 to Logic Input 1 function (high input → Resting/Stop Charge). Current register 4165 value is 0x5201 (set during LiFePO4 changeover). Validate the Logic Input 1 function code against the Classic Modbus register map PDF, write to register 4165 via the existing `unlock_ethernet_writes` + `write_register` path, then verify via Classic front panel or `scripts/classic-probe.py` that the function changed and persists across a Classic power cycle.
 
-| AUX2 function | Input behavior | Project relevance |
+**TODO:** Wire relay CH2 NO contacts to Classic AUX1 terminals. Contact closure is the correct interface — no external voltage on the AUX1 wiring. Confirm AUX1 pin assignment and polarity on the Classic terminal strip before wiring.
+
+Known AUX functions relevant to this project:
+
+| AUX function | Input behavior | Status |
 |---|---|---|
-| WhizBang Jr | Uses AUX2 for the external shunt accessory | Provides Classic-local net battery current and ending-amps support, but duplicates battery voltage/current/SOC already expected from the Eco-Worthy BMS/ESM-100 path |
-| Force Float | Input above roughly 6 V forces Float | Not ideal as the primary LiFePO4 full-charge behavior because the desired state after absorb is usually Resting/Stop Charge, not continued float |
-| Logic Input 1 | High input forces Resting/Stop Charge; low input allows Charge | Strong candidate for a hardwired charge-inhibit path from the supervisor or battery protection logic |
-| Logic Input 2 | High input forces Charge; low input forces Resting/Stop Charge | Potentially useful, but less fail-safe unless the external circuit is deliberately designed so faults land in the desired conservative state |
-
-For this system, preserve AUX2 for Logic Input 1 research unless testing shows a better control path. The likely control pattern is: use battery/BMS telemetry and Classic charge-stage telemetry to decide when absorb is complete, then assert AUX2 Logic Input 1 so the Classic stops charging instead of maintaining a lead-acid-style float. Release the inhibit only after the battery falls below a documented recharge threshold and temperature permits charging.
+| Logic Input 1 | High input forces Resting/Stop Charge; low input allows Charge | **Selected for AUX1** — TODO: reconfigure register 4165 |
+| WhizBang Jr | Uses AUX2 for the external shunt accessory | Not installed, not needed |
+| Logic Input 2 | High input forces Charge; low input forces Resting/Stop Charge | AUX2, available for future use |
+| Force Float | Input above ~6 V forces Float | AUX2, not planned |
 
 Possible future supervisory actions:
 
@@ -176,12 +178,10 @@ Possible future supervisory actions:
 - Alert when expected solar production is absent.
 - Record charge-stage history.
 - Compare charge-controller battery voltage with battery-bank telemetry.
-- Keep AUX2 available for charge-inhibit/control research unless WhizBang Jr is deliberately selected.
-- Compare Classic-local net battery current, if WhizBang Jr is installed, against BMS/ESM-100 values.
 - Detect excessive time in absorb or float.
 - Alert immediately if the controller enters equalize.
 - Keep equalize disabled or locked behind a deliberate manual procedure.
-- If Modbus write control is confirmed safe, move the Classic to a resting/off/reduced-charge state after a full-charge condition.
+- Move the Classic to a resting/off/reduced-charge state after a full-charge condition via Modbus write.
 - Re-enable solar charging when bank voltage or SOC falls below a documented restart threshold.
 - On BMS charge-disallow or approaching overvoltage/low-temperature limit, command the Classic to stop or reduce charge before the battery BMS opens.
 - If a hardware fallback is needed, interrupt PV/source input to the Classic before interrupting the Classic-to-battery connection.
@@ -198,15 +198,6 @@ Document:
 
 ## Open Questions
 
-- What communication interface is available on this specific Classic 200?
-- Is the controller already on Ethernet?
-- What firmware version is installed?
-- Which values are available without cloud services?
-- Are there existing local tools or Modbus maps worth using?
-- Can the Classic be safely commanded out of float/rested through Modbus TCP?
-- What LiFePO4-safe absorb voltage, absorb duration, float voltage, and rebulk/restart threshold should be used for the Eco-Worthy bank?
-- Is WhizBang Jr useful enough for ending-amps control or current cross-checking to justify consuming AUX2?
-- Which Classic functions can AUX2 support for charge inhibit or other high-level control?
 - How is equalization disabled in the Classic configuration, and can the supervisor verify that state?
 - Can Classic Mode Off or current-limit control be issued quickly and reliably enough to prevent BMS charge disconnect?
 - Is a DC-rated PV input contactor/disconnect needed as a hardware fallback for charge inhibit?
