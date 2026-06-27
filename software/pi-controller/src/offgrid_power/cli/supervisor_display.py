@@ -990,6 +990,22 @@ class ChargeAllocationLogger:
         return False
 
 
+def _epever_active(epever) -> bool:
+    """Active when stage is a known charging stage AND pv is not explicitly 0 V.
+
+    An unknown stage string (firmware version mismatch, etc.) is treated as
+    "don't know" and falls back to pv_voltage_v alone so a misidentified stage
+    can't silently lock the controller out of the allocation.
+    """
+    from offgrid_power.charge_stage import ChargeStage
+    stage = epever.canonical_stage
+    if stage is ChargeStage.UNKNOWN:
+        return epever.pv_voltage_v is None or epever.pv_voltage_v > 0.0
+    return stage.value in _ACTIVE_CHARGE_STAGES and (
+        epever.pv_voltage_v is None or epever.pv_voltage_v > 0.0
+    )
+
+
 def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
     chargers: list[ChargerAllocationInput] = []
     if snapshot.classic is not None:
@@ -1026,8 +1042,7 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 max_current_a=_env_float("CHARGE_ALLOC_EPEVER_MAX_A", 100.0),
                 pv_power_w=epever.pv_power_w,
                 min_current_a=1.0,  # 0x9013 floors at 1 A
-                active=epever.canonical_stage.value in _ACTIVE_CHARGE_STAGES
-                    and (epever.pv_voltage_v is None or epever.pv_voltage_v > 0.0),
+                active=_epever_active(epever),
             )
         )
     return chargers
