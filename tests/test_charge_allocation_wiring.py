@@ -553,6 +553,28 @@ class AllocationInputsTest(unittest.TestCase):
         inputs = {c.name: c for c in _allocation_inputs(snapshot)}
         self.assertTrue(inputs["classic"].active)
 
+    def test_classic_active_stage_becomes_inactive_when_pv_is_zero(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(
+                pv_voltage_v=0.0,
+                battery_voltage_v=54.0,
+                charge_stage="BulkMppt",
+            )
+        )
+        inputs = {c.name: c for c in _allocation_inputs(snapshot)}
+        self.assertFalse(inputs["classic"].active)
+
+    def test_epever_active_stage_becomes_inactive_when_pv_is_zero(self) -> None:
+        snapshot = make_snapshot(
+            epever=make_epever_telemetry(
+                pv_voltage_v=0.0,
+                battery_voltage_v=54.0,
+                charging_status="Boost",
+            )
+        )
+        inputs = {c.name: c for c in _allocation_inputs(snapshot)}
+        self.assertFalse(inputs["epever"].active)
+
 
 class DryRunRecordingTest(unittest.TestCase):
     def test_logs_decision_event_and_never_raises_without_ccl(self) -> None:

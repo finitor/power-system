@@ -998,7 +998,8 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 max_current_a=_env_float("CHARGE_ALLOC_CLASSIC_MAX_A", 80.0),
                 pv_power_w=_pv_power_w(classic.pv_voltage_v, classic.pv_current_a),
                 min_current_a=0.0,
-                active=classic.canonical_stage.value in _ACTIVE_CHARGE_STAGES,
+                active=classic.canonical_stage.value in _ACTIVE_CHARGE_STAGES
+                    and (classic.pv_voltage_v is None or classic.pv_voltage_v > 0.0),
             )
         )
     if snapshot.epever is not None:
@@ -1016,7 +1017,8 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 max_current_a=_env_float("CHARGE_ALLOC_EPEVER_MAX_A", 100.0),
                 pv_power_w=epever.pv_power_w,
                 min_current_a=1.0,  # 0x9013 floors at 1 A
-                active=epever.canonical_stage.value in _ACTIVE_CHARGE_STAGES,
+                active=epever.canonical_stage.value in _ACTIVE_CHARGE_STAGES
+                    and (epever.pv_voltage_v is None or epever.pv_voltage_v > 0.0),
             )
         )
     return chargers
