@@ -575,6 +575,19 @@ class AllocationInputsTest(unittest.TestCase):
         inputs = {c.name: c for c in _allocation_inputs(snapshot)}
         self.assertFalse(inputs["epever"].active)
 
+    def test_epever_active_stage_becomes_inactive_when_pv_is_none(self) -> None:
+        # RS485 read failure (None) must not allow Epever into the eligible pool —
+        # a stale active stage + no PV reading should not steal Classic's budget.
+        snapshot = make_snapshot(
+            epever=make_epever_telemetry(
+                pv_voltage_v=None,
+                battery_voltage_v=54.0,
+                charging_status="Boost",
+            )
+        )
+        inputs = {c.name: c for c in _allocation_inputs(snapshot)}
+        self.assertFalse(inputs["epever"].active)
+
 
 class DryRunRecordingTest(unittest.TestCase):
     def test_logs_decision_event_and_never_raises_without_ccl(self) -> None:
