@@ -369,7 +369,7 @@ def _allocation_lines(allocation: dict) -> list[str]:
 
 
 def _allocation_budget_text(allocation: dict) -> str:
-    basis_text = _allocation_basis_text(allocation.get("weight_basis"))
+    basis_text = _allocation_basis_text(allocation)
     budget = f"{_fmt_value(allocation.get('budget_a'), 0)}A"
     reason = allocation.get("reason")
     ceiling = allocation.get("allowance_a", allocation.get("charge_ceiling_a"))
@@ -384,9 +384,15 @@ def _allocation_budget_text(allocation: dict) -> str:
     return f"{budget}{basis_text}"
 
 
-def _allocation_basis_text(basis: str | None) -> str:
-    if basis == "equal":
-        return "  split equally"
+def _allocation_basis_text(allocation: dict) -> str:
+    targets = allocation.get("targets") or {}
+    cc0 = (targets.get("classic") or {}).get("target_a", 0.0)
+    cc1 = (targets.get("epever") or {}).get("target_a", 0.0)
+    total = cc0 + cc1
+    if total > 0:
+        pct0 = round(cc0 / total * 100)
+        return f"  CC0/CC1: {pct0}/{100 - pct0}"
+    basis = allocation.get("weight_basis")
     return f"  split by {basis}" if basis else ""
 
 

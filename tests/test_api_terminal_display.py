@@ -171,8 +171,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
 
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Limit                 21A net (CCL taper; BMS CCL 100A)", rendered)
-        self.assertIn("Budget                22A  includes load 6A", rendered)
-        self.assertIn("split equally", rendered)
+        self.assertIn("Budget                22A  includes load 6A  CC0/CC1: 100/0", rendered)
         self.assertIn("Classic               11.0A limited  *", rendered)
         self.assertIn("Epever                off  *", rendered)
 
@@ -276,7 +275,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Limit                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget                200A  split equally", rendered)
+        self.assertIn("Budget                200A  CC0/CC1: 50/50", rendered)
         self.assertNotIn("battery -3A", rendered)
         self.assertIn("Classic               100.0A released", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)
@@ -300,7 +299,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Limit                 20A net (CCL taper, feedback clamp; BMS CCL 40A)", rendered)
-        self.assertIn("Budget                1A  feedback: battery +46A > ceiling 20A  split equally", rendered)
+        self.assertIn("Budget                1A  feedback: battery +46A > ceiling 20A", rendered)
 
     def test_allocation_section_names_low_temperature_stop(self) -> None:
         lines = _allocation_lines(
