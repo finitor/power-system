@@ -275,7 +275,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Limit                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget                200A  CC0/CC1: 50/50", rendered)
+        self.assertIn("Budget                200A  CC0/CC1: 100/0", rendered)
         self.assertNotIn("battery -3A", rendered)
         self.assertIn("Classic               100.0A released", rendered)
         self.assertIn("Epever                100.0A released  *", rendered)

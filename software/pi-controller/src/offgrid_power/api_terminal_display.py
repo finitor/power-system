@@ -508,8 +508,13 @@ def _allocation_budget_text(allocation: dict) -> str:
 
 def _allocation_basis_text(allocation: dict) -> str:
     targets = allocation.get("targets") or {}
-    cc0 = (targets.get("classic") or {}).get("target_a", 0.0)
-    cc1 = (targets.get("epever") or {}).get("target_a", 0.0)
+    global_reason = allocation.get("reason") or ""
+    # Only count controllers in the eligible pool (reason matches global reason).
+    # Released/inactive controllers get their own reason and carry their max
+    # ceiling as target_a — not a budget share.
+    eligible = {k: v for k, v in targets.items() if (v.get("reason") or "") == global_reason}
+    cc0 = (eligible.get("classic") or {}).get("target_a", 0.0) or 0.0
+    cc1 = (eligible.get("epever") or {}).get("target_a", 0.0) or 0.0
     total = cc0 + cc1
     if total > 0:
         pct0 = round(cc0 / total * 100)
