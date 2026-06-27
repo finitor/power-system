@@ -235,6 +235,32 @@ class EpeverClient:
         finally:
             client.close()
 
+    def write_battery_capacity(self, capacity_ah: int) -> EpeverChargeSettings:
+        """Write Battery Rated Capacity (register 0x9001) and return readback.
+
+        The register holds a plain integer Ah value (no scaling). Reasonable
+        range 1–9999 Ah; the 16-bit register can hold up to 65535.
+        """
+        if not (1 <= capacity_ah <= 9999):
+            raise ValueError(f"EPEver battery capacity out of range: {capacity_ah} Ah")
+        client = self._open_client()
+        try:
+            response = client.write_registers(address=0x9001, values=[capacity_ah], device_id=self.unit)
+            if response.isError():
+                raise RuntimeError(f"EPEver battery capacity write failed: {response}")
+            settings = decode_settings(
+                read_holding_registers(client, 0x9000, 22, self.unit),
+                datetime.now(timezone.utc),
+            )
+            if settings.battery_capacity_ah != capacity_ah:
+                raise RuntimeError(
+                    f"EPEver battery capacity readback mismatch: "
+                    f"wrote {capacity_ah} Ah, read {settings.battery_capacity_ah} Ah"
+                )
+            return settings
+        finally:
+            client.close()
+
     def _open_client(self) -> ModbusSerialClient:
         client = ModbusSerialClient(
             port=self.device,

@@ -600,7 +600,7 @@ def _temperature_lines(payload: dict) -> list[str]:
     cell_min = battery.get("cell_temperature_min_c")
     cell_max = battery.get("cell_temperature_max_c")
     if cell_min is not None and cell_max is not None:
-        lines.append(_row("Battery cells", f"{_fmt(cell_min, 1)}-{_fmt(cell_max, 1)}C"))
+        lines.append(_row("Battery cells", f"{_fmt(cell_min, 0)}-{_fmt(cell_max, 0)}C"))
     # Suppressed temperature rows (hidden from the display by request 2026-06-17;
     # the data is still in the snapshot, so restore by re-adding these:)
     #   - "Battery terminal"  <- solar[0].temperatures_c["battery"]  (CC0 battery sensor)

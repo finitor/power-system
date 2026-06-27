@@ -223,7 +223,7 @@ class PylonCanSnapshot:
                 parts.append(value)
             if extended.min_cell_temperature_c is not None and extended.max_cell_temperature_c is not None:
                 parts.append(
-                    f"cell temp {extended.min_cell_temperature_c:.1f}-{extended.max_cell_temperature_c:.1f} C"
+                    f"cell temp {extended.min_cell_temperature_c:.0f}-{extended.max_cell_temperature_c:.0f} C"
                 )
             if extended.installed_capacity_ah is not None:
                 parts.append(f"installed capacity {extended.installed_capacity_ah:.0f} Ah")
@@ -502,7 +502,8 @@ def _decode_extended_measurements(raw_frames: dict[int, bytes]) -> PylonExtended
     data_373 = raw_frames.get(0x373)
     if data_373 is not None and len(data_373) >= 8:
         cell_voltage_v = (_u16(data_373, 0) * 0.001, _u16(data_373, 2) * 0.001)
-        cell_temperature_c = (_u16(data_373, 4) - 273.15, _u16(data_373, 6) - 273.15)
+        # Integer Kelvin → round to nearest whole °C (protocol resolution is 1 K)
+        cell_temperature_c = (float(round(_u16(data_373, 4) - 273.15)), float(round(_u16(data_373, 6) - 273.15)))
 
     installed_capacity_ah = None
     data_379 = raw_frames.get(0x379)
