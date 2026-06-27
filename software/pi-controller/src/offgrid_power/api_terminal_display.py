@@ -518,7 +518,7 @@ def _allocation_basis_text(allocation: dict) -> str:
     total = cc0 + cc1
     if total > 0:
         pct0 = round(cc0 / total * 100)
-        return f"  CC0/CC1: {pct0}/{100 - pct0}"
+        return f"  CC0/CC1: {pct0}/{100 - pct0}%"
     basis = allocation.get("weight_basis")
     return f"  split by {basis}" if basis else ""
 

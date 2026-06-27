@@ -2076,8 +2076,10 @@ def _charge_controller_sections(
     controllers = _solar_api_payload(snapshot)
     if not controllers:
         return ["<h2>Charge Controllers</h2>", "<table>", _row("State", "No data"), "</table>"]
+    split = _controller_split_pct(allocation)
     lines: list[str] = []
     for index, controller in enumerate(controllers):
+        controller_name = (controller.get("id") or "").split(".", 1)[0]
         lines.extend(
             _controller_section_lines(
                 index,
@@ -2085,9 +2087,31 @@ def _charge_controller_sections(
                 allocation_target=_allocation_target(controller, allocation),
                 include_live=include_live,
                 include_settings=include_settings,
+                allocation_split_pct=split.get(controller_name),
             )
         )
     return lines
+
+
+def _controller_split_pct(allocation: dict | None) -> dict[str, int]:
+    """Per-controller budget percentages, keyed by controller name (classic/epever).
+
+    Only eligible controllers (whose target reason matches the global reason)
+    contribute to the denominator, so inactive/released controllers show 0%.
+    Returns an empty dict when no eligible budget exists.
+    """
+    if not allocation:
+        return {}
+    targets = allocation.get("targets") or {}
+    global_reason = allocation.get("reason") or ""
+    eligible = {k: v for k, v in targets.items() if (v.get("reason") or "") == global_reason}
+    cc0 = (eligible.get("classic") or {}).get("target_a", 0.0) or 0.0
+    cc1 = (eligible.get("epever") or {}).get("target_a", 0.0) or 0.0
+    total = cc0 + cc1
+    if total <= 0:
+        return {}
+    pct0 = round(cc0 / total * 100)
+    return {"classic": pct0, "epever": 100 - pct0}
 
 
 def _allocation_target(controller: dict, allocation: dict | None) -> dict | None:
@@ -2107,6 +2131,7 @@ def _controller_section_lines(
     *,
     include_live: bool = True,
     include_settings: bool = True,
+    allocation_split_pct: int | None = None,
 ) -> list[str]:
     name = _charge_controller_short_name(controller)
     title = f"Charge Controller {index} ({name})" if name else f"Charge Controller {index}"
@@ -2137,7 +2162,7 @@ def _controller_section_lines(
         stage = NormalizedStage.from_dict(controller.get("charge_stage"))
         lines.append(_row("Charge Status", stage.render(controller.get("state"))))
 
-        allocation_text = _allocation_target_text(allocation_target)
+        allocation_text = _allocation_target_text(allocation_target, split_pct=allocation_split_pct)
         if allocation_text is not None:
             lines.append(_row("Allocation", allocation_text))
 
@@ -2202,7 +2227,7 @@ def _charge_controller_settings_text(settings: dict | None) -> str | None:
     )
 
 
-def _allocation_target_text(target: dict | None) -> str | None:
+def _allocation_target_text(target: dict | None, split_pct: int | None = None) -> str | None:
     if target is None:
         return None
     reason = target.get("reason")
@@ -2217,6 +2242,8 @@ def _allocation_target_text(target: dict | None) -> str | None:
         text = f"limited {_meas(target_a, 'A', 1)}"
     if target.get("should_write"):
         text += " *"
+    if split_pct is not None:
+        text = f"{split_pct}%  {text}"
     return text
 
 
