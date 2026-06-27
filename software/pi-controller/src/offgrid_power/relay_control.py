@@ -33,7 +33,7 @@ def heat_fan_transition_event(
 # DRY RUN values — revert to 2.0/5.0/134.0/130.0 before live use
 _HEAT_ON_TEMP_C = 17.5     # activate below this minimum cell temperature
 _HEAT_OFF_TEMP_C = 20.0    # deactivate above this minimum cell temperature
-_HEAT_ON_VOC_V = 134.0     # activate above this Classic VOC
+_HEAT_ON_VOC_V = 132.0     # activate above this Classic VOC
 _HEAT_OFF_VOC_V = 130.0    # deactivate below this Classic VOC
 
 
