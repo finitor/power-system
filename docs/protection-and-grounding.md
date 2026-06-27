@@ -123,6 +123,10 @@ PV frames — together to the ground bus and out to a **grounding electrode (rod
 This is touch-safety and a surge path; it exists regardless of the system-bond
 choices above. The inverter has a dedicated DC equipment-ground terminal.
 
+**TODO:** Land EPEver TEP10425 chassis earth ground to ground bus.
+
+**TODO:** Land battery enclosure / rack earth ground to ground bus.
+
 ## 6. Conductor sizing
 
 Sizing rule: a conductor that can carry **fault current** is sized to survive the

@@ -25,6 +25,13 @@ FORCE_FLAGS_REGISTER = 4160
 FORCE_EEPROM_UPDATE_WRITE = 0x0004
 EEPROM_ERROR_FLAG = 0x00000002
 
+AUX_FUNCTION_WORD_REGISTER = 4165
+# Upper byte of register 4165 encodes AUX2; lower byte encodes AUX1.
+# The 0x40 bit signals "Auto" mode for the chosen function.
+AUX2_FUNC_ACTIVE_HIGH_OFF = 0x4F  # 0x40 | 15: >6 V on AUX2+ forces Classic to Resting
+# Target word for charge-disable wiring: AUX2 = function 15, AUX1 unchanged (0x01).
+AUX_FUNCTION_WORD_CHARGE_DISABLE = 0x4F01
+
 
 CHARGE_STAGES = {
     0: "Resting",
@@ -306,6 +313,27 @@ class ClassicClient:
                 read_block(client, 4148, 18, self.device_id),
                 captured_at=datetime.now(timezone.utc),
             )
+        finally:
+            client.close()
+
+    def write_aux_function_word(self, value: int, *, persist: bool = True) -> int:
+        """Write register 4165 (AUX function word) and return the readback value."""
+        client = ModbusTcpClient(self.host, port=self.port, timeout=self.timeout)
+        if not client.connect():
+            raise ConnectionError(f"Could not connect to {self.host}:{self.port}")
+        try:
+            unlock_ethernet_writes(client, self.device_id)
+            write_register(client, AUX_FUNCTION_WORD_REGISTER, value, self.device_id)
+            if persist:
+                force_eeprom_update(client, self.device_id)
+                live = decode_live(
+                    read_block(client, 4115, 20, self.device_id),
+                    captured_at=datetime.now(timezone.utc),
+                )
+                if live.info_flags & EEPROM_ERROR_FLAG:
+                    raise RuntimeError("Classic reported EEPROM error after aux function write")
+            readback = read_block(client, AUX_FUNCTION_WORD_REGISTER, 1, self.device_id)
+            return readback.get(AUX_FUNCTION_WORD_REGISTER)
         finally:
             client.close()
 
