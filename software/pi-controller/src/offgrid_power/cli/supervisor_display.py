@@ -1019,8 +1019,7 @@ def _allocation_inputs(snapshot) -> list[ChargerAllocationInput]:
                 pv_power_w=epever.pv_power_w,
                 min_current_a=1.0,  # 0x9013 floors at 1 A
                 active=epever.canonical_stage.value in _ACTIVE_CHARGE_STAGES
-                    and epever.pv_voltage_v is not None
-                    and epever.pv_voltage_v > 0.0,
+                    and (epever.pv_voltage_v is None or epever.pv_voltage_v > 0.0),
             )
         )
     return chargers

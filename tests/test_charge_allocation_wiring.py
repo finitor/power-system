@@ -575,9 +575,8 @@ class AllocationInputsTest(unittest.TestCase):
         inputs = {c.name: c for c in _allocation_inputs(snapshot)}
         self.assertFalse(inputs["epever"].active)
 
-    def test_epever_active_stage_becomes_inactive_when_pv_is_none(self) -> None:
-        # RS485 read failure (None) must not allow Epever into the eligible pool —
-        # a stale active stage + no PV reading should not steal Classic's budget.
+    def test_epever_active_stage_stays_active_when_pv_is_none(self) -> None:
+        # Comms failure (None) is not the same as 0V PV. Assume still working.
         snapshot = make_snapshot(
             epever=make_epever_telemetry(
                 pv_voltage_v=None,
@@ -586,7 +585,7 @@ class AllocationInputsTest(unittest.TestCase):
             )
         )
         inputs = {c.name: c for c in _allocation_inputs(snapshot)}
-        self.assertFalse(inputs["epever"].active)
+        self.assertTrue(inputs["epever"].active)
 
 
 class DryRunRecordingTest(unittest.TestCase):
