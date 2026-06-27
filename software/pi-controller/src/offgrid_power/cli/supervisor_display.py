@@ -691,6 +691,7 @@ class ChargeAllocationLogger:
         self._last_logged_monotonic: float | None = None
         self._epever_charging_state: bool | None = None
         self._inactive_since: dict[str, datetime] = {}
+        self._seen_active: set[str] = set()
         self.override = override
 
     def _debounced_inputs(
@@ -704,6 +705,13 @@ class ChargeAllocationLogger:
                 continue
             if charger.active:
                 self._inactive_since.pop(charger.name, None)
+                self._seen_active.add(charger.name)
+                out.append(charger)
+                continue
+            # Only debounce a transition from active → inactive. A controller
+            # that starts the session already inactive (e.g. after a restart
+            # with no PV) has nothing to debounce and should be excluded immediately.
+            if charger.name not in self._seen_active:
                 out.append(charger)
                 continue
             inactive_since = self._inactive_since.setdefault(charger.name, captured_at)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import timedelta
 import os
 from pathlib import Path
@@ -366,58 +367,67 @@ class TargetStabilizationTest(unittest.TestCase):
 
 
 class ControllerSleepDebounceTest(unittest.TestCase):
-    def test_epever_resting_must_persist_before_it_is_marked_inactive(self) -> None:
-        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), epever_sleep_debounce_s=120.0)
-        t0 = make_snapshot().captured_at
-        sleeping = ChargerAllocationInput(
-            name="epever",
+    def _sleeping(self, name: str) -> ChargerAllocationInput:
+        return ChargerAllocationInput(
+            name=name,
             actual_current_a=0.0,
             current_limit_a=5.0,
             max_current_a=100.0,
-            min_current_a=1.0,
+            min_current_a=1.0 if name == "epever" else 0.0,
             active=False,
         )
 
-        first = logger._debounced_inputs([sleeping], t0)[0]
-        held = logger._debounced_inputs([sleeping], t0 + timedelta(seconds=119))[0]
-        released = logger._debounced_inputs([sleeping], t0 + timedelta(seconds=120))[0]
+    def _awake(self, name: str) -> ChargerAllocationInput:
+        s = self._sleeping(name)
+        return dataclasses.replace(s, active=True)
 
-        self.assertTrue(first.active)
+    def test_epever_inactive_at_startup_is_immediately_excluded(self) -> None:
+        # Controller that starts the session already inactive has nothing to
+        # debounce — it was never seen active, so exclude it straight away.
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), epever_sleep_debounce_s=120.0)
+        t0 = make_snapshot().captured_at
+        result = logger._debounced_inputs([self._sleeping("epever")], t0)[0]
+        self.assertFalse(result.active)
+
+    def test_epever_inactive_after_active_is_debounced(self) -> None:
+        # Transition from active → inactive: hold for debounce window.
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), epever_sleep_debounce_s=120.0)
+        t0 = make_snapshot().captured_at
+        logger._debounced_inputs([self._awake("epever")], t0)     # mark as seen-active
+        logger._debounced_inputs([self._sleeping("epever")], t0 + timedelta(seconds=1))  # sets inactive_since = t0+1
+
+        held = logger._debounced_inputs([self._sleeping("epever")], t0 + timedelta(seconds=120))[0]
+        released = logger._debounced_inputs([self._sleeping("epever")], t0 + timedelta(seconds=121))[0]
+
         self.assertTrue(held.active)
         self.assertFalse(released.active)
 
     def test_epever_active_stage_resets_sleep_debounce(self) -> None:
         logger = ChargeAllocationLogger(ChargeCurrentAllocator(), epever_sleep_debounce_s=120.0)
         t0 = make_snapshot().captured_at
-        sleeping = ChargerAllocationInput(
-            name="epever",
-            actual_current_a=0.0,
-            current_limit_a=5.0,
-            max_current_a=100.0,
-            min_current_a=1.0,
-            active=False,
-        )
-        awake = type(sleeping)(**{**sleeping.__dict__, "active": True})
+        logger._debounced_inputs([self._awake("epever")], t0)   # seed seen-active
+        logger._debounced_inputs([self._sleeping("epever")], t0 + timedelta(seconds=10))
+        # Wakes back up mid-debounce → clears inactive_since
+        self.assertTrue(logger._debounced_inputs([self._awake("epever")], t0 + timedelta(seconds=60))[0].active)
+        # Goes inactive again → new debounce window starts from t+60
+        self.assertTrue(logger._debounced_inputs([self._sleeping("epever")], t0 + timedelta(seconds=61))[0].active)
 
-        logger._debounced_inputs([sleeping], t0)
-        self.assertTrue(logger._debounced_inputs([awake], t0 + timedelta(seconds=60))[0].active)
-        self.assertTrue(logger._debounced_inputs([sleeping], t0 + timedelta(seconds=61))[0].active)
-
-    def test_classic_resting_must_persist_before_it_is_marked_inactive(self) -> None:
+    def test_classic_inactive_at_startup_is_immediately_excluded(self) -> None:
         logger = ChargeAllocationLogger(ChargeCurrentAllocator(), classic_sleep_debounce_s=120.0)
         t0 = make_snapshot().captured_at
-        sleeping = ChargerAllocationInput(
-            name="classic",
-            actual_current_a=0.0,
-            current_limit_a=5.0,
-            max_current_a=100.0,
-            active=False,
-        )
+        result = logger._debounced_inputs([self._sleeping("classic")], t0)[0]
+        self.assertFalse(result.active)
 
-        first = logger._debounced_inputs([sleeping], t0)[0]
-        released = logger._debounced_inputs([sleeping], t0 + timedelta(seconds=120))[0]
+    def test_classic_inactive_after_active_is_debounced(self) -> None:
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator(), classic_sleep_debounce_s=120.0)
+        t0 = make_snapshot().captured_at
+        logger._debounced_inputs([self._awake("classic")], t0)
+        logger._debounced_inputs([self._sleeping("classic")], t0 + timedelta(seconds=1))  # sets inactive_since = t0+1
 
-        self.assertTrue(first.active)
+        held = logger._debounced_inputs([self._sleeping("classic")], t0 + timedelta(seconds=120))[0]
+        released = logger._debounced_inputs([self._sleeping("classic")], t0 + timedelta(seconds=121))[0]
+
+        self.assertTrue(held.active)
         self.assertFalse(released.active)
 
 
@@ -662,6 +672,7 @@ class DryRunRecordingTest(unittest.TestCase):
             battery=_battery_with_limits(ccl_a=40.0, charge_enable=True, current_a=0.0),
             classic=None,
             epever=make_epever_telemetry(
+                pv_voltage_v=80.0,
                 battery_current_a=4.0,
                 charging_status="Boost",
             ),
