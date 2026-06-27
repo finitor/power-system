@@ -266,10 +266,10 @@ class SupervisorSemanticsTest(unittest.TestCase):
 
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Limit:                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget:                200A  CC0/CC1: 100/0%", rendered)
+        self.assertIn("Budget:                200A", rendered)
         self.assertNotIn("battery -2A", rendered)
-        self.assertIn("Classic:               100.0A released", rendered)
-        self.assertIn("Epever:                100.0A released  *", rendered)
+        self.assertIn("CC0 (Classic):         100%  100.0A released", rendered)
+        self.assertIn("CC1 (Epever):          0%  100.0A released  *", rendered)
 
     def test_supervisor_does_not_warn_on_high_cell_or_delta_conditions(self) -> None:
         supervisor = Supervisor(

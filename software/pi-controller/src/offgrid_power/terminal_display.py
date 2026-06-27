@@ -350,6 +350,9 @@ def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
     return lines
 
 
+_CC_LABELS: dict[str, str] = {"classic": "CC0 (Classic)", "epever": "CC1 (Epever)"}
+
+
 def _allocation_lines(allocation: dict) -> list[str]:
     header = "Charge Allocation"
     if allocation.get("allocator_paused"):
@@ -359,12 +362,16 @@ def _allocation_lines(allocation: dict) -> list[str]:
     lines.append(_row("Limit", _allocation_limit_text(allocation)))
     lines.append(_row("Budget", _allocation_budget_text(allocation)))
     targets = allocation.get("targets") or {}
+    split = _allocation_split_pcts(allocation)
     for name in sorted(targets):
         target = targets[name]
         value = _allocation_target_text(target, global_reason=reason)
         if target.get("should_write"):
             value += "  *"
-        lines.append(_row(name.capitalize(), value))
+        pct = split.get(name)
+        if pct is not None:
+            value = f"{pct}%  {value}"
+        lines.append(_row(_CC_LABELS.get(name, name.capitalize()), value))
     return lines
 
 
@@ -384,19 +391,23 @@ def _allocation_budget_text(allocation: dict) -> str:
     return f"{budget}{basis_text}"
 
 
-def _allocation_basis_text(allocation: dict) -> str:
+def _allocation_split_pcts(allocation: dict) -> dict[str, int]:
+    """Per-controller budget percentages keyed by name. Empty when no eligible pool."""
     targets = allocation.get("targets") or {}
     global_reason = allocation.get("reason") or ""
-    # Only count controllers in the eligible pool (reason matches global reason).
-    # Released/inactive controllers get their own reason and carry their max
-    # ceiling as target_a — not a budget share.
     eligible = {k: v for k, v in targets.items() if (v.get("reason") or "") == global_reason}
     cc0 = (eligible.get("classic") or {}).get("target_a", 0.0) or 0.0
     cc1 = (eligible.get("epever") or {}).get("target_a", 0.0) or 0.0
     total = cc0 + cc1
-    if total > 0:
-        pct0 = round(cc0 / total * 100)
-        return f"  CC0/CC1: {pct0}/{100 - pct0}%"
+    if total <= 0:
+        return {}
+    pct0 = round(cc0 / total * 100)
+    return {"classic": pct0, "epever": 100 - pct0}
+
+
+def _allocation_basis_text(allocation: dict) -> str:
+    if _allocation_split_pcts(allocation):
+        return ""  # split shown per-controller
     basis = allocation.get("weight_basis")
     return f"  split by {basis}" if basis else ""
 

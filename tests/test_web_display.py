@@ -426,7 +426,7 @@ class WebDisplayTest(unittest.TestCase):
 
         html = render_kindle_snapshot(snapshot, allocation=allocation)
 
-        self.assertIn("<td>Allocation</td><td>limited 37.0A *</td>", html)
+        self.assertIn("<td>Allocation</td><td>37.0A limited *</td>", html)
         self.assertIn("<td>Allocation</td><td>released</td>", html)
 
     def test_kindle_charge_controller_allocation_row_renders_hard_stop(self) -> None:

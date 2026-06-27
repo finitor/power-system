@@ -171,9 +171,9 @@ class ApiTerminalDisplayTest(unittest.TestCase):
 
         self.assertIn("Charge Allocation", rendered)
         self.assertIn("Limit                 21A net (CCL taper; BMS CCL 100A)", rendered)
-        self.assertIn("Budget                22A  includes load 6A  CC0/CC1: 100/0%", rendered)
-        self.assertIn("Classic               11.0A limited  *", rendered)
-        self.assertIn("Epever                off  *", rendered)
+        self.assertIn("Budget                22A  includes load 6A", rendered)
+        self.assertIn("CC0 (Classic)         100%  11.0A limited  *", rendered)
+        self.assertIn("CC1 (Epever)          0%  off  *", rendered)
 
     def test_epever_production_today_unavailable_message(self) -> None:
         lines = _solar_lines(
@@ -241,8 +241,8 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         )
         rendered = "\n".join(lines)
 
-        self.assertIn("Classic               80.0A released", rendered)
-        self.assertIn("Epever                100.0A released", rendered)
+        self.assertIn("CC0 (Classic)         44%  80.0A released", rendered)
+        self.assertIn("CC1 (Epever)          56%  100.0A released", rendered)
 
     def test_allocation_section_renders_per_controller_release_state(self) -> None:
         lines = _allocation_lines(
@@ -275,10 +275,10 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         rendered = "\n".join(lines)
 
         self.assertIn("Limit                 not limiting (BMS CCL 200A)", rendered)
-        self.assertIn("Budget                200A  CC0/CC1: 100/0%", rendered)
+        self.assertIn("Budget                200A", rendered)
         self.assertNotIn("battery -3A", rendered)
-        self.assertIn("Classic               100.0A released", rendered)
-        self.assertIn("Epever                100.0A released  *", rendered)
+        self.assertIn("CC0 (Classic)         100%  100.0A released", rendered)
+        self.assertIn("CC1 (Epever)          0%  100.0A released  *", rendered)
 
     def test_allocation_section_explains_feedback_clamp(self) -> None:
         lines = _allocation_lines(
@@ -358,7 +358,7 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         }
         rendered = render_api_snapshot(payload, now=datetime(2026, 6, 5, 12, 0, 2, tzinfo=timezone.utc))
         self.assertIn("Charge Allocation", rendered)
-        self.assertIn("Classic               25.0A limited", rendered)
+        self.assertIn("CC0 (Classic)         25.0A limited", rendered)
         self.assertLess(rendered.index("Charge Allocation"), rendered.index("Temperatures"))
 
     def test_energy_text_switches_units_at_one_kwh(self) -> None:

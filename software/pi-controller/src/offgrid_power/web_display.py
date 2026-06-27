@@ -2239,11 +2239,11 @@ def _allocation_target_text(target: dict | None, split_pct: int | None = None) -
     elif target_a is None:
         text = "--"
     else:
-        text = f"limited {_meas(target_a, 'A', 1)}"
+        text = f"{_meas(target_a, 'A', 1)} limited"
     if target.get("should_write"):
         text += " *"
     if split_pct is not None:
-        text = f"{split_pct}%  {text}"
+        text = f"{split_pct}% {text}"
     return text
 
 
