@@ -42,7 +42,7 @@ from offgrid_power.magnum import InverterEventTracker, MagnumClient
 from offgrid_power.network_monitor import WanReachabilityTracker
 from offgrid_power.config import load_config, load_relay_config
 from offgrid_power.relay import RelayController
-from offgrid_power.relay_control import RelaySupervisor
+from offgrid_power.relay_control import RelaySupervisor, heat_fan_transition_event
 from offgrid_power.load import estimate_load_current_a, LoadTotalsTracker
 from offgrid_power.metrics import MetricRecorder
 from offgrid_power.runtime_state import load_ccl_scaling_factor, save_ccl_scaling_factor
@@ -416,11 +416,22 @@ def main() -> int:
                         dry_run=not charge_allocation_logger.live,
                         ccl_scaling_factor=charge_allocation_logger.ceiling.scaling_factor,
                     )
+            heat_fan_before = relay_supervisor.heat_fan_on
             relay_supervisor.update(snapshot, allocation_decision, allocation_override)
+            heat_fan_after = relay_supervisor.heat_fan_on
+            if heat_fan_before != heat_fan_after:
+                temp_c = snapshot.battery.min_cell_temperature_c if snapshot.battery is not None else None
+                voc_v = snapshot.classic.last_voc_v if snapshot.classic is not None else None
+                if temp_c is not None and voc_v is not None:
+                    metric_recorder.record_event(heat_fan_transition_event(
+                        active=heat_fan_after, temp_c=temp_c, voc_v=voc_v,
+                        captured_at=snapshot.captured_at,
+                    ))
             # Derive the EPEver "today" from its monotonic lifetime total (its own
             # daily register doesn't reset); the load cumulative needs it too, so
             # build the display copy before computing the load summary.
             display_snapshot = _with_derived_epever_today(snapshot, metric_recorder)
+            display_snapshot = dataclasses.replace(display_snapshot, heat_fan_on=relay_supervisor.heat_fan_on)
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(display_snapshot)
             # Record the raw device telemetry (keeps the raw EPEver generated_today

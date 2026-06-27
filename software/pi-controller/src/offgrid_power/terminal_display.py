@@ -498,7 +498,10 @@ def _temperature_lines(snapshot: SupervisorSnapshot) -> list[str]:
         and snapshot.battery.extended_measurements.max_cell_temperature_c is not None
     ):
         extended = snapshot.battery.extended_measurements
-        lines.append(_row("Battery cells", f"{extended.min_cell_temperature_c:.1f}-{extended.max_cell_temperature_c:.1f}C"))
+        cell_temp_str = f"{extended.min_cell_temperature_c:.0f}-{extended.max_cell_temperature_c:.0f}C"
+        if snapshot.heat_fan_on:
+            cell_temp_str += "  HEATING"
+        lines.append(_row("Battery cells", cell_temp_str))
     if snapshot.classic is not None:
         classic = snapshot.classic
         lines.append(_row("Battery terminal", f"{classic.battery_temp_c:.1f}C"))

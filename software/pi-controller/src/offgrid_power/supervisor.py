@@ -43,6 +43,7 @@ class SupervisorSnapshot:
     reader_error_rates: dict[str, float | None] = field(default_factory=dict)
     lan_reachable: bool | None = None
     wan_reachable: bool | None = None
+    heat_fan_on: bool = False
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:

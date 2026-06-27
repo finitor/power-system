@@ -1,8 +1,11 @@
 """Supervisor-driven relay control: heater/fan and Classic charge-disable."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import logging
 from typing import TYPE_CHECKING
+
+from .metrics import TelemetryEvent
 
 if TYPE_CHECKING:
     from .charge_allocator import AllocationOverride, ChargeAllocationDecision
@@ -10,6 +13,21 @@ if TYPE_CHECKING:
     from .supervisor import SupervisorSnapshot
 
 log = logging.getLogger(__name__)
+
+
+def heat_fan_transition_event(
+    *,
+    active: bool,
+    temp_c: float,
+    voc_v: float,
+    captured_at: datetime | None = None,
+) -> TelemetryEvent:
+    return TelemetryEvent(
+        captured_at=captured_at or datetime.now(timezone.utc),
+        source="relay",
+        event="heat_fan_transition",
+        detail={"active": active, "temp_c": temp_c, "voc_v": voc_v},
+    )
 
 # Relay 1 (heat_fan) thresholds
 # DRY RUN values — revert to 2.0/5.0/134.0/130.0 before live use
@@ -34,6 +52,10 @@ class RelaySupervisor:
     def __init__(self, relay_controller: RelayController) -> None:
         self._relay = relay_controller
         self._heat_fan_on: bool = False
+
+    @property
+    def heat_fan_on(self) -> bool:
+        return self._heat_fan_on
 
     def update(
         self,
