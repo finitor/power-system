@@ -21,21 +21,26 @@ def heat_fan_transition_event(
     active: bool,
     temp_c: float,
     voc_v: float,
+    max_temp_c: float | None = None,
     captured_at: datetime | None = None,
 ) -> TelemetryEvent:
+    detail: dict = {"active": active, "temp_c": temp_c, "voc_v": voc_v}
+    if max_temp_c is not None:
+        detail["max_temp_c"] = max_temp_c
     return TelemetryEvent(
         captured_at=captured_at or datetime.now(timezone.utc),
         source="relay",
         event="heat_fan_transition",
-        detail={"active": active, "temp_c": temp_c, "voc_v": voc_v},
+        detail=detail,
     )
 
 # Relay 1 (heat_fan) — reactive mode thresholds
 # DRY RUN values — revert to 2.0/5.0 before live use
-_HEAT_ON_TEMP_C = 17.5     # activate below this minimum cell temperature
-_HEAT_OFF_TEMP_C = 20.0    # deactivate above this minimum cell temperature
-_HEAT_ON_VOC_V = 132.0     # activate above this Classic VOC
-_HEAT_OFF_VOC_V = 130.0    # deactivate below this Classic VOC
+_HEAT_ON_TEMP_C = 17.5          # activate below this minimum cell temperature
+_HEAT_OFF_TEMP_C = 20.0         # deactivate above this minimum cell temperature
+_HEAT_ON_VOC_V = 132.0          # activate above this Classic VOC
+_HEAT_OFF_VOC_V = 130.0         # deactivate below this Classic VOC
+_HEAT_MAX_CELL_CUTOUT_C = 20.0  # hard cutout: turn off if any cell reaches this temp
 
 # Relay 1 (heat_fan) — preventive pre-warm mode thresholds
 _PREVENT_AMBIENT_ON_C = 5.0    # enable pre-warming below this ambient temperature
@@ -101,13 +106,15 @@ class RelaySupervisor:
                 active_modes.append("preventive")
             mode_str = "+".join(active_modes) if active_modes else "off"
             temp_c = _pack_temp(snapshot)
+            max_temp_c = _pack_max_temp(snapshot)
             voc_v = snapshot.classic.last_voc_v if snapshot.classic is not None else None
             log.info(
-                "relay heat_fan %s -> %s (mode=%s temp=%s voc=%s)",
+                "relay heat_fan %s -> %s (mode=%s min=%s max=%s voc=%s)",
                 "on" if self._heat_fan_on else "off",
                 "on" if want else "off",
                 mode_str,
                 f"{temp_c:.1f}°C" if temp_c is not None else "?",
+                f"{max_temp_c:.1f}°C" if max_temp_c is not None else "?",
                 f"{voc_v:.1f}V" if voc_v is not None else "?",
             )
             try:
@@ -118,12 +125,14 @@ class RelaySupervisor:
 
     def _reactive_heat_want(self, snapshot: SupervisorSnapshot) -> bool:
         temp_c = _pack_temp(snapshot)
+        max_temp_c = _pack_max_temp(snapshot)
         voc_v = snapshot.classic.last_voc_v if snapshot.classic is not None else None
         if temp_c is None or voc_v is None:
             return self._reactive_on  # hold current state when data unavailable
+        any_cell_hot = max_temp_c is not None and max_temp_c >= _HEAT_MAX_CELL_CUTOUT_C
         if self._reactive_on:
-            return not (temp_c > _HEAT_OFF_TEMP_C or voc_v < _HEAT_OFF_VOC_V)
-        return temp_c < _HEAT_ON_TEMP_C and voc_v > _HEAT_ON_VOC_V
+            return not (temp_c > _HEAT_OFF_TEMP_C or voc_v < _HEAT_OFF_VOC_V or any_cell_hot)
+        return temp_c < _HEAT_ON_TEMP_C and voc_v > _HEAT_ON_VOC_V and not any_cell_hot
 
     def _preventive_heat_want(self, snapshot: SupervisorSnapshot) -> bool:
         ambient_c = self._ambient_temp(snapshot)
@@ -182,6 +191,12 @@ def _pack_temp(snapshot: SupervisorSnapshot) -> float | None:
     if snapshot.battery is None:
         return None
     return snapshot.battery.min_cell_temperature_c
+
+
+def _pack_max_temp(snapshot: SupervisorSnapshot) -> float | None:
+    if snapshot.battery is None:
+        return None
+    return snapshot.battery.max_cell_temperature_c
 
 
 def _snapshot_ambient_temp(snapshot: SupervisorSnapshot) -> float | None:

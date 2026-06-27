@@ -16,6 +16,7 @@ from offgrid_power.charge_allocator import AllocationOverride, ChargeAllocationD
 from offgrid_power.relay_control import (
     RelaySupervisor,
     _HEAT_ON_TEMP_C, _HEAT_OFF_TEMP_C, _HEAT_ON_VOC_V, _HEAT_OFF_VOC_V,
+    _HEAT_MAX_CELL_CUTOUT_C,
     _PREVENT_AMBIENT_ON_C, _PREVENT_PACK_OFF_C, _PREVENT_SOC_ON_PCT,
 )
 from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_snapshot
@@ -34,8 +35,8 @@ class StubRelay:
     is_stub = True
 
 
-def _snapshot(temp_c=10.0, voc_v=120.0):
-    battery = make_battery_snapshot(min_cell_temperature_c=temp_c)
+def _snapshot(temp_c=10.0, voc_v=120.0, max_temp_c=None):
+    battery = make_battery_snapshot(min_cell_temperature_c=temp_c, max_cell_temperature_c=max_temp_c)
     classic = make_classic_telemetry(last_voc_v=voc_v)
     return make_snapshot(battery=battery, classic=classic)
 
@@ -111,6 +112,24 @@ class TestHeatFanHysteresis(unittest.TestCase):
         snapshot = make_snapshot(battery=None, classic=None)
         self.rs.update(snapshot, None)
         self.assertFalse(self.relay.state()["heat_fan"])
+
+    def test_max_cell_cutout_prevents_activation(self):
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C), None)
+        self.assertFalse(self.relay.state()["heat_fan"])
+
+    def test_max_cell_cutout_turns_off_running_heater(self):
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        self.assertTrue(self.relay.state()["heat_fan"])
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C), None)
+        self.assertFalse(self.relay.state()["heat_fan"])
+
+    def test_max_cell_below_cutout_does_not_block_activation(self):
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C - 1.0), None)
+        self.assertTrue(self.relay.state()["heat_fan"])
+
+    def test_max_cell_none_does_not_block_activation(self):
+        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=None), None)
+        self.assertTrue(self.relay.state()["heat_fan"])
 
 
 class TestChargeDisable(unittest.TestCase):

@@ -421,10 +421,11 @@ def main() -> int:
             heat_fan_after = relay_supervisor.heat_fan_on
             if heat_fan_before != heat_fan_after:
                 temp_c = snapshot.battery.min_cell_temperature_c if snapshot.battery is not None else None
+                max_temp_c = snapshot.battery.max_cell_temperature_c if snapshot.battery is not None else None
                 voc_v = snapshot.classic.last_voc_v if snapshot.classic is not None else None
                 if temp_c is not None and voc_v is not None:
                     metric_recorder.record_event(heat_fan_transition_event(
-                        active=heat_fan_after, temp_c=temp_c, voc_v=voc_v,
+                        active=heat_fan_after, temp_c=temp_c, max_temp_c=max_temp_c, voc_v=voc_v,
                         captured_at=snapshot.captured_at,
                     ))
             # Derive the EPEver "today" from its monotonic lifetime total (its own
