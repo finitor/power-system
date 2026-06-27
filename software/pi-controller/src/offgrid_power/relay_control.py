@@ -36,16 +36,18 @@ def heat_fan_transition_event(
 
 # Relay 1 (heat_fan) — reactive mode thresholds
 # DRY RUN values — revert to 2.0/5.0 before live use
-_HEAT_ON_TEMP_C = 17.5          # activate below this minimum cell temperature
-_HEAT_OFF_TEMP_C = 20.0         # deactivate above this minimum cell temperature
-_HEAT_ON_VOC_V = 132.0          # activate above this Classic VOC
-_HEAT_OFF_VOC_V = 130.0         # deactivate below this Classic VOC
-_HEAT_MAX_CELL_CUTOUT_C = 20.0  # hard cutout: turn off if any cell reaches this temp
+_HEAT_ON_TEMP_C = 17.5     # activate below this minimum cell temperature
+_HEAT_OFF_TEMP_C = 20.0    # deactivate above this minimum cell temperature
+_HEAT_ON_VOC_V = 132.0     # activate above this Classic VOC
+_HEAT_OFF_VOC_V = 130.0    # deactivate below this Classic VOC
 
 # Relay 1 (heat_fan) — preventive pre-warm mode thresholds
 _PREVENT_AMBIENT_ON_C = 5.0    # enable pre-warming below this ambient temperature
 _PREVENT_PACK_OFF_C = 25.0     # stop pre-warming once pack reaches this temperature
 _PREVENT_SOC_ON_PCT = 95       # enable pre-warming above this battery SOC
+
+# Hard cutout shared by both modes: turn off if any cell reaches this temperature.
+_HEAT_MAX_CELL_CUTOUT_C = _PREVENT_PACK_OFF_C
 
 
 class RelaySupervisor:
@@ -95,6 +97,14 @@ class RelaySupervisor:
         preventive_want = self._preventive_heat_want(snapshot)
         want = reactive_want or preventive_want
 
+        # Hard cutout: any cell too warm shuts off both modes and resets their
+        # hysteresis state so they re-evaluate from OFF when the cutout clears.
+        max_temp_c = _pack_max_temp(snapshot)
+        if max_temp_c is not None and max_temp_c >= _HEAT_MAX_CELL_CUTOUT_C:
+            want = False
+            reactive_want = False
+            preventive_want = False
+
         self._reactive_on = reactive_want
         self._preventive_on = preventive_want
 
@@ -125,14 +135,12 @@ class RelaySupervisor:
 
     def _reactive_heat_want(self, snapshot: SupervisorSnapshot) -> bool:
         temp_c = _pack_temp(snapshot)
-        max_temp_c = _pack_max_temp(snapshot)
         voc_v = snapshot.classic.last_voc_v if snapshot.classic is not None else None
         if temp_c is None or voc_v is None:
             return self._reactive_on  # hold current state when data unavailable
-        any_cell_hot = max_temp_c is not None and max_temp_c >= _HEAT_MAX_CELL_CUTOUT_C
         if self._reactive_on:
-            return not (temp_c > _HEAT_OFF_TEMP_C or voc_v < _HEAT_OFF_VOC_V or any_cell_hot)
-        return temp_c < _HEAT_ON_TEMP_C and voc_v > _HEAT_ON_VOC_V and not any_cell_hot
+            return not (temp_c > _HEAT_OFF_TEMP_C or voc_v < _HEAT_OFF_VOC_V)
+        return temp_c < _HEAT_ON_TEMP_C and voc_v > _HEAT_ON_VOC_V
 
     def _preventive_heat_want(self, snapshot: SupervisorSnapshot) -> bool:
         ambient_c = self._ambient_temp(snapshot)

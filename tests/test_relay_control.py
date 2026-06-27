@@ -114,6 +114,7 @@ class TestHeatFanHysteresis(unittest.TestCase):
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_max_cell_cutout_prevents_activation(self):
+        # 25°C cutout applies to both reactive and preventive modes
         self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
