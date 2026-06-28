@@ -2418,7 +2418,6 @@ def _temperature_section(snapshot: SupervisorSnapshot) -> list[str]:
         lines.append(_row("CC1 PCB", f"{snapshot.epever.pcb_temp_c:.1f}C"))
     if snapshot.magnum is not None:
         inv = snapshot.magnum
-        lines.append(_row("INV battery", f"{inv.battery_temp_c}C"))
         lines.append(_row("INV transformer", f"{inv.transformer_temp_c}C"))
         lines.append(_row("INV FET", f"{inv.fet_temp_c}C"))
     if snapshot.ambient is None:

@@ -133,10 +133,10 @@ class ApiTerminalDisplayTest(unittest.TestCase):
         # Deliberate *suppressions* are kept as explicit guards so a golden
         # re-bless can't silently reintroduce them:
         # - EPEver settings hide EQ; controllers carry no static "Rated" line.
-        # - "Battery terminal"/"INV battery" rows suppressed (2026-06-17).
+        # - EPEver settings hide EQ; controllers carry no static "Rated" line.
+        # - "INV battery" row suppressed (2026-06-17).
         self.assertNotIn("Rated", rendered)
         self.assertNotIn("EQ 54.7V", rendered)
-        self.assertNotIn("Battery terminal", rendered)
         self.assertNotIn("INV battery", rendered)
 
     def test_renders_charge_allocation_section(self) -> None:

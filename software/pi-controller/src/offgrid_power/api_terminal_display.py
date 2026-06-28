@@ -627,10 +627,10 @@ def _temperature_lines(payload: dict) -> list[str]:
         if (payload.get("relay") or {}).get("heat_fan"):
             cell_temp_str += "  HEATING"
         lines.append(_row("Battery cells", cell_temp_str))
-    # Suppressed temperature rows (hidden from the display by request 2026-06-17;
-    # the data is still in the snapshot, so restore by re-adding these:)
-    #   - "Battery terminal"  <- solar[0].temperatures_c["battery"]  (CC0 battery sensor)
-    #   - "INV battery"        <- inverter["battery_temp_c"]
+    if solar:
+        battery_temp = (solar[0].get("temperatures_c") or {}).get("battery")
+        if battery_temp is not None:
+            lines.append(_row("Battery terminal", f"{_fmt(battery_temp, 1)}C"))
     for index, controller in enumerate(solar):
         temps = controller.get("temperatures_c") or {}
         prefix = f"CC{index}"

@@ -34,6 +34,7 @@ Inverter/Charger
   Charge Settings       Absorb 54.4V 3.0h Float 54.4V Shore 30A
 
 Temperatures
+  Battery terminal      17.0C
   CC0 FET               31.0C
   CC0 PCB               29.0C
   INV transformer       37C
