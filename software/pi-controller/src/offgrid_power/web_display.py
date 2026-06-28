@@ -1854,7 +1854,6 @@ def _inverter_api_payload(snapshot: SupervisorSnapshot) -> dict | None:
         "status": inv.status_name,
         "status_label": inv.status_label(),
         "fault": inv.fault_name,
-        "battery_temp_c": inv.battery_temp_c,
         "transformer_temp_c": inv.transformer_temp_c,
         "fet_temp_c": inv.fet_temp_c,
         "settings": {

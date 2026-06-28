@@ -788,7 +788,6 @@ def _magnum_samples(captured_at: datetime, magnum) -> Iterable[MetricSample]:
     yield MetricSample(captured_at, source, "charger_on", value=1.0 if magnum.charger_on else 0.0)
     yield MetricSample(captured_at, source, "status", text=magnum.status_name)
     yield MetricSample(captured_at, source, "fault", text=magnum.fault_name)
-    yield MetricSample(captured_at, source, "battery_temperature", value=float(magnum.battery_temp_c), unit="C")
     yield MetricSample(captured_at, source, "transformer_temperature", value=float(magnum.transformer_temp_c), unit="C")
     yield MetricSample(captured_at, source, "fet_temperature", value=float(magnum.fet_temp_c), unit="C")
     if magnum.absorb_v is not None:
