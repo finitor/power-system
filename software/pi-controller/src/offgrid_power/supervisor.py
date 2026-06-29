@@ -44,6 +44,7 @@ class SupervisorSnapshot:
     lan_reachable: bool | None = None
     wan_reachable: bool | None = None
     heat_fan_on: bool = False
+    charge_disable_on: bool = False
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:

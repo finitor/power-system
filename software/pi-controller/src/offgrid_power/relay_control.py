@@ -83,6 +83,10 @@ class RelaySupervisor:
     def heat_fan_on(self) -> bool:
         return self._heat_fan_on
 
+    @property
+    def charge_disable_on(self) -> bool:
+        return self._relay.state()["charge_disable"]
+
     def update(
         self,
         snapshot: SupervisorSnapshot,

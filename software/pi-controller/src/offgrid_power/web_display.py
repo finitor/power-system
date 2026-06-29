@@ -1641,7 +1641,7 @@ def snapshot_api_payload(
         "load": _load_api_payload(load_summary),
         "allocation": allocation,
         "ambient": _ambient_api_payload(snapshot),
-        "relay": {"heat_fan": snapshot.heat_fan_on},
+        "relay": {"heat_fan": snapshot.heat_fan_on, "charge_disable": snapshot.charge_disable_on},
         "reader_error_rates": snapshot.reader_error_rates,
         "lan_reachable": snapshot.lan_reachable,
         "wan_reachable": snapshot.wan_reachable,

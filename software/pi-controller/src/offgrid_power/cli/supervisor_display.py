@@ -432,7 +432,7 @@ def main() -> int:
             # daily register doesn't reset); the load cumulative needs it too, so
             # build the display copy before computing the load summary.
             display_snapshot = _with_derived_epever_today(snapshot, metric_recorder)
-            display_snapshot = dataclasses.replace(display_snapshot, heat_fan_on=relay_supervisor.heat_fan_on)
+            display_snapshot = dataclasses.replace(display_snapshot, heat_fan_on=relay_supervisor.heat_fan_on, charge_disable_on=relay_supervisor.charge_disable_on)
             load_totals = load_totals_tracker.update(snapshot.captured_at, snapshot.battery, snapshot.classic)
             load_summary = load_summary_tracker.update(display_snapshot)
             # Record the raw device telemetry (keeps the raw EPEver generated_today
