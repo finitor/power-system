@@ -119,6 +119,11 @@ sudo install -m 644 config/systemd/journald-persistent.conf /etc/systemd/journal
 sudo mkdir -p /var/log/journal
 sudo systemctl restart systemd-journald
 sudo journalctl --flush
+# Hardware-watchdog backstop (force-reset on a total kernel/systemd lockup or a
+# hung reboot). daemon-reexec re-reads system.conf so it arms without a reboot.
+sudo mkdir -p /etc/systemd/system.conf.d
+sudo install -m 644 config/systemd/system-watchdog.conf /etc/systemd/system.conf.d/10-offgrid-watchdog.conf
+sudo systemctl daemon-reexec
 sudo install -m 644 config/nginx/offgrid-supervisor.conf /etc/nginx/sites-available/
 sudo ln -sf /etc/nginx/sites-available/offgrid-supervisor.conf /etc/nginx/sites-enabled/offgrid-supervisor.conf
 sudo rm -f /etc/nginx/sites-enabled/default
