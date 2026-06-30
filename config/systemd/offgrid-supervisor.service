@@ -36,8 +36,11 @@ LockPersonality=yes
 ExecStartPre=+/bin/mkdir -p /srv/telemetry/data /srv/telemetry/logs
 ExecStartPre=+/bin/chown -R @SERVICE_USER@:@SERVICE_USER@ /srv/telemetry
 # SD-side fallback store dir: written while the SSD is unmounted, merged back on recovery.
+# Chown -R (not just the dir): a runtime-state.json left behind by a manual run as
+# the admin user is owned admin:admin 0600, which the offgrid service then can't read
+# ("[Errno 13] Permission denied"), silently losing runtime state across restarts.
 ExecStartPre=+/bin/mkdir -p /var/lib/offgrid
-ExecStartPre=+/bin/chown @SERVICE_USER@:@SERVICE_USER@ /var/lib/offgrid
+ExecStartPre=+/bin/chown -R @SERVICE_USER@:@SERVICE_USER@ /var/lib/offgrid
 ExecStartPre=+/bin/sh -c '/usr/bin/ip link set can0 down 2>/dev/null || true'
 ExecStartPre=+/usr/bin/ip link set can0 type can bitrate 500000 listen-only on
 ExecStartPre=+/usr/bin/ip link set can0 up

@@ -112,6 +112,13 @@ sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
 render config/systemd/getty-tty1-autologin.conf | sudo tee /etc/systemd/system/getty@tty1.service.d/offgrid-autologin.conf > /dev/null
 sudo install -m 644 config/systemd/offgrid-can-watchdog.timer /etc/systemd/system/
 sudo install -m 644 config/systemd/offgrid-metrics-export.timer /etc/systemd/system/
+# Persist the journal (override RPi OS's volatile default) so a crash/power-cycle
+# leaves logs behind. Restart journald + flush so it takes effect this deploy.
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo install -m 644 config/systemd/journald-persistent.conf /etc/systemd/journald.conf.d/99-offgrid-persistent.conf
+sudo mkdir -p /var/log/journal
+sudo systemctl restart systemd-journald
+sudo journalctl --flush
 sudo install -m 644 config/nginx/offgrid-supervisor.conf /etc/nginx/sites-available/
 sudo ln -sf /etc/nginx/sites-available/offgrid-supervisor.conf /etc/nginx/sites-enabled/offgrid-supervisor.conf
 sudo rm -f /etc/nginx/sites-enabled/default
