@@ -1,10 +1,21 @@
-# Escalation Reporting via Healthchecks.io  *(PLAN — not yet provisioned)*
+# Escalation Reporting via Healthchecks.io  *(LIVE since 2026-06-30)*
 
 How off-grid alerts reach a human, routed through [Healthchecks.io](https://healthchecks.io)
-as a single notification plane. **Status: design + code seam landed; no account or
-checks exist yet.** The watchdog already calls the seam (`notify()` in
-`scripts/supervisor-watchdog.sh`) but it is inert until `HC_*` URLs are set in
-`/etc/offgrid-power.env`. Nothing in this doc is live.
+as a single notification plane. **Status: provisioned and live.** Two checks are wired and
+emailing, with ping URLs in `/etc/offgrid-power.env`:
+
+- **`supervisor-degraded`** (`HC_SUPERVISOR_DEGRADED_URL`) — *active*: pings `/fail` on any
+  `/api/v1/health` WARNING/ERROR and a recovery ping when it clears
+  (`scripts/supervisor-degraded-notify.sh`, debounced 120 s).
+- **`supervisor-watchdog`** (`HC_SUPERVISOR_WATCHDOG_URL`) — *wired*: pings on the
+  blackout escalation (`scripts/supervisor-watchdog.sh`). The watchdog itself is still
+  **dry-run**, so it currently reports "would reboot" rather than rebooting.
+
+Verified 2026-06-30: 4 test pings landed as emails end-to-end through the real
+systemd→EnvironmentFile→script path, and the `supervisor-degraded` check caught a **real**
+battery-CAN outage the same afternoon. The **dead-man's-switch liveness layer** (total-death
+detection, §3/§6 below) is the one piece still *not* built — it's deferred pending the
+intermittent-Starlink window design.
 
 Throughout: the Pi is `blueberry.local`, the supervisor serves health at
 `http://127.0.0.1:8081/api/v1/health`, and env lives in `/etc/offgrid-power.env`.
@@ -74,8 +85,9 @@ open-source / self-hostable (removes all limits) if we outgrow it. We express
 | `supervisor-degraded` | a small notifier polling `/api/v1/health` | `/fail` on WARNING/ERROR edge, success on OK | degraded-but-alive (a transport down for hours) |
 | `battery-low` | supervisor / notifier | `/fail` below SoC floor, success on recovery | slow-burn battery the Pi might not escalate |
 
-`supervisor-watchdog` is the only one needed for the current escalation work;
-the rest are the growth path.
+**LIVE (2026-06-30): `supervisor-watchdog` and `supervisor-degraded`** are both
+provisioned and emailing. `pi-liveness` (the dead-man's switch) and `battery-low`
+are the remaining growth path.
 
 ## 4. Env-var contract (the integration seam)
 
@@ -83,18 +95,19 @@ The watchdog reads these from `/etc/offgrid-power.env` (already loaded via the
 service `EnvironmentFile`). All optional — **unset = the seam is inert (log only)**:
 
 ```sh
-# Ping URL for the "supervisor-watchdog" check (base URL, no trailing slash).
+# Both set and live (base URLs, no trailing slash):
 HC_SUPERVISOR_WATCHDOG_URL=https://hc-ping.com/<uuid>
+HC_SUPERVISOR_DEGRADED_URL=https://hc-ping.com/<uuid>
 ```
 
 Future checks follow the same `HC_<CHECK>_URL` convention (`HC_PI_LIVENESS_URL`,
-`HC_SUPERVISOR_DEGRADED_URL`, `HC_BATTERY_LOW_URL`).
+`HC_BATTERY_LOW_URL`).
 
 `scripts/supervisor-watchdog.sh::notify()` already POSTs `{url}` (recovery) or
 `{url}/fail` (escalation/cooldown) with a descriptive body, `curl --retry 3 -m 10`,
 and logs (does not fail the run) if the ping can't go out.
 
-## 5. Provisioning steps (when ready to go live)
+## 5. Provisioning steps (done 2026-06-30 — kept for reference / re-provisioning)
 
 1. Create a Healthchecks.io account (or stand up a self-hosted instance).
 2. Add a check named `supervisor-watchdog`. Schedule: **period mode** to start
