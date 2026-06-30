@@ -239,6 +239,29 @@ logged) and as the CAN watchdog (0 USB resets that boot). They will subside when
 Magnum bus reads cleanly again — do not re-investigate them as a separate USB/power
 problem.
 
+Rewire result (2026-06-30): rebuilt the Magnum RS485 link as a **direct 6-pin RJ11
+breakout** (removed the RJ45 coupler + breakout chain), A/B verified by voltage (pos 2
+= A, pos 5 = B — OPPOSITE the old RJ45-coupler mapping, so the meter-verify was
+essential), with a **direct signal-ground reference** on pos 4 (no series R; fine on the
+isolated SH-U11H). Controlled A/B/baseline experiment, matched ~2.2 h windows,
+`no valid inverter packet`/hr:
+
+| Config | rate |
+|---|---|
+| baseline (old config, grounded via 150R) | 38.3/hr |
+| permutation A (cleaner wiring, **no** ground) | 43.3/hr (+13%) |
+| permutation B (cleaner wiring **+ direct ground**) | **34.4/hr** |
+
+The single-variable A→B step (adding ground) cut failures ~20%, **confirming the ground
+reference is the dominant lever** (consistent with the earlier 150R experiment's ~30%);
+the wiring/adapter cleanup added a further ~10% over baseline. **B is the kept config.**
+Correction to the "termination is the next experiment" note above: at **19200 baud over
+~4 ft, transmission-line reflections are physically negligible** (bit time ~52 µs vs
+~12 ns round-trip), so termination is *not* the lever — it's common-mode/ground and
+connection quality. Item STAYS OPEN: B's residual ~34/hr is an improvement, not a fix —
+the bus is still marginal (remaining levers: connection quality, further EMI separation
+from PV/inverter runs, or accept it).
+
 ## 13. Operator live-tuning controls — DONE
 
 Live, on-console operator control of the two knobs that shape charging near the

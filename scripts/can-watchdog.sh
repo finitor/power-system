@@ -8,6 +8,15 @@
 # Note: the Cubix BMS also legitimately stops transmitting at idle, so a
 # silent bus is not proof of a wedge. The reset is harmless in that case;
 # the cooldown keeps us from churning USB while the BMS is quiet.
+#
+# LIMITATION (learned 2026-06-30): a DEEPER wedge exists that this cannot fix. A
+# firmware-level hang of the SH-C31G survives BOTH this unbind/rebind AND a
+# USBDEVFS_RESET -- only removing VBUS (physically unplugging, or power-cycling
+# the port) clears it. So "reset complete" below is NOT a guarantee frames return.
+# Auto-recovery for that case needs a real power-cycle: a per-port-power (PPPS)
+# USB hub driven by uhubctl, or a reboot if it drops port VBUS. Whether a reboot
+# suffices is being measured by the supervisor-watchdog's soft-reboot recovery
+# probe (scripts/supervisor-watchdog.sh). See docs/journal/2026-06-30.md.
 set -eu
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
