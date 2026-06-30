@@ -129,7 +129,7 @@ Capture these from the running Pi before changing the SD card:
 | udev rules | `/etc/udev/rules.d/90-offgrid-usb.rules` | Stable USB names and autosuspend policy |
 | nginx site | `/etc/nginx/sites-available/offgrid-supervisor.conf` | Kindle-safe proxy path |
 | Desktop console config | `~/.local/bin/open-offgrid-console`, `~/.config/autostart/offgrid-console.desktop` | The console is terminal-only (tmux attach), so on Lite it runs on a bare tty — see "Local console without a desktop" below; the autostart `.desktop` file becomes obsolete |
-| Telemetry data | `/srv/telemetry`, `/var/lib/offgrid` | Preserve SQLite metrics, weather cache, and fallback store |
+| Runtime state | `/var/lib/offgrid` | Charge-allocator runtime state + SD fallback store (small). `/srv/telemetry` is deliberately **not** backed up — it is operational data on the external SSD (a rebuild remounts it, never reimages it) and is exported to B2; only its fstab mount line is preserved |
 | SSH identity and access | `~/.ssh`, `/etc/ssh/sshd_config*` | Preserve access and GitHub deploy auth if used |
 | sudoers snippets | `/etc/sudoers.d` | Preserve as reference only; deploy recreates the known `020_offgrid_operator` NOPASSWD policy |
 | Network config | NetworkManager/systemd-networkd/wpa config, hostname | Keep `blueberry.local` stable if consumers depend on it |

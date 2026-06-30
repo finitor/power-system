@@ -66,7 +66,12 @@ copy_if_exists "${HOME}/.profile" home/offgrid-user/.profile
 copy_if_exists "${HOME}/.config/autostart/offgrid-console.desktop" home/offgrid-user/.config/autostart/offgrid-console.desktop
 copy_if_exists "${HOME}/.ssh" home/offgrid-user/.ssh
 copy_if_exists "${HOME}/.claude.json" home/offgrid-user/.claude.json
-copy_if_exists /srv/telemetry srv/telemetry
+# Deliberately NOT /srv/telemetry: that is operational data (the ~860MB metrics
+# SQLite, weather cache, logs), not system config. It lives on the external SSD
+# (a boot-card rebuild remounts it, never reimages it) and is exported to B2
+# daily, so copying it here only bloats/slows the backup and writes ~860MB to the
+# boot SD per run. The mount config that matters is the /srv/telemetry fstab line,
+# captured in manifest/fstab-telemetry-lines.txt below.
 copy_if_exists /var/lib/offgrid var/lib/offgrid
 copy_if_exists /var/lib/tailscale var/lib/tailscale
 

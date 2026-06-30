@@ -138,7 +138,8 @@ restore_path home/offgrid-user/.local/state/offgrid/console-font-index "${HOME}/
 restore_path home/offgrid-user/.profile "${HOME}/.profile" 644
 restore_path home/offgrid-user/.claude.json "${HOME}/.claude.json" 600
 restore_path home/offgrid-user/.config/autostart/offgrid-console.desktop "${HOME}/.config/autostart/offgrid-console.desktop" 644
-restore_tree srv/telemetry /srv/telemetry
+# /srv/telemetry is not in the backup (operational data on the SSD + in B2, not
+# system config); a rebuild remounts the SSD via the restored fstab line above.
 restore_tree var/lib/offgrid /var/lib/offgrid
 restore_tree var/lib/tailscale /var/lib/tailscale
 
@@ -164,7 +165,7 @@ fi
 
 if [ "${APPLY}" -eq 1 ]; then
     chown -R "$(id -u):$(id -g)" "${HOME}/.local" "${HOME}/.config" "${HOME}/.profile" 2>/dev/null || true
-    sudo chown -R "$(id -u):$(id -g)" /srv/telemetry /var/lib/offgrid
+    sudo chown -R "$(id -u):$(id -g)" /var/lib/offgrid
     if [ -d /var/lib/tailscale ]; then
         sudo chown -R root:root /var/lib/tailscale
         sudo chmod 700 /var/lib/tailscale
