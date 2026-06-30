@@ -245,7 +245,10 @@ uname -m
 getconf LONG_BIT
 hostname
 systemctl is-active offgrid-supervisor offgrid-console nginx
-systemctl is-active offgrid-can-watchdog.timer offgrid-metrics-export.timer
+systemctl is-active offgrid-can-watchdog.timer offgrid-supervisor-watchdog.timer offgrid-metrics-export.timer
+# Hardware watchdog armed (RuntimeWatchdogUSec non-zero) and journald persistent
+systemctl show -p RuntimeWatchdogUSec -p RebootWatchdogUSec
+journalctl --header | grep -m1 "File path: /var/log/journal" && echo "journald: persistent"
 ip -details link show can0
 ls -l /dev/epever-rs485 /dev/cubix-rs485 /dev/serial/by-path/*1.3.3* 2>/dev/null || true
 curl -fsS http://127.0.0.1:8081/healthz
@@ -267,6 +270,12 @@ Functional checks:
 - Fallback database path exists and is writable.
 - Daily metrics export timer is enabled.
 - CAN watchdog timer is enabled.
+- Supervisor blackout-watchdog timer is enabled and **in dry-run** — a fresh card
+  correctly comes up unarmed (`SUPERVISOR_WATCHDOG_ARMED` unset). Only arm it
+  (`SUPERVISOR_WATCHDOG_ARMED=1` in `/etc/offgrid-power.env`) after a burn-in
+  shows no false "would reboot" entries. See `docs/runbooks/healthchecks-escalation.md`.
+- Hardware watchdog armed (`RuntimeWatchdogUSec` non-zero) and journald persistent
+  (`/var/log/journal` populated, not volatile in RAM). Both are applied by deploy.
 
 ## Watching The Bootstrap From The Mac
 
@@ -415,6 +424,36 @@ The simplest rollback is physical:
 
 Do not erase the old SD card or backup image until the new card has survived
 at least one deploy, one reboot, and a representative telemetry run.
+
+## Keeping The Rollback Card Current
+
+The rollback card does **not** need to capture incremental changes like the watchdog
+or journald work — and trying to keep a hot clone byte-current is the wrong model. The
+card is *derivable*, so "current" means *rebuildable*, from two sources:
+
+1. **git is the source of truth for everything that provisions the system.** `config/`
+   + `deploy.sh` + `install-pi.sh` render and apply all units, drop-ins, udev rules,
+   nginx, and ownership. A rebuild — or simply `git pull && bash scripts/deploy.sh` on
+   any card — reproduces the live config exactly. This session's work (journald
+   persistence, the hardware-watchdog drop-in, the blackout-watchdog) all landed in
+   git/deploy precisely so a rebuilt card inherits it with no manual steps.
+2. **The backup archive captures the non-git state** a rebuild can't regenerate:
+   `/etc/offgrid-power.env` (secrets + flags like `SUPERVISOR_WATCHDOG_ARMED` and any
+   `HC_*` URLs), host/SSH/Tailscale identity, and the `/srv/telemetry` fstab line.
+
+So the discipline that keeps the backup current is not "re-clone the card" but:
+
+- **Never let provisioning live only on the live card.** Every operational change goes
+  into git (a unit, a drop-in, a deploy step) *or* the backup archive. A `sudo` edit
+  that exists nowhere else is the drift that strands work — exactly what nearly happened
+  with the journald/watchdog changes before they were codified this session.
+- **Refresh the backup archive (`scripts/backup-config.sh`) after any non-git change**
+  — e.g. after arming the watchdog or adding Healthchecks URLs — and keep the latest
+  archive on the Mac (step 1b).
+- **Optionally keep a hot spare**: boot the rollback card after a significant deploy and
+  run `git pull && bash scripts/deploy.sh` so it stays bootable-and-current. Otherwise
+  rely on the build procedure to produce a current card from latest git + latest archive
+  when needed.
 
 ## Script and Repo Support
 
