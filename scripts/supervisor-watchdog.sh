@@ -39,6 +39,7 @@ REBOOT_COOLDOWN_S=1800    # refuse to reboot again within this window (boot-loop
 ARMED="${SUPERVISOR_WATCHDOG_ARMED:-0}"
 FIRSTBAD=/run/offgrid-supervisor-watchdog.first-bad        # volatile: degraded-since (clears on boot)
 LASTBOOT=/var/lib/offgrid/supervisor-watchdog.last-reboot  # persistent: survives the reboot it triggers
+PROBE=/var/lib/offgrid/watchdog-reboot-probe               # persistent: pre-reboot state, read back after the reboot
 
 log() { echo "supervisor-watchdog: $*"; }
 
@@ -73,6 +74,24 @@ print("down=%s status=%s" % (",".join(down) or "none", d.get("status")))
 sys.exit(1 if len(down) >= int(os.environ["QUORUM"]) else 0)
 '
 }
+
+# Soft-reboot recovery probe. If we wrote a marker just before an armed reboot and
+# that marker predates the current boot, the reboot has since happened -- so record
+# whether it actually cleared the wedge. This answers the open question: does a soft
+# reboot power-cycle a USB-firmware-wedged adapter, or come back still dead? (A
+# physical unplug recovered it; unbind/rebind and USBDEVFS_RESET did not.) Logged to
+# the now-persistent journal; HC ping if configured. Inert until an armed reboot fires.
+if [ -f "${PROBE}" ]; then
+    _pepoch="$(sed -n 1p "${PROBE}" 2>/dev/null || echo 0)"
+    _pbefore="$(sed -n 2p "${PROBE}" 2>/dev/null || echo '?')"
+    if [ "${_pepoch}" -lt "$(awk '/btime/{print $2}' /proc/stat)" ] 2>/dev/null; then
+        _after="$(assess || true)"
+        _result="soft-reboot recovery probe: armed reboot fired; before=[${_pbefore}] after=[${_after}]"
+        log "${_result}"
+        notify ok "${_result}"
+        rm -f "${PROBE}"
+    fi
+fi
 
 # `if summary=$(assess)` captures stdout AND the verdict without tripping set -e.
 if summary="$(assess)"; then
@@ -110,6 +129,7 @@ if [ "${ARMED}" = "1" ]; then
     notify fail "${msg}"
     mkdir -p /var/lib/offgrid
     echo "${now}" > "${LASTBOOT}"
+    printf '%s\n%s\n' "${now}" "${summary}" > "${PROBE}"   # read back by the recovery probe after the reboot
     sync
     exec systemctl reboot
 fi
