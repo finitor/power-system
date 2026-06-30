@@ -228,6 +228,17 @@ Next levers: the tap's `120R` termination jumpers are unpopulated -- RS485
 termination is the likely highest-yield next experiment (reflections cause this
 same byte loss); then reroute the RS485 away from the PV runs / swap the adapter.
 
+Symptom link (2026-06-30): the kernel `WARN::dwc_otg_hcd_urb_dequeue:639: Timed out
+waiting for FSM NP transfer` warnings (steady, ~200/hr, spread evenly across all 8
+dwc_otg channels) are a confirmed **downstream symptom of this issue, not a separate
+fault**. Each poll, `MagnumClient.read()` opens/closes the PL2303; the per-cycle close
+cancels the driver's pending read URBs, and on the Pi's shared dwc_otg controller those
+cancellations log the FSM-timeout warning. Ruled out as power (adding a powered USB hub
+for the SSD+adapters on 2026-06-30 did not change the rate, and no undervoltage was
+logged) and as the CAN watchdog (0 USB resets that boot). They will subside when the
+Magnum bus reads cleanly again — do not re-investigate them as a separate USB/power
+problem.
+
 ## 13. Operator live-tuning controls — DONE
 
 Live, on-console operator control of the two knobs that shape charging near the
