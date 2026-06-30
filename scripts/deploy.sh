@@ -109,10 +109,12 @@ render config/systemd/offgrid-console.service | sudo tee /etc/systemd/system/off
 render config/systemd/offgrid-metrics-export.service | sudo tee /etc/systemd/system/offgrid-metrics-export.service > /dev/null
 render config/systemd/offgrid-can-watchdog.service | sudo tee /etc/systemd/system/offgrid-can-watchdog.service > /dev/null
 render config/systemd/offgrid-supervisor-watchdog.service | sudo tee /etc/systemd/system/offgrid-supervisor-watchdog.service > /dev/null
+render config/systemd/offgrid-supervisor-degraded-notify.service | sudo tee /etc/systemd/system/offgrid-supervisor-degraded-notify.service > /dev/null
 sudo mkdir -p /etc/systemd/system/getty@tty1.service.d
 render config/systemd/getty-tty1-autologin.conf | sudo tee /etc/systemd/system/getty@tty1.service.d/offgrid-autologin.conf > /dev/null
 sudo install -m 644 config/systemd/offgrid-can-watchdog.timer /etc/systemd/system/
 sudo install -m 644 config/systemd/offgrid-supervisor-watchdog.timer /etc/systemd/system/
+sudo install -m 644 config/systemd/offgrid-supervisor-degraded-notify.timer /etc/systemd/system/
 sudo install -m 644 config/systemd/offgrid-metrics-export.timer /etc/systemd/system/
 # Persist the journal (override RPi OS's volatile default) so a crash/power-cycle
 # leaves logs behind. Restart journald + flush so it takes effect this deploy.
@@ -151,6 +153,7 @@ sudo systemctl enable --now --quiet offgrid-supervisor
 sudo systemctl enable --now --quiet offgrid-console
 sudo systemctl enable --now --quiet offgrid-can-watchdog.timer
 sudo systemctl enable --now --quiet offgrid-supervisor-watchdog.timer
+sudo systemctl enable --now --quiet offgrid-supervisor-degraded-notify.timer
 sudo systemctl enable --now --quiet offgrid-metrics-export.timer
 sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=tty

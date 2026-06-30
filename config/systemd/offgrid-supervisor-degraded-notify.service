@@ -1,0 +1,13 @@
+[Unit]
+Description=Report supervisor health degradation to Healthchecks.io
+After=offgrid-supervisor.service
+
+[Service]
+Type=oneshot
+# Unprivileged: only reads localhost /api/v1/health and posts to Healthchecks.
+# systemd reads EnvironmentFile as root before dropping to the service user, so
+# HC_SUPERVISOR_DEGRADED_URL is available even though the env file is root-only.
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+EnvironmentFile=-/etc/offgrid-power.env
+ExecStart=@PROJECT_DIR@/scripts/supervisor-degraded-notify.sh

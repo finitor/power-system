@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic supervisor health-degradation check (Healthchecks reporting)
+
+[Timer]
+# 5min post-boot grace so the supervisor warms up (first snapshot) before we
+# could report it as degraded.
+OnBootSec=5min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target
