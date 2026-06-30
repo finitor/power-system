@@ -103,7 +103,6 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <h2>Temperatures</h2>
 <table>
 <tr><td>Battery cells</td><td>16-17C</td></tr>
-<tr><td>INV battery</td><td>25C</td></tr>
 <tr><td>INV transformer</td><td>37C</td></tr>
 <tr><td>INV FET</td><td>30C</td></tr>
 <tr><td>Sensor 0 ambient</td><td>disconnected</td></tr>
