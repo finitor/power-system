@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic supervisor-blind escalation check
+
+[Timer]
+# Hold off for 10min after boot: don't act during USB enumeration / supervisor
+# warmup, and give a freshly-rebooted-but-still-blind system a grace period.
+OnBootSec=10min
+OnUnitActiveSec=2min
+
+[Install]
+WantedBy=timers.target

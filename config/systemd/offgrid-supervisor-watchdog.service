@@ -1,0 +1,11 @@
+[Unit]
+Description=Reboot the Pi if the supervisor is blind (all I/O transports down at once)
+After=offgrid-supervisor.service
+
+[Service]
+Type=oneshot
+# Reads SUPERVISOR_WATCHDOG_ARMED (default off = dry-run) and the optional
+# HC_SUPERVISOR_WATCHDOG_URL escalation-reporting endpoint. Runs as root (default)
+# so it can `systemctl reboot` and write the persistent cooldown stamp.
+EnvironmentFile=-/etc/offgrid-power.env
+ExecStart=@PROJECT_DIR@/scripts/supervisor-watchdog.sh
