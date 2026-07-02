@@ -28,7 +28,7 @@ class DisplayConfig:
     clear_screen: bool = True
     battery_capacity_ah: float = 200.0
     unavailable_after_seconds: float = 300.0
-    magnum_stale_after_seconds: float = 60.0
+    magnum_stale_after_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +83,11 @@ def env_float(name: str, default: float) -> float:
     return default if raw is None or raw == "" else float(raw)
 
 
+def env_optional_float(name: str) -> float | None:
+    raw = os.getenv(name)
+    return None if raw is None or raw == "" else float(raw)
+
+
 def load_config() -> SupervisorConfig:
     return SupervisorConfig(
         classic=ClassicConfig(
@@ -102,7 +107,7 @@ def load_config() -> SupervisorConfig:
             clear_screen=env_bool("SUPERVISOR_DISPLAY_CLEAR", True),
             battery_capacity_ah=env_float("BATTERY_CAPACITY_AH", 200.0),
             unavailable_after_seconds=env_float("SUPERVISOR_UNAVAILABLE_AFTER_SECONDS", 300.0),
-            magnum_stale_after_seconds=env_float("MAGNUM_STALE_AFTER_SECONDS", 60.0),
+            magnum_stale_after_seconds=env_optional_float("MAGNUM_STALE_AFTER_SECONDS"),
         ),
         battery_can=BatteryCanConfig(
             protocol=os.getenv("BATTERY_CAN_PROTOCOL", "pylon"),

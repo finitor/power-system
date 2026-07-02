@@ -74,7 +74,7 @@ def parse_args() -> argparse.Namespace:
         "--magnum-stale-after-seconds",
         type=float,
         default=config.display.magnum_stale_after_seconds,
-        help="Warn after this many seconds without a good Magnum RS485 read (default 60)",
+        help="Warn after this many seconds without a good Magnum RS485 read (default: reader interval x4)",
     )
     parser.add_argument(
         "--lan-gateway",
