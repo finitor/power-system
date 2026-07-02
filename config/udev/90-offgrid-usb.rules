@@ -8,13 +8,12 @@
 # so the supervisor does not need a manual restart to recover frame reception.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", ATTR{idProduct}=="606f", ATTR{power/control}="on", RUN+="/bin/sh -c 'PATH=/usr/sbin:/usr/bin:/sbin:/bin; sleep 1 && ip link set can0 down 2>/dev/null; ip link set can0 type can bitrate 500000 listen-only on; ip link set can0 up'"
 
-# Prolific PL2303 — DSD TECH SH-U11H isolated RS485 adapter, assigned to the
-# Magnum network tap (passive, read-only). Its switchable termination is left
-# unpopulated so the Pi does not add a third terminator to the Magnum bus.
+# Prolific PL2303 — DSD TECH SH-U11H isolated RS485 adapter, formerly assigned
+# to the Magnum network tap. Kept as a named fallback/spare; the active Magnum
+# tap is the direct-port CH340 on physical path 1.2 below.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="23a3", ATTR{power/control}="on"
-# Stable name keyed on the unique serial, so it never collides with another
-# 067b:23a3 or with the EPEver adapter; the supervisor references /dev/magnum-rs485.
-SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", ATTRS{serial}=="DZBSb11CN12", SYMLINK+="magnum-rs485"
+# Stable name keyed on the unique serial, so it never collides with another adapter.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", ATTRS{serial}=="DZBSb11CN12", SYMLINK+="magnum-rs485-pl2303"
 
 # FT232R cable — Cubix BMS RS485 bench/diagnostic access. Keyed on serial
 # because FTDI 0403:6001 is shared with the (ordered) Waveshare EPEver
@@ -22,12 +21,18 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", ATTRS{seria
 # verify the Waveshare's serial differs when it arrives.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="A50285BI", SYMLINK+="cubix-rs485"
 
-# KL0823B 2-wire USB-RS485 adapter (CH340) — the EPEver TEP10425 COM port.
-# (It was once the Magnum tap; the Magnum tap moved to the SH-U11H above.)
-# Keyed on VID:PID because CH340s carry no unique serial; if another CH340 is
-# ever added, switch one of them to a port-path rule.
+# FT232R USB-RS485 adapter — Magnum network tap trial fallback. Keyed on its
+# unique serial, but not the canonical Magnum device because the direct-port
+# CH340 produced the lowest observed error rates.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="BG041BAY", SYMLINK+="magnum-rs485-ft232r"
+
+# KL0823B 2-wire USB-RS485 adapters (CH340) — EPEver and Magnum taps.
+# CH340s carry no unique serial, so stable names are keyed on physical USB
+# paths. Keep the Magnum adapter on the Pi USB port at path 1.2 and the
+# EPEver adapter on powered hub port 1.5.3.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", ATTR{power/control}="on"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="epever-rs485"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.2:1.0", SYMLINK+="magnum-rs485"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.5.3:1.0", SYMLINK+="epever-rs485"
 
 # RTL8153 gigabit NIC built into the bench (port-powered) hub: unused, and
 # bus-powered draw competes with the Pi's shared USB budget. Deauthorize so

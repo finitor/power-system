@@ -20,8 +20,8 @@ WorkingDirectory=@PROJECT_DIR@
 Environment=CLASSIC_HOST=192.168.0.10
 Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
-# EPEver COM adapter via its udev symlink (config/udev/90-offgrid-usb.rules).
-# Relies on only one CH340 (1a86:7523) on the bus at a time.
+# EPEver and Magnum RS485 adapters use udev symlinks keyed by physical USB
+# path because their CH340 chips do not expose unique serial numbers.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=full
