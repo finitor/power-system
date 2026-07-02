@@ -76,13 +76,18 @@ envelope in the charge-controller doc).
 Weekly-average PV potential vs load across the year (mean of 10 years):
 surplus roughly March through September, structural deficit mid-October
 through February, bottoming in the Dec 20 – Jan 1 weeks. Scenario results,
-as-built (array 1 mounted 45° S, December beam 15%, intrinsic performance
-ratio bracketed 0.55–0.70):
+as-built (array 1 mounted 45° S, December beam 15%). Because mounted array 1's
+real-world health is unknown until it is on the platform, its **performance
+ratio (PR)** — delivered output as a fraction of nameplate under the same
+irradiance, absorbing wiring, mismatch, soiling, and conversion losses — is
+bracketed: PR 0.55 pessimistic (performs like aging array 0 does today) to
+PR 0.70 optimistic (mounting recovers most of the flat-layout losses). The
+post-mount recalibration below replaces this bracket with a measurement.
 
 | Mode | Load | Darkest-week balance | Winter outcome (9 simulated winters) |
 |---|---|---|---|
 | Full occupancy | ~5.7 kWh/day incl. heater | −2.5 to −3 kWh/day | Structural deficit, ~140–290 kWh/winter; generator required (~14–19 bank-empty events/winter) |
-| No refrigeration | ~2.3 + heater | ≈ −0.5 kWh/day | Bank rides through: worst corner shows one 0.8 kWh shortfall in 9 winters; PR 0.70 never empties (min SOC 38% worst winter) |
+| No refrigeration | ~2.3 + heater | ≈ −0.5 kWh/day | Bank rides through: at PR 0.55 the bank empties once in 9 winters (by 0.8 kWh); at PR 0.70 it never empties, bottoming at 38% SOC in the worst winter |
 | Lean unattended caretaker | ~0.5 + heater | positive to neutral | Robust in every scenario tested, incl. zero December beam and 2× heater duty; min SOC ≥ 64% even with array 1 contributing nothing |
 
 Lean caretaker stack: Pi + comms ~15 W continuous; inverter hard-off except a
