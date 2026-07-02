@@ -92,9 +92,12 @@ comms window is a rounding error — **the battery heater dominates the winter
 budget** (0.5–1.9 kWh/day depending on temperature) and its actual duty cycle
 is the controlling unknown of the whole model.
 
-Load context for net-zero framing: an always-on Starlink alone
-(~0.8+ kWh/day, more when snow-melting) consumes most of the darkest-week
-budget; a 60-minute daily window costs ~1/8 of that.
+Two different loads dominate two different questions. The heater is the
+largest *unavoidable* draw — it sets what the lean stack must spend. Among
+*discretionary* loads, always-on Starlink is the largest (~0.8+ kWh/day,
+more when snow-melting) — roughly a third of the darkest-week PV harvest —
+which is why lean mode reduces it to the daily window (~1/8 the cost) rather
+than carrying it continuously.
 
 ## Battery capacity: 200 Ah vs 400 Ah (evaluated 2026-07-02)
 
