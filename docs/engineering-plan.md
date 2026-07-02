@@ -191,8 +191,10 @@ recabling for the EPEver disturbed the Magnum RS485 run/adapter. Avenues to try
 (operator, on site): reroute/separate the Magnum RS485 cabling from the PV
 runs, check grounding, and/or swap the Magnum USB-RS485 adapter (the SH-U11H).
 
-Mitigation already in place: `MagnumClient.max_cycles` raised 10 -> 20 so a read
-tolerates more missed cycles before warning (quiets the noise; not a fix).
+Historical mitigation: `MagnumClient.max_cycles` was raised 10 -> 20 so a read
+tolerated more missed cycles before warning (quieted the noise; not a fix). After
+the 2026-06-30 adapter swap moved the Magnum tap to a clean CH340 interface, the
+default was restored to 10 so real failures surface promptly.
 Raised 2026-06-17.
 
 Diagnosis refined (2026-06-17) -- byte-framing slips, one root cause for both log

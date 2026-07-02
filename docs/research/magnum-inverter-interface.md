@@ -110,8 +110,10 @@ Detection approach: check byte 14 for 0x73 to confirm the inverter packet; the o
 The recurring runtime warnings are two faces of one bus-sync problem — not value
 corruption and not a parser bug:
 
-- `Magnum: no valid inverter packet seen in 20 cycles` — the read exhausts its
-  cycles without a clean inverter packet.
+- Historical `Magnum: no valid inverter packet seen in 20 cycles` warnings
+  from the noisy PL2303 path — the read exhausted its cycles without a clean
+  inverter packet. After the 2026-06-30 CH340 adapter swap, the client default
+  is back to 10 cycles so failures surface sooner.
 - `Failed to parse REMOTE packet … ValidationError … less_than_equal` — a remote
   packet parses but a field overflows its `le=` limit.
 

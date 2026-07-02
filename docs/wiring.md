@@ -36,7 +36,7 @@ breakers, Classic-GFP ground reference, conductor sizing) lives in
 | Raspberry Pi USB | Eco-Worthy Cubix 100 CAN port | CAN | DSD TECH SH-C31G, Cat-6 cable, RJ45 battery-side plug | Battery RJ45 pin 4 CANH1, pin 5 CANL1, pin 3 or 6 GND |
 | Raspberry Pi USB | EPEver TEP10425 port 9 (CAN) | CAN | DSD TECH SH-C31G (shared with Cubix; one adapter on hand) | Port-9 RJ45 pin 4 CAN-H, pin 5 CAN-L, pin 8 GND (manual §1.2.1). CAN pair is the same pins as the Cubix cable; only GND differs (Cubix 3/6 → EPever 8). Port 9 also carries RS485 on pins 3/6. Bench-only CAN sniff to test whether Pylon BPRO=21 rides CAN; see [epever research notes](research/epever-tep10425.md). |
 | Raspberry Pi USB | Eco-Worthy Cubix 100 RS485-1 port | RS485 | Waveshare isolated USB-RS485/422, Cat-6 cable, RJ45 battery-side plug | Battery RJ45 pins 1/8 B1, pins 2/7 A1, pins 3/6 GND |
-| Raspberry Pi USB | MagnaSine 4448 green "Network Accessories" port | RS485 | DSD TECH SH-U11H isolated USB-RS485 (PL2303, `067b:23a3`, serial `DZBSb11CN12`) → `/dev/magnum-rs485`. **Rewired 2026-06-30** to a direct 6-pin RJ11 breakout (removed the RJ45 coupler / Cat-6 / RJ45-breakout chain). | **Verified-by-voltage pinout on the 6-pin RJ11 breakout: pos 2 = A/D+ (~3.9 V to GND), pos 4 = GND, pos 5 = B/D- (~0.55 V); pos 3 = +14 V — leave OFF the adapter (will damage the transceiver).** Wired pos 2→adapter A/D+, pos 5→adapter B/D-, pos 4→adapter GND (direct, no series R — fine on the isolated adapter; measured 0.16 V to chassis, negligible). ⚠️ A/B are **OPPOSITE** the old RJ45-coupler mapping AND the `magnum-pi` "pin 1 = Data+" claim — **always verify by voltage** (+14 V ≈ 14 V, A ≈ 3.9 V, B ≈ 0.55 V to GND), never by pin number. Bus is 19200 8N1. Adding the ground reference cut `no valid inverter packet` ~20 % (43→34/hr) vs no-ground — see engineering-plan item 12. Termination jumpers (`120R T`/`120R R`) left unpopulated — passive mid-bus tap (and at 19200 baud / ~4 ft, reflections are negligible anyway). Yellow "Battery Temperature Sensor" port is unoccupied — do not connect while on LiFePO4 (Magnum TCV is lead-acid-tuned and would fight BMS-driven voltage limits). |
+| Raspberry Pi USB | MagnaSine 4448 green "Network Accessories" port | RS485 | Generic/KL 2-wire CH340 USB-RS485 (`1a86:7523`) on direct Pi USB path `1.2` → `/dev/magnum-rs485`. **Rewired 2026-06-30** to a direct 6-pin RJ11 breakout (removed the RJ45 coupler / Cat-6 / RJ45-breakout chain), then moved from the PL2303 adapter to this CH340 after short tests showed the displayed Magnum error rate dropping from ~3-10% to 0%. Moved off the powered hub to a Pi USB port on 2026-07-01; this direct-port CH340 had the lowest observed error levels, so it is the preferred setup while testing whether error rate grows with adapter uptime. | **Verified-by-voltage pinout on the 6-pin RJ11 breakout: pos 2 = A/D+ (~3.9 V to GND), pos 4 = GND, pos 5 = B/D- (~0.55 V); pos 3 = +14 V — leave OFF the adapter (will damage the transceiver).** Wired pos 2→adapter A/D+, pos 5→adapter B/D-, pos 4→adapter GND. ⚠️ A/B are **OPPOSITE** the old RJ45-coupler mapping AND the `magnum-pi` "pin 1 = Data+" claim — **always verify by voltage** (+14 V ≈ 14 V, A ≈ 3.9 V, B ≈ 0.55 V to GND), never by pin number. Bus is 19200 8N1. Passive mid-bus tap; no added termination. Yellow "Battery Temperature Sensor" port is unoccupied — do not connect while on LiFePO4 (Magnum TCV is lead-acid-tuned and would fight BMS-driven voltage limits). |
 | Eco-Worthy Cubix 100 RS232 port | Eco-Worthy ESM-100 remote display | RS232 / accessory power | Native short cable is RJ12 6P6C straight-through by wire-color inspection | Do not substitute Midnite Classic remote cable; it is RJ12 6P6C reversed/rolled with pin positions mirrored end-to-end |
 | Raspberry Pi | Midnite Solar Classic 200 | TBD | TBD | Confirm supported telemetry path before wiring |
 | Raspberry Pi | MagnaSine 4448 | TBD | TBD | Confirm Magnum interface accessory requirements |
@@ -84,18 +84,19 @@ Use durable labels on both ends of each cable. Match physical labels to the name
 | CC-1 | Charge controller area | Midnite Solar Classic 200 |
 | INV-1 | Inverter area | MagnaSine 4448 |
 | PI-1 | Control enclosure | Raspberry Pi supervisory controller |
-| RS485 0 | USB-RS485 adapter body / EPever COM lead | KL0823B USB-RS485 (chip: CH340, `1a86:7523`); serves `/dev/epever-rs485`, the EPever TEP10425 COM port |
-| RS485 1 | USB-RS485 adapter body / Magnum RJ11 breakout lead | DSD TECH SH-U11H isolated USB-RS485 (chip: PL2303, `067b:23a3`, serial `DZBSb11CN12`); serves `/dev/magnum-rs485`, the MagnaSine 4448 network tap |
+| RS485 0 | USB-RS485 adapter body / EPever COM lead | KL0823B USB-RS485 (chip: CH340, `1a86:7523`) on USB path `1.5.3`; serves `/dev/epever-rs485`, the EPever TEP10425 COM port |
+| RS485 1 | USB-RS485 adapter body / Magnum RJ11 breakout lead | Generic/KL 2-wire USB-RS485 (chip: CH340, `1a86:7523`) on direct Pi USB path `1.2`; serves `/dev/magnum-rs485`, the MagnaSine 4448 network tap |
 
-The KL0823B's CH340 has **no unique USB serial** — every unit reports the same
-`1a86:7523`, so two of them are USB-indistinguishable (this caused the
-`/dev/epever-rs485` symlink collision; see the supervisor unit notes). The
-physical **"RS485 0"** label is therefore the only reliable per-unit
-identifier. Standing rule: never run two identical CH340 adapters at once.
+The CH340 adapters have **no unique USB serial** — every unit reports the same
+`1a86:7523`. udev therefore assigns `/dev/magnum-rs485` and
+`/dev/epever-rs485` by physical USB path, not by dongle identity. If the two
+CH340 dongles are swapped between physical ports, their logical roles swap with
+the ports. Keep labels on both the adapter bodies and the physical USB ports.
+The FT232R trial adapter (`0403:6001`, serial `BG041BAY`) is retained as
+`/dev/magnum-rs485-ft232r` if reinstalled/wired for a future comparison.
 
-The SH-U11H ("RS485 1") *does* carry a unique serial (`DZBSb11CN12`), so its
-udev rule keys on the serial and the physical label is a bench convenience
-rather than the sole identifier.
+The SH-U11H PL2303 adapter (`067b:23a3`, serial `DZBSb11CN12`) is retained as a
+named fallback at `/dev/magnum-rs485-pl2303` if reinstalled.
 
 ## Photos
 

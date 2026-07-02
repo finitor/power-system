@@ -10,6 +10,7 @@ This folder is the project map by physical subsystem. Each page should answer th
 
 ## Current Subsystems
 
+- [Network stack map](../network-stack.md)
 - [Battery bank](battery-bank.md)
 - [Charge controller](charge-controller.md)
 - [Battery temperature control](battery-temperature-control.md)
