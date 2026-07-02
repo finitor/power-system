@@ -439,6 +439,30 @@ class WebDisplayTest(unittest.TestCase):
 
         self.assertIn("<td>Allocation</td><td>off *</td>", html)
 
+    def test_kindle_details_shows_magnum_rs485_glitches_under_inverter_charger(self) -> None:
+        snapshot = make_snapshot(
+            classic=make_classic_telemetry(),
+            classic_settings=make_classic_settings(),
+            epever=make_epever_telemetry(),
+            magnum=make_magnum_snapshot(),
+            reader_error_rates={"magnum": 1.666},
+        )
+
+        html = render_kindle_details(snapshot)
+
+        inverter_start = html.index("<h2>Inverter/Charger</h2>")
+        temperatures_start = html.index("<h2>Temperatures</h2>")
+        inverter_section = html[inverter_start:temperatures_start]
+        self.assertIn("<td>RS485 Glitches</td><td>1.7% (5 min)</td>", inverter_section)
+        self.assertLess(inverter_section.index("Charge Settings"), inverter_section.index("RS485 Glitches"))
+
+    def test_kindle_details_hides_magnum_rs485_glitches_until_available(self) -> None:
+        snapshot = make_snapshot(magnum=make_magnum_snapshot(), reader_error_rates={"magnum": None})
+
+        html = render_kindle_details(snapshot)
+
+        self.assertNotIn("RS485 Glitches", html)
+
     def test_routes_kindle_with_allocation_payload(self) -> None:
         snapshot = make_snapshot(classic=make_classic_telemetry())
 

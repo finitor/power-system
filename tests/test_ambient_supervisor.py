@@ -34,7 +34,7 @@ from offgrid_power.terminal_display import (
     highlight_changed_digits,
     render_snapshot,
 )
-from snapshot_helpers import make_classic_telemetry, make_snapshot
+from snapshot_helpers import make_classic_telemetry, make_magnum_snapshot, make_snapshot
 
 
 class FakeClassicClient:
@@ -512,13 +512,17 @@ class TerminalDisplayTest(unittest.TestCase):
     def test_rs485_glitches_row_renders_when_error_rate_known(self) -> None:
         snapshot = make_snapshot(
             classic=make_classic_telemetry(),
+            magnum=make_magnum_snapshot(),
             reader_error_rates={"magnum": 12.5},
         )
 
         rendered = render_snapshot(snapshot)
+        inverter_section = rendered[
+            rendered.index("Inverter/Charger") : rendered.index("Temperatures")
+        ]
 
-        self.assertIn("RS485 Glitches", rendered)
-        self.assertIn("12.5% (5 min)", rendered)
+        self.assertIn("RS485 Glitches", inverter_section)
+        self.assertIn("12.5% (5 min)", inverter_section)
 
     def test_rs485_glitches_row_absent_when_no_error_rate(self) -> None:
         snapshot = make_snapshot(classic=make_classic_telemetry())
@@ -593,6 +597,15 @@ class HighlightChangedDigitsTest(unittest.TestCase):
 
         self.assertIn("54.2V ", highlighted)
         self.assertIn(UP_ARROW, highlighted)
+
+    def test_does_not_highlight_inserted_row_against_previous_position(self) -> None:
+        highlighted = highlight_changed_digits(
+            previous="Status               Inverting\nTemperature          25C",
+            current="Status               Inverting\nCharge Settings      Limit 80% Absorb 54.4V\nTemperature          25C",
+        )
+
+        self.assertNotIn(CHANGED_DIGIT_START, highlighted)
+        self.assertIn("Limit 80%", highlighted)
 
 
 class Ds18b20Test(unittest.TestCase):

@@ -133,7 +133,10 @@ class PollingReader:
     def error_rate_pct(self, window_s: float = 300.0) -> float | None:
         """Fraction of poll attempts that failed in the last window_s seconds, as a percentage.
 
-        Returns None if no polls have been recorded yet.
+        Returns None if no polls have been recorded yet, or while the reader is
+        still warming up after startup. The display uses this as a steady-state
+        glitch-rate trend; a cold-start miss before the 5-minute window is full
+        would otherwise show as a large percentage and then mechanically decay.
 
         This is a poll-failure rate, not a glitch count. It does not distinguish
         a single dropped frame that recovered immediately from a sustained outage —
@@ -142,8 +145,12 @@ class PollingReader:
         sustained failures, count distinct error runs (consecutive-failure spans)
         instead of aggregating all failures into one fraction.
         """
-        cutoff = time.monotonic() - window_s
+        now = time.monotonic()
+        cutoff = now - window_s
         with self._lock:
+            first_success_at = next((t for t, ok in self._poll_history if ok), None)
+            if first_success_at is None or now - first_success_at < window_s:
+                return None
             window = [(t, ok) for t, ok in self._poll_history if t >= cutoff]
         if not window:
             return None

@@ -47,10 +47,12 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
     lines.extend(_solar_lines(payload.get("solar") or []))
 
     lines.append("")
-    lines.extend(_inverter_charger_lines(payload.get("inverter")))
-    magnum_err = (payload.get("reader_error_rates") or {}).get("magnum")
-    if magnum_err is not None:
-        lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
+    lines.extend(
+        _inverter_charger_lines(
+            payload.get("inverter"),
+            magnum_error_rate=(payload.get("reader_error_rates") or {}).get("magnum"),
+        )
+    )
 
     if payload.get("allocation") is not None:
         lines.append("")
@@ -402,10 +404,12 @@ def _charge_controller_short_name(controller: dict) -> str:
     return " ".join(str(part).strip() for part in [device.get("vendor"), device.get("model")] if part)
 
 
-def _inverter_charger_lines(inverter: dict | None) -> list[str]:
+def _inverter_charger_lines(inverter: dict | None, magnum_error_rate: float | None = None) -> list[str]:
     lines = ["Inverter/Charger"]
     if inverter is None:
         lines.append("  No data")
+        if magnum_error_rate is not None:
+            lines.append(_row("RS485 Glitches", f"{magnum_error_rate:.1f}% (5 min)"))
         return lines
 
     lines.append(
@@ -454,6 +458,9 @@ def _inverter_charger_lines(inverter: dict | None) -> list[str]:
         settings_parts.append(f"Shore {_fmt(settings.get('shore_amps'), 0)}A")
     if settings_parts:
         lines.append(_row("Charge Settings", " ".join(settings_parts)))
+
+    if magnum_error_rate is not None:
+        lines.append(_row("RS485 Glitches", f"{magnum_error_rate:.1f}% (5 min)"))
 
     return lines
 

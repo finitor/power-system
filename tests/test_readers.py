@@ -153,6 +153,23 @@ class PollingReaderTest(unittest.TestCase):
         self.assertEqual(seen_threads, {"reader-dev"})
         self.assertIsNotNone(reader.reading().captured_at)
 
+    def test_error_rate_hidden_until_window_warms_up(self) -> None:
+        reader = PollingReader("dev", lambda: 1, interval_s=5.0)
+        now = time.monotonic()
+        reader._poll_history.append((now - 15.0, True))
+        reader._poll_history.append((now - 5.0, False))
+
+        self.assertIsNone(reader.error_rate_pct(window_s=30.0))
+
+    def test_error_rate_counts_failures_after_warmup(self) -> None:
+        reader = PollingReader("dev", lambda: 1, interval_s=5.0)
+        now = time.monotonic()
+        reader._poll_history.append((now - 40.0, True))
+        reader._poll_history.append((now - 20.0, False))
+        reader._poll_history.append((now - 10.0, True))
+
+        self.assertAlmostEqual(reader.error_rate_pct(window_s=30.0), 50.0)
+
 
 class FakeReader:
     def __init__(

@@ -2280,6 +2280,9 @@ def _inverter_charger_section(snapshot: SupervisorSnapshot) -> list[str]:
     inv = snapshot.magnum
     if inv is None:
         lines.append(_row("State", "No data"))
+        magnum_err = snapshot.reader_error_rates.get("magnum")
+        if magnum_err is not None:
+            lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
         lines.append("</table>")
         return lines
 
@@ -2320,6 +2323,10 @@ def _inverter_charger_section(snapshot: SupervisorSnapshot) -> list[str]:
         settings_parts.append(f"Shore {inv.shore_amps}A")
     if settings_parts:
         lines.append(_row("Charge Settings", " ".join(settings_parts)))
+
+    magnum_err = snapshot.reader_error_rates.get("magnum")
+    if magnum_err is not None:
+        lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
 
     lines.append("</table>")
     return lines

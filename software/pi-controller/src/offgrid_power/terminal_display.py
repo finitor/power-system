@@ -90,8 +90,11 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
     for line_index, current_line in enumerate(current.splitlines()):
         if current_line.startswith("Updated:") or line_index >= len(previous_lines):
             continue
+        previous_line = previous_lines[line_index]
+        if _measurement_context(previous_line) != _measurement_context(current_line):
+            continue
 
-        previous_values = list(MEASUREMENT_PATTERN.finditer(previous_lines[line_index]))
+        previous_values = list(MEASUREMENT_PATTERN.finditer(previous_line))
         current_values = list(MEASUREMENT_PATTERN.finditer(current_line))
         for previous_match, current_match in zip(previous_values, current_values, strict=False):
             previous_value = _measurement_sort_value(previous_match.group(1))
@@ -106,6 +109,11 @@ def _value_change_annotations(previous: str, current: str) -> tuple[dict[tuple[i
                 markers[(line_index, current_match.end() - 1)] = " "
 
     return markers, highlights
+
+
+def _measurement_context(line: str) -> str:
+    """Stable text around numbers; if it changes, the line is a different row."""
+    return MEASUREMENT_PATTERN.sub("#", line)
 
 
 def _measurement_sort_value(value: str) -> tuple[float, ...]:
@@ -249,9 +257,6 @@ def _charge_controller_lines(snapshot: SupervisorSnapshot) -> list[str]:
         if classic.is_hypervoc:
             lines.append(_row("PV input", f"HyperVOC protection  Last Voc {classic.last_voc_v:.1f}V  High {classic.highest_input_voltage_v:.1f}V"))
         lines.append(_row("Production Today", f"{classic.daily_energy_kwh:.1f}kWh  {classic.daily_amp_hours_ah}Ah"))
-        magnum_err = snapshot.reader_error_rates.get("magnum")
-        if magnum_err is not None:
-            lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
         if snapshot.classic_settings is not None:
             lines.append(_charge_settings_line(snapshot.classic_settings))
 
@@ -307,6 +312,9 @@ def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
     inv = snapshot.magnum
     if inv is None:
         lines.append("  No data")
+        magnum_err = snapshot.reader_error_rates.get("magnum")
+        if magnum_err is not None:
+            lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
         return lines
 
     lines.append(_row("DC", f"{inv.dc_volts:.1f}V  {inv.dc_amps}A  {inv.dc_power_w}W"))
@@ -346,6 +354,10 @@ def _inverter_charger_lines(snapshot: SupervisorSnapshot) -> list[str]:
         settings_parts.append(f"Shore {inv.shore_amps}A")
     if settings_parts:
         lines.append(_row("Charge Settings", " ".join(settings_parts)))
+
+    magnum_err = snapshot.reader_error_rates.get("magnum")
+    if magnum_err is not None:
+        lines.append(_row("RS485 Glitches", f"{magnum_err:.1f}% (5 min)"))
 
     return lines
 
