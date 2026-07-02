@@ -5,6 +5,7 @@
 This project is organized around the major power-system subsystems that require telemetry, documentation, and possibly supervisory control:
 
 - [Site](site.md): Wawa, Ontario installation context, time zone, and solar-noon calculation notes.
+- [Power budget](power-budget.md): measured load, calibrated PV effectiveness, the annual power-balance model, winter operating modes, and expansion analysis.
 - [Battery bank](subsystems/battery-bank.md): 2x Eco-Worthy Cubix 100 48 V 100 Ah rack-mount batteries.
 - [Solar charge controllers](subsystems/charge-controller.md): MidNite Solar Classic 200 (array 0) and EPEver TEP10425 (array 1).
 - [Battery temperature control](subsystems/battery-temperature-control.md): winter warming, warm-weather ventilation, and charge-temperature permissives.

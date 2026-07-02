@@ -20,7 +20,7 @@ The system runs two PV sources on two charge controllers (MidNite Classic on arr
 | PV source | Controller | Array | Status | Notes |
 |---|---|---|---|---|
 | PV array 0 | MidNite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | In service | 8 modules total; exact module ratings may vary around 295-305 W |
-| PV array 1 | EPEver TEP10425 | Canadian Solar CS6X-300-adjacent modules, 4s3p | In service (PV connected 2026-06-16); mount construction outstanding | 12 modules total; exact module ratings may vary around 295-305 W |
+| PV array 1 | EPEver TEP10425 | Canadian Solar CS6X-300-adjacent modules, 3s4p | In service (PV connected 2026-06-16; rewired 3s4p 2026-07-02); platform mount construction outstanding | 12 modules total; exact module ratings may vary around 295-305 W. See [Array 1 String Topology](#array-1-string-topology-3s4p-decided-2026-07-02) |
 
 ## Array 1 Controller (EPEver TEP10425)
 
@@ -44,6 +44,54 @@ charge allocator is the single policy authority across both controllers (see
 native mode is not trusted with this bank). The allocator writes the EPEver's
 current register and charge coil; the EPEver still owns its own CV voltage
 regulation.
+
+### Array 1 String Topology (3s4p, decided 2026-07-02)
+
+Array 1 is wired **3s4p — four parallel strings of three panels in series,
+one string per physical row** of the 3-wide x 4-high landscape layout, all
+four strings on a single EPEver PV input.
+
+Why 3s rows instead of the originally planned 4s3p: the platform site's
+winter sun is partially occluded by the building roofline to the SSW (AR
+solstice-path survey from the first-tier panel position, 2026-07-02 — the
+midday 12:30-14:30 band grazes the barrel roof; trees own the morning). The
+occlusion edge is horizontal and sweeps the array bottom-up, so string
+topology determines how output degrades:
+
+- **3s rows (chosen):** each row is one parallel string. N shaded rows cost
+  exactly N/4 of output; lit rows keep operating at their MPP. With three
+  rows dark the top row still delivers (~108 V Vmp, well inside the MPPT
+  window above a ~53 V bus).
+- 4s columns (rejected): every string spans all four rows; three shaded rows
+  leave every string at ~36 V — below the battery — and the array delivers
+  nothing despite a fully lit top row.
+
+Electrical envelope on one TEP10425 input: 3s Vmp ~108 V; cold Voc
+(~-40 °C) ~165 V against the 250 V limit; 4p ~33 A Imp / ~35.5 A Isc
+against the 50 A per-input limit; ~68 A battery-side at full output against
+the 100 A rating.
+
+Known trade-offs, accepted:
+
+- **Feeder margin is thin on paper.** The buried home run is one pair of
+  8 AWG, 70 ft. Code design current for the feeder is Isc x 1.56 ~ 55 A,
+  at/above the 8 AWG rating (50 A at 75 °C terminations, ~55 A for 90 °C
+  wire — confirm the buried insulation class). Physically self-limiting
+  (real max ~35 A, buried copper, 50 A upstream disconnect); the charge
+  allocator can also pin the EPEver battery-side limit to ~55-60 A to cap
+  feeder current near 30 A. 4s3p (39 A design) is the fallback if the
+  installation ever needs a clean code pass.
+- **Voltage drop** ~2.9 V at full 33 A output (~2.7%, ~95 W peak) vs ~1.5%
+  for 4s3p. The extra loss lands in bright summer hours, which are
+  curtailment-bound anyway; winter currents make it negligible.
+- Four parallel strings on one input make **per-string 15 A fuses
+  mandatory** (fault back-feed from three siblings ~27 A exceeds the
+  panels' 15 A max-series-fuse rating).
+- **PV2 stays free**, reserved for the provisional third array at a
+  different site (its own orientation, its own MPPT channel via the INDE
+  connection mode — holding `0x9042`). A 2+2 INDE split of array 1 across
+  both inputs was considered and rejected to keep PV2 free and avoid
+  re-trenching the single buried feeder.
 
 ### Consolidation option (considered 2026-06-10, parked)
 
