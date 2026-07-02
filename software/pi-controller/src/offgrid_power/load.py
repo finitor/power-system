@@ -31,7 +31,9 @@ class LoadTotals:
 
 
 class LoadTotalsTracker:
-    def __init__(self, battery_capacity_ah: float = 200.0) -> None:
+    def __init__(self, battery_capacity_ah: float) -> None:
+        # No default: capacity comes from BATTERY_CAPACITY_AH via
+        # config.DisplayConfig so the operator-set value is the single source.
         self.battery_capacity_ah = battery_capacity_ah
         self._day: date | None = None
         self._last_sample_at: datetime | None = None

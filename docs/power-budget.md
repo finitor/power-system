@@ -144,9 +144,9 @@ Caveats to honor at expansion time:
 - Symmetric cabling / bus bar — lead resistance skews current sharing far
   more than a year of age.
 - Bank capacity and CCL flow live from the BMS aggregate, so the charge
-  allocator adapts automatically; but check the hardcoded 200 Ah default in
-  `LoadTotalsTracker`
-  ([load.py](../software/pi-controller/src/offgrid_power/load.py)).
+  allocator adapts automatically. The load/consumption math uses the
+  operator-set `BATTERY_CAPACITY_AH` in `/etc/offgrid-power.env` — update it
+  when packs are added or removed.
 
 ## Open measurements
 

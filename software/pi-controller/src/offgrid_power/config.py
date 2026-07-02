@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 
+# Fallback when BATTERY_CAPACITY_AH is unset (2x Cubix 100). The env var in
+# /etc/offgrid-power.env is the operator-set source of truth for installed
+# bank capacity; update it when packs are added or removed.
+DEFAULT_BATTERY_CAPACITY_AH = 200.0
+
 
 @dataclass(frozen=True)
 class ClassicConfig:
@@ -26,7 +31,7 @@ class EpeverConfig:
 class DisplayConfig:
     refresh_seconds: float = 30.0
     clear_screen: bool = True
-    battery_capacity_ah: float = 200.0
+    battery_capacity_ah: float = DEFAULT_BATTERY_CAPACITY_AH
     unavailable_after_seconds: float = 300.0
     magnum_stale_after_seconds: float | None = None
 
@@ -105,7 +110,7 @@ def load_config() -> SupervisorConfig:
         display=DisplayConfig(
             refresh_seconds=env_float("SUPERVISOR_REFRESH_SECONDS", 30.0),
             clear_screen=env_bool("SUPERVISOR_DISPLAY_CLEAR", True),
-            battery_capacity_ah=env_float("BATTERY_CAPACITY_AH", 200.0),
+            battery_capacity_ah=env_float("BATTERY_CAPACITY_AH", DEFAULT_BATTERY_CAPACITY_AH),
             unavailable_after_seconds=env_float("SUPERVISOR_UNAVAILABLE_AFTER_SECONDS", 300.0),
             magnum_stale_after_seconds=env_optional_float("MAGNUM_STALE_AFTER_SECONDS"),
         ),
