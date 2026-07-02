@@ -53,11 +53,16 @@ After that:
 sqlite3 /srv/telemetry/data/metrics.sqlite
 ```
 
-Until then (or to avoid accidental writes regardless), use the immutable URI:
+Until then (or to avoid accidental writes regardless), use the read-only URI:
 
 ```
-sqlite3 'file:/srv/telemetry/data/metrics.sqlite?immutable=1'
+sqlite3 'file:/srv/telemetry/data/metrics.sqlite?mode=ro'
 ```
+
+Do **not** use `immutable=1` on this database: it tells SQLite the file cannot
+change, but the supervisor writes once a minute (WAL mode), so long scans fail
+midway with spurious `database disk image is malformed` errors. `mode=ro`
+takes proper read locks and stays consistent against the live writer.
 
 Useful dot-commands:
 
@@ -89,7 +94,7 @@ Open read-only without copying the file:
 
 ```python
 import sqlite3
-conn = sqlite3.connect('file:/srv/telemetry/data/metrics.sqlite?immutable=1', uri=True)
+conn = sqlite3.connect('file:/srv/telemetry/data/metrics.sqlite?mode=ro', uri=True)
 ```
 
 ### Schema quick reference
@@ -133,6 +138,14 @@ WHERE captured_at >= '2026-06-15T04:00:00+00:00'
 | `highest_input_voltage` | V | daily peak PV voltage |
 | `fet_temperature` | C | MOSFET temperature |
 | `pcb_temperature` | C | |
+
+### Key metrics — `epever.1`
+
+Mostly parallel to `classic.0` (`battery_power`, `pv_voltage`, `pv_power`, …)
+with one trap: **`generated_today` is a cumulative counter, not a daily
+total** — it climbs across days and resets unpredictably (device restarts),
+so `MAX(value)` per day does not give daily energy. Integrate `battery_power`
+over time instead.
 
 ### Key metrics — `battery` / `battery.can`
 

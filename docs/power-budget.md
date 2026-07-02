@@ -51,10 +51,6 @@ the array 1 wiring that fell out of this analysis:
 | Refrigeration share | ~2.6 kWh/day | duty-cycled ~100–120 W average |
 | Bank usable | ~8.7 kWh | 2× Cubix 100 (10.24 kWh nominal) at 85% |
 
-Telemetry gotchas encountered: `epever.1 generated_today` is a cumulative
-counter, not daily; query the live DB with `mode=ro`, never `immutable=1`
-(spurious "malformed image" errors mid-scan while the supervisor writes).
-
 ## Site solar geometry (array 1 platform)
 
 AR winter-solstice-path survey from the exact first-tier panel position
