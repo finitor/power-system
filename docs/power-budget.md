@@ -66,9 +66,10 @@ resource is ~1.58 kWh/m²/day — ~0.51 diffuse + ~1.08 beam — versus
 0.87 horizontal, i.e. two-thirds of the tilt gain is beam, which is what the
 roofline takes. No setback margin exists (dense trees behind the platform);
 recovery, if any, comes from upper rows (~0.7 m/row at 45°). Follow-up: repeat
-the AR shot at +1.4 m and +2.1 m. The 3s4p row-per-string wiring exists so a
-partly-cleared array degrades row-proportionally (see the charge-controller
-doc).
+the AR shot at +1.4 m and +2.1 m. This geometry is why the target wiring for
+the mounted array is 3s4p with one string per row — so a partly-cleared array
+degrades row-proportionally rather than collapsing (rationale and electrical
+envelope in the charge-controller doc).
 
 ## Annual balance and operating modes
 
