@@ -177,15 +177,20 @@ class MagnumLastSettingsTest(unittest.TestCase):
     def _client() -> MagnumClient:
         return MagnumClient("/dev/unused-for-merge-test")
 
-    def test_missing_settings_filled_from_last_seen(self) -> None:
+    def test_missing_settings_filled_from_confirmed_last_seen(self) -> None:
         client = self._client()
         full = replace(
             _magnum(True),
             absorb_v=58.0, float_v=54.0, absorb_time_hr=2.0,
             shore_amps=30, charger_amps_pct=80,
         )
-        # First cycle carries settings -> cache populated, returned unchanged.
-        self.assertIs(client._merge_last_settings(full), full)
+        # First cycle is only a candidate; a one-off bad remote decode should
+        # not make static settings flash on the display.
+        first = client._merge_last_settings(full)
+        self.assertIsNone(first.absorb_v)
+        # Repeating the same tuple confirms it.
+        confirmed = client._merge_last_settings(full)
+        self.assertEqual(confirmed.absorb_v, 58.0)
         # Next cycle has no remote packet -> fields filled from cache.
         merged = client._merge_last_settings(_magnum(True, dc_volts=52.1))
         self.assertEqual(merged.absorb_v, 58.0)
@@ -199,6 +204,11 @@ class MagnumLastSettingsTest(unittest.TestCase):
     def test_fresh_settings_update_the_cache(self) -> None:
         client = self._client()
         client._merge_last_settings(replace(_magnum(True), absorb_v=58.0))
+        client._merge_last_settings(replace(_magnum(True), absorb_v=58.0))
+        # A single different decode is held as pending, not displayed.
+        pending = client._merge_last_settings(replace(_magnum(True), absorb_v=59.5))
+        self.assertEqual(pending.absorb_v, 58.0)
+        # Repeating the decode confirms the changed static setting.
         client._merge_last_settings(replace(_magnum(True), absorb_v=59.5))
         merged = client._merge_last_settings(_magnum(True))
         self.assertEqual(merged.absorb_v, 59.5)
@@ -208,6 +218,15 @@ class MagnumLastSettingsTest(unittest.TestCase):
         merged = client._merge_last_settings(_magnum(True))
         self.assertIsNone(merged.absorb_v)
         self.assertIsNone(merged.float_v)
+
+    def test_one_off_limit_decode_does_not_flash_on(self) -> None:
+        client = self._client()
+        client._merge_last_settings(replace(_magnum(True), charger_amps_pct=0))
+        client._merge_last_settings(replace(_magnum(True), charger_amps_pct=0))
+
+        merged = client._merge_last_settings(replace(_magnum(True), charger_amps_pct=80))
+
+        self.assertEqual(merged.charger_amps_pct, 0)
 
 
 if __name__ == "__main__":

@@ -172,12 +172,10 @@ class MagnumClient:
     Uses asyncio.run() internally; safe to call from synchronous code.
     """
 
-    # 20 cycles (was 10): tolerate more missed reads before logging a failure.
-    # Magnum read failures rose sharply once the EPEver PV was connected (a
-    # physical/RS485 issue, not charging-current-correlated -- see
-    # engineering-plan item 12); this just quiets the warnings until the wiring
-    # is investigated. A failing read can now take up to ~max_cycles*0.5 s, but
-    # it runs on the Magnum actor thread so it never stalls the main poll tick.
+    # Wait long enough to join a valid bus cycle, but fail promptly now that the
+    # Magnum tap is on a clean CH340 interface. A failing read can take up to
+    # ~max_cycles*0.5 s, but it runs on the Magnum actor thread so it never
+    # stalls the main poll tick.
     # The remote packet (charge setpoints, shore/charger limits) is not present
     # in every bus cycle, so these fields are frequently None on an otherwise
     # healthy read. Carry forward the last seen values so consumers (e.g. the
@@ -185,10 +183,11 @@ class MagnumClient:
     # cycle and strobing everything below them.
     _SETTINGS_FIELDS = ("absorb_v", "float_v", "absorb_time_hr", "shore_amps", "charger_amps_pct")
 
-    def __init__(self, device: str, max_cycles: int = 20) -> None:
+    def __init__(self, device: str, max_cycles: int = 10) -> None:
         self._device = device
         self._max_cycles = max_cycles
         self._last_settings: dict[str, float | int] = {}
+        self._pending_settings: dict[str, float | int] | None = None
 
     def read(self) -> MagnumSnapshot | None:
         if self._device and not os.path.exists(self._device):
@@ -207,16 +206,32 @@ class MagnumClient:
         return self._merge_last_settings(snapshot) if snapshot is not None else None
 
     def _merge_last_settings(self, snapshot: MagnumSnapshot) -> MagnumSnapshot:
-        """Update the last-known charge settings from this cycle, and fill any
-        that the cycle's remote packet didn't carry from the cached values."""
-        fill: dict[str, float | int] = {}
+        """Fill settings from a confirmed cache, ignoring one-off remote decodes.
+
+        The Magnum remote packet is intermittent, and on a noisy/framing-imperfect
+        tap an occasional parseable-but-wrong remote decode can make static charge
+        settings appear to jump. Require a newly decoded settings tuple to repeat
+        before accepting it as the value to display and persist.
+        """
+        decoded = self._settings_from_snapshot(snapshot)
+        if decoded:
+            if decoded == self._last_settings or decoded == self._pending_settings:
+                self._last_settings = decoded
+                self._pending_settings = None
+            else:
+                self._pending_settings = decoded
+
+        fill: dict[str, float | int | None] = {}
         for field in self._SETTINGS_FIELDS:
-            value = getattr(snapshot, field)
-            if value is not None:
-                self._last_settings[field] = value
-            elif field in self._last_settings:
-                fill[field] = self._last_settings[field]
-        return replace(snapshot, **fill) if fill else snapshot
+            fill[field] = self._last_settings.get(field)
+        return replace(snapshot, **fill)
+
+    def _settings_from_snapshot(self, snapshot: MagnumSnapshot) -> dict[str, float | int]:
+        return {
+            field: value
+            for field in self._SETTINGS_FIELDS
+            if (value := getattr(snapshot, field)) is not None
+        }
 
     async def _read_async(self) -> MagnumSnapshot | None:
         async with MagnumBus(self._device) as bus:
