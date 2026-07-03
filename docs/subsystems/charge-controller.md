@@ -201,26 +201,26 @@ The Eco-Worthy ESM-100/BMS should be the first battery SOC/current source for th
 
 See [Charge Management](../charge-management.md) for the policy that compares Classic charge settings against BMS-advertised CVL/CCL and raises read-only alerts for cell-voltage and cell-delta conditions.
 
-WhizBang Jr is currently connected to AUX2. The Eco-Worthy BMS/ESM-100 over CAN is the primary battery current and SOC source, making WhizBang Jr redundant. AUX1 is free; AUX2 will be repurposed as the hardware charge-disable input after WhizBang Jr is removed.
+AUX2 was previously connected to WhizBang Jr; that wiring has been removed. The Eco-Worthy BMS/ESM-100 over CAN is the primary battery current and SOC source, making WhizBang Jr redundant. AUX1 is free; AUX2 has been repurposed as the hardware charge-disable input.
 
 ## AUX2 — Hardware Charge Disable
 
-AUX2 is the selected hardware charge-disable line. The supervisor drives relay CH2 (GPIO 27) to apply a high voltage signal (>6 V) to the AUX2+ terminal whenever it commands 0 A to the Classic, forcing the Classic to Resting independent of Modbus write success.
+AUX2 is the hardware charge-disable line. The supervisor drives relay CH2 (GPIO 27) to apply a high voltage signal (>6 V) to the AUX2+ terminal whenever it commands 0 A to the Classic, forcing the Classic to Resting independent of Modbus write success.
 
 AUX2 has two terminals: AUX2+ (signal) and AUX2− (GND reference). It is a voltage input when configured as an input function. Maximum input voltage is 15 V; minimum is 0 V.
 
-**TODO:** Remove WhizBang Jr wiring from Classic AUX2 terminals.
+Relay CH2 is wired: COM → 12 V supply (shares GND with Classic); NO → Classic AUX2+ terminal; Classic AUX2− → GND. When the relay closes, 12 V (>6 V threshold) is applied to AUX2+ and the Classic enters Resting.
 
-**TODO:** Reconfigure AUX2 to "Active HIGH (input) turn off" (register 4165, AUX2 function value 15 — >6 V on AUX2+ forces Classic to Resting). Current register 4165 value is 0x5201 (encodes WhizBang Jr on AUX2, Auto mode). Target value is **0x4F01** (AUX2 function = 15, Auto; AUX1 unchanged). Write via the existing `unlock_ethernet_writes` + `write_register` path and force EEprom save (ForceEEpromUpdateWriteF). Verify via Classic front panel or `scripts/classic-probe.py` that the function changed and persists across a Classic power cycle.
+AUX2 is reconfigured to "Active HIGH (input) turn off" (register 4165, AUX2 function value 15 — >6 V on AUX2+ forces Classic to Resting). Register 4165 is now **0x4F01** (AUX2 function = 15, Auto; AUX1 unchanged), written and EEPROM-persisted via `scripts/classic-aux2-config.py`.
 
-**TODO:** Wire relay CH2: COM → 12 V supply (shares GND with Classic); NO → Classic AUX2+ terminal; Classic AUX2− → GND. When the relay closes, 12 V (>6 V threshold) is applied to AUX2+ and the Classic enters Resting.
+Charge disablement via the allocator has been confirmed working end-to-end: the allocator commanding 0 A / disable to the Classic closes relay CH2, AUX2 sees >6 V, and the Classic enters Resting.
 
 Known AUX functions relevant to this project (from register map Table 4165-4):
 
 | AUX port | Function | Value | Behavior | Status |
 |---|---|---:|---|---|
-| AUX2 | WhizBang Jr | 18 | Aux 2 commands and receives WB Jr data | **Currently wired** — remove to free AUX2 |
-| AUX2 | Active HIGH (input) turn off | 15 | >6 V on AUX2+ forces Classic to Resting (0–15 V input) | **Selected** — TODO: write 0x4F01 to register 4165 |
+| AUX2 | WhizBang Jr | 18 | Aux 2 commands and receives WB Jr data | Removed |
+| AUX2 | Active HIGH (input) turn off | 15 | >6 V on AUX2+ forces Classic to Resting (0–15 V input) | **Active** — register 4165 = 0x4F01, relay CH2 wired and confirmed working |
 | AUX2 | Active HIGH (input) Float | 17 | >6 V on AUX2+ forces Classic to Float | Available for future use |
 | AUX1 | — | — | Output only (relay or 0–14 V signal); not used for charge disable | Free |
 
