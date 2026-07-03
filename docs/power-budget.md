@@ -153,6 +153,41 @@ Caveats to honor at expansion time:
   operator-set `BATTERY_CAPACITY_AH` in `/etc/offgrid-power.env` — update it
   when packs are added or removed.
 
+## Array 2 sizing (provisional, EPEver PV2 — sketched 2026-07-02)
+
+A future array 2 at a different site would land on the EPEver's reserved PV2
+input (INDE mode, its own MPPT channel). Electrical envelope for CS6X-class
+(~45 V Voc, 72-cell) modules:
+
+- **Series: 4s is the ceiling and the choice.** 4s cold Voc ~220 V vs the
+  250 V limit (safe to ~−90 °C); 5s sits at the 225 V/25 °C limit with zero
+  margin and crosses 250 V at ~−8 °C. (For reference, the same arithmetic
+  limits the lost Victron 150/85 to 2s at this climate — any 3s+ string
+  exceeds its 145/150 V limits on ordinary winter mornings.)
+- **Parallel: 5 legs is the spec ceiling** (5 × 8.9 A Isc = 44.4 A vs the
+  50 A per-input limit; 6 legs is over). Per-string 15 A fuses required
+  beyond 2 legs. At 5 legs the feeder design current is ~69 A (Isc × 1.56) —
+  size conductors accordingly.
+- **Power sharing:** the controller's 100 A battery-side ceiling (~5.2 kW) is
+  shared across both inputs; array 1 already brings 3.6 kW of nameplate.
+  Overpaneling past the ceiling is correct for a winter-driven system
+  (December output runs 15–20% of nameplate; clipping only occurs in
+  curtailment season), but the marginal *summer* value of legs beyond ~2 is
+  zero.
+
+Winter value, assuming a clear solstice sightline at 45° tilt (the point of
+picking a new site): each 4s leg (~1.2 kW) ≈ **1.2–1.3 kWh/day in the darkest
+weeks**. **4s4p (16 panels, 4.8 kW) stacked on the as-built system clears the
+full-occupancy winter load (~5.7 kWh/day) with margin in a mean year — the
+configuration that retires the generator at full load**, which no storage
+purchase can do (see the battery section above). The fifth leg buys
+worst-of-decade overcast margin at the cost of a heavier feeder.
+
+Site selection is the whole game: an AR solstice-path survey at the candidate
+site *before* trenching (the array 1 lesson) is worth more than the fifth
+leg. December beam passage is the number that decides whether a leg delivers
+1.3 kWh/day or its diffuse-only floor (~0.4).
+
 ## Open measurements
 
 In rough order of information value:
