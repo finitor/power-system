@@ -447,6 +447,14 @@ class ApiWeatherDisplayTest(unittest.TestCase):
 
         self.assertIn("Using last cached weather", rendered)
 
+    def test_render_api_weather_marks_too_stale_as_unreachable(self) -> None:
+        report = self._report(stale=True)
+        rendered = render_api_weather(weather_api_payload(report), now=report.fetched_at + timedelta(hours=1, minutes=1))
+
+        self.assertIn("Weather service unreachable since", rendered)
+        self.assertIn("Weather unavailable", rendered)
+        self.assertNotIn("Current\n", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

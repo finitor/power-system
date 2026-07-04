@@ -343,6 +343,24 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("Weather service has been unreachable since", html)
         self.assertNotIn("12.4C", html)
 
+    def test_browser_weather_marks_too_stale_as_unreachable(self) -> None:
+        fetched_at = datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc)
+        report = WeatherReport(
+            label="Cabin",
+            fetched_at=fetched_at,
+            data={"current": {"temperature_2m": 12.4, "weather_code": 1}},
+            stale=True,
+            error="network unavailable",
+        )
+
+        html = render_browser_weather(weather_api_payload(report), now=fetched_at + timedelta(hours=1, minutes=1))
+
+        self.assertIn('<div class="primary-cell">Weather</div>', html)
+        self.assertIn("Weather service unreachable", html)
+        self.assertIn("Weather service unreachable since", html)
+        self.assertIn("Weather unavailable", html)
+        self.assertNotIn('<div class="primary-cell">12.4C</div>', html)
+
     def test_protection_text_helper(self) -> None:
         self.assertIsNone(_protection_text(None, None))
         self.assertEqual(_protection_text(True, False), "GFP on  Arc off")

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import shutil
 
 from .charge_stage import NormalizedStage
@@ -10,6 +10,7 @@ from .terminal_display import format_cell_location_for_display, format_updated_t
 
 
 ROW_LABEL_WIDTH = 21
+WEATHER_STALE_AFTER = timedelta(hours=1)
 
 
 def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
@@ -92,19 +93,22 @@ def render_api_weather(payload: dict, now: datetime | None = None) -> str:
     width = min(shutil.get_terminal_size((100, 30)).columns, 120)
     label = payload.get("label") or "Weather"
     observed_at = _parse_datetime(payload.get("observed_at"))
+    too_stale = _weather_too_stale(payload, observed_at, now=now)
 
     lines: list[str] = [f"Off-Grid Weather - {label}".ljust(width)]
     if observed_at is None:
         lines.append("As of: unavailable")
     else:
         lines.append(f"As of: {format_updated_time(observed_at)}")
+    if too_stale:
+        lines.append(f"Weather service unreachable since {format_updated_time(observed_at)}.")
     if payload.get("stale"):
         lines.append("Using last cached weather; WAN fetch failed.")
     if payload.get("error"):
         lines.append(f"Note: {payload['error']}")
 
     current = payload.get("current")
-    if not current:
+    if not current or too_stale:
         lines.append("")
         lines.append("Weather unavailable")
         return "\n".join(lines)
@@ -180,6 +184,13 @@ def render_api_weather(payload: dict, now: datetime | None = None) -> str:
     lines.extend(_aurora_lines(astronomy.get("aurora")))
 
     return "\n".join(lines)
+
+
+def _weather_too_stale(payload: dict, observed_at: datetime | None, now: datetime | None = None) -> bool:
+    if not payload.get("current") or not payload.get("stale") or observed_at is None:
+        return False
+    reference = (now or datetime.now().astimezone()).astimezone()
+    return reference - observed_at.astimezone() >= WEATHER_STALE_AFTER
 
 
 def _aurora_lines(aurora: object) -> list[str]:

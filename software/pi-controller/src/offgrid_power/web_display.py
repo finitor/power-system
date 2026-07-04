@@ -552,21 +552,31 @@ def _trim_browser_snapshot_header(rendered: str) -> str:
     return rendered
 
 
-def render_browser_weather(payload: dict | None, annotations: list[str] | None = None) -> str:
+def render_browser_weather(payload: dict | None, annotations: list[str] | None = None, now: datetime | None = None) -> str:
     payload = payload or {}
     current = payload.get("current")
     observed_at = _parse_payload_time(payload.get("observed_at"))
     stale = bool(payload.get("stale"))
     label = payload.get("label") or "Weather"
+    too_stale = (
+        bool(current)
+        and stale
+        and observed_at is not None
+        and (now or datetime.now().astimezone()).astimezone() - observed_at.astimezone() >= WEATHER_STALE_AFTER
+    )
     updated = format_updated_time(observed_at) if observed_at is not None else "unavailable"
     status_text = "stale forecast" if stale and current else "forecast" if current else "Weather unavailable"
     primary = "Weather"
-    if current:
+    if too_stale:
+        status_text = "Weather service unreachable"
+    elif current:
         primary = _format_number(current.get("temperature_c"), "C", decimals=1) or "--"
         condition = (current.get("condition") or {}).get("text") or "unknown"
         status_text = f"{label}: {condition}"
     annotation_suffix = (" (" + ", ".join(annotations) + ")") if annotations else ""
-    rendered = _trim_browser_weather_header(render_api_weather(payload))
+    rendered = _trim_browser_weather_header(render_api_weather(payload, now=now))
+    if too_stale:
+        rendered = f"Weather service unreachable since {updated}.\n\n{rendered}"
     lines = [
         "<!doctype html>",
         "<html>",
