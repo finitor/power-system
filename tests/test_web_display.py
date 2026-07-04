@@ -284,6 +284,21 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn("network unavailable", html)
         self.assertIn("XMLHttpRequest", html)
 
+    def test_renders_kindle_weather_refreshing_state(self) -> None:
+        report = WeatherReport(
+            label="Cabin",
+            fetched_at=datetime(2026, 6, 6, 14, 30, tzinfo=timezone.utc),
+            data={},
+            stale=True,
+            error="weather refresh in progress",
+        )
+
+        html = render_kindle_weather(weather_api_payload(report))
+
+        self.assertIn("Refreshing weather", html)
+        self.assertIn("Refreshing weather...", html)
+        self.assertNotIn("weather refresh in progress", html)
+
     def test_renders_browser_weather_dark_terminal_flow(self) -> None:
         report = WeatherReport(
             label="Cabin",

@@ -186,6 +186,23 @@ class WeatherApiPayloadTest(unittest.TestCase):
 
 
 class WeatherServiceRefreshTest(unittest.TestCase):
+    def test_get_cached_returns_refreshing_placeholder_without_fetching(self) -> None:
+        service = WeatherService(WeatherConfig(latitude=1.0, longitude=2.0, label="X"))
+        calls = []
+
+        def fake_fetch(reference, cached):
+            calls.append(reference)
+            return WeatherReport(label="X", fetched_at=reference, data={})
+
+        service._fetch_and_store = fake_fetch
+
+        report = service.get_cached(now=datetime.fromisoformat("2026-06-13T08:30:00-04:00"))
+
+        self.assertEqual(calls, [])
+        self.assertEqual(report.label, "X")
+        self.assertTrue(report.stale)
+        self.assertEqual(report.error, "weather unavailable")
+
     def test_request_refresh_fetches_in_background_without_blocking(self) -> None:
         service = WeatherService(WeatherConfig(latitude=1.0, longitude=2.0, label="X"))
         done = threading.Event()
@@ -224,6 +241,41 @@ class WeatherServiceRefreshTest(unittest.TestCase):
         deadline = threading.Event()
         deadline.wait(0.1)
         self.assertEqual(len(calls), 1)
+
+    def test_request_refresh_if_needed_skips_fresh_cache(self) -> None:
+        service = WeatherService(WeatherConfig(latitude=1.0, longitude=2.0, label="X"))
+        fetched_at = datetime.fromisoformat("2026-06-13T08:30:00-04:00")
+        service._report = WeatherReport(
+            label="X",
+            fetched_at=fetched_at,
+            data={
+                "current": {
+                    "temperature_2m": 12.0,
+                    "cloud_cover": 20,
+                    "shortwave_radiation": 1,
+                    "direct_radiation": 1,
+                    "diffuse_radiation": 1,
+                    "direct_normal_irradiance": 1,
+                },
+                "daily": {
+                    "sunrise": ["2026-06-13T05:30"],
+                    "sunset": ["2026-06-13T21:30"],
+                    "moon_phase": [0.25],
+                },
+                "aurora": {"tonight": {"peak_kp": 1.0}},
+            },
+        )
+        calls = []
+
+        def fake_fetch(reference, cached):
+            calls.append(reference)
+            return service._report
+
+        service._fetch_and_store = fake_fetch
+
+        service.request_refresh_if_needed(now=fetched_at)
+
+        self.assertEqual(calls, [])
 
 
 if __name__ == "__main__":

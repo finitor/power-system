@@ -66,6 +66,38 @@ class WeatherService:
                 return cached
         return self._fetch_and_store(reference, cached)
 
+    def get_cached(self, now: datetime | None = None) -> WeatherReport:
+        """Return the latest cached report without touching the network."""
+        reference = (now or datetime.now().astimezone()).astimezone()
+        with self._lock:
+            cached = self._report or self._read_cache()
+            if cached is not None:
+                self._report = cached
+                return cached
+            refreshing = self._refreshing
+        return WeatherReport(
+            label=self.config.label,
+            fetched_at=reference,
+            data={},
+            stale=True,
+            error="weather refresh in progress" if refreshing else "weather unavailable",
+        )
+
+    def request_refresh_if_needed(self, now: datetime | None = None) -> None:
+        """Start a background refresh only when cached weather is missing or stale."""
+        reference = (now or datetime.now().astimezone()).astimezone()
+        with self._lock:
+            cached = self._report or self._read_cache()
+            if (
+                cached is not None
+                and cached.label == self.config.label
+                and report_has_required_current_fields(cached)
+                and reference - cached.fetched_at.astimezone() < self.config.refresh
+            ):
+                self._report = cached
+                return
+        self.request_refresh()
+
     def request_refresh(self) -> None:
         """Fetch fresh weather in the background; the new report lands on a
         later get(). Fire-and-forget so a manual panel switch never blocks on

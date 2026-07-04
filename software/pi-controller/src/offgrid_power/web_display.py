@@ -382,11 +382,15 @@ def render_kindle_weather(
     stale = bool(payload.get("stale"))
     error = payload.get("error")
     label = payload.get("label") or "Weather"
+    refreshing = error == "weather refresh in progress"
     status_text = "Weather unavailable"
     updated = "never"
     if current:
         updated = format_kindle_time(observed_at) if observed_at is not None else "never"
         status_text = "stale forecast" if stale else "forecast"
+    elif refreshing:
+        updated = format_kindle_time(observed_at) if observed_at is not None else "now"
+        status_text = "Refreshing weather"
     too_stale = (
         bool(current)
         and stale
@@ -447,16 +451,17 @@ def render_kindle_weather(
         if error:
             lines.append(f'<p class="small">{escape(error)}</p>')
     elif not current:
+        message = "Refreshing weather..." if refreshing else "Weather unavailable."
         lines.extend(
             [
                 '<table class="summary-table">',
                 f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">{timestamp_line}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Conditions</h2>",
-                "<p>Weather unavailable.</p>",
+                f"<p>{escape(message)}</p>",
             ]
         )
-        if error:
+        if error and not refreshing:
             lines.append(f'<p class="small">{escape(error)}</p>')
     else:
         temp = _format_number(current.get("temperature_c"), "C", decimals=1)
@@ -1952,16 +1957,22 @@ def run_display_server(
                 self.end_headers()
                 self.wfile.write(body)
                 return
-            if urlparse(self.path).path == "/healthz":
+            parsed_path = urlparse(self.path).path
+            if parsed_path == "/healthz":
                 load_summary = None
                 weather_report = None
+            elif parsed_path in _WEATHER_VIEW_PATHS:
+                if weather_refresh is not None:
+                    weather_refresh()
+                load_summary = load_summary_provider() if load_summary_provider is not None else load_tracker.update(snapshot)
+                weather_report = weather_provider() if weather_provider is not None else None
             elif load_summary_provider is not None:
                 load_summary = load_summary_provider()
-                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in _WEATHER_VIEW_PATHS else None
+                weather_report = None
             else:
                 load_summary = load_tracker.update(snapshot)
-                weather_report = weather_provider() if weather_provider is not None and urlparse(self.path).path in _WEATHER_VIEW_PATHS else None
-            allocation_path = urlparse(self.path).path
+                weather_report = None
+            allocation_path = parsed_path
             if allocation_path == "/api/v1/control/allocation/status":
                 response = _json_response(
                     HTTPStatus.OK,
