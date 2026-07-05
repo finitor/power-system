@@ -7,6 +7,15 @@ emailing, with ping URLs in `/etc/offgrid-power.env`:
 - **`supervisor-degraded`** (`HC_SUPERVISOR_DEGRADED_URL`) — *active*: pings `/fail` on any
   `/api/v1/health` WARNING/ERROR and a recovery ping when it clears
   (`scripts/supervisor-degraded-notify.sh`, debounced 120 s).
+- **`bms-protection`** (`HC_BMS_PROTECTION_URL`) — *dedicated high-urgency channel*: pings
+  `/fail` the moment `/api/v1/health` carries a `BMS protection:` condition — i.e. the
+  battery's own hardware cutoff (cell over/under voltage, over/under temperature,
+  over-current) has engaged. In a normally supervised system this must never happen, so
+  it gets its own check (configure it for immediate push/SMS) rather than being diluted on
+  the shared degraded channel. Fires on protections only; BMS *alarms* (pre-trip WARNINGs)
+  stay on `supervisor-degraded`. Runs every 1 min, debounce `BMS_PROTECTION_AFTER_S`
+  (default 0 = alert at once). Unreachable/unparseable health is *not* treated as a trip —
+  that failure mode belongs to the degraded/watchdog checks. (`scripts/bms-protection-notify.sh`.)
 - **`supervisor-watchdog`** (`HC_SUPERVISOR_WATCHDOG_URL`) — *wired*: pings on the
   blackout escalation (`scripts/supervisor-watchdog.sh`). The watchdog itself is still
   **dry-run**, so it currently reports "would reboot" rather than rebooting.
@@ -95,13 +104,16 @@ The watchdog reads these from `/etc/offgrid-power.env` (already loaded via the
 service `EnvironmentFile`). All optional — **unset = the seam is inert (log only)**:
 
 ```sh
-# Both set and live (base URLs, no trailing slash):
+# Set and live (base URLs, no trailing slash):
 HC_SUPERVISOR_WATCHDOG_URL=https://hc-ping.com/<uuid>
 HC_SUPERVISOR_DEGRADED_URL=https://hc-ping.com/<uuid>
+HC_BMS_PROTECTION_URL=https://hc-ping.com/<uuid>   # dedicated high-urgency BMS-cutoff channel
 ```
 
 Future checks follow the same `HC_<CHECK>_URL` convention (`HC_PI_LIVENESS_URL`,
-`HC_BATTERY_LOW_URL`).
+`HC_BATTERY_LOW_URL`). Until `HC_BMS_PROTECTION_URL` is provisioned, the
+`offgrid-bms-protection-notify.timer` still runs but only logs (inert seam) — provision
+it a check with **immediate push/SMS** so a hardware cutoff pages, not just emails.
 
 `scripts/supervisor-watchdog.sh::notify()` already POSTs `{url}` (recovery) or
 `{url}/fail` (escalation/cooldown) with a descriptive body, `curl --retry 3 -m 10`,

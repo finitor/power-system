@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodic BMS-protection check (dedicated Healthchecks reporting)
+
+[Timer]
+# 5min post-boot grace so the supervisor warms up (first snapshot) before we
+# could read battery status. Runs every minute: a hardware cutoff is urgent, so
+# detect it faster than the routine degraded channel.
+OnBootSec=5min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target
