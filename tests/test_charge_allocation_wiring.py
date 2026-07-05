@@ -47,38 +47,43 @@ from snapshot_helpers import (  # noqa: E402
 )
 
 
-def _battery_with_limits(*, ccl_a: float, charge_enable: bool, current_a: float = 10.0):
+def _battery_with_limits(
+    *, ccl_a: float, charge_enable: bool, current_a: float = 10.0, include_request_flags: bool = True
+):
     """Battery snapshot carrying a CCL (0x351), pack current (0x356), and the
-    charge-enable request flag (0x35C) -- exercises the request_flags path."""
+    charge-enable request flag (0x35C) -- exercises the request_flags path.
+
+    Set ``include_request_flags=False`` to drop the 0x35C frame entirely (models a
+    momentarily missing request-flags frame while other frames arrive)."""
     ccl_raw = int(round(ccl_a * 10)) & 0xFFFF
     cur_raw = int(round(current_a * 10)) & 0xFFFF
     temp_raw = int(round(20.0 * 10)) & 0xFFFF
-    return decode_pylon_snapshot(
-        [
-            CanFrame(0x351, bytes([0x48, 0x02, ccl_raw & 0xFF, ccl_raw >> 8, 0, 0, 0, 0])),
-            # 52.0 V: ordinary pack voltage; this test stays focused on the CCL
-            # / charge-enable path.
-            CanFrame(
-                0x356,
-                bytes(
-                    [
-                        0x08,
-                        0x02,
-                        cur_raw & 0xFF,
-                        cur_raw >> 8,
-                        temp_raw & 0xFF,
-                        temp_raw >> 8,
-                        0,
-                        0,
-                    ]
-                ),
+    frames = [
+        CanFrame(0x351, bytes([0x48, 0x02, ccl_raw & 0xFF, ccl_raw >> 8, 0, 0, 0, 0])),
+        # 52.0 V: ordinary pack voltage; this test stays focused on the CCL
+        # / charge-enable path.
+        CanFrame(
+            0x356,
+            bytes(
+                [
+                    0x08,
+                    0x02,
+                    cur_raw & 0xFF,
+                    cur_raw >> 8,
+                    temp_raw & 0xFF,
+                    temp_raw >> 8,
+                    0,
+                    0,
+                ]
             ),
-            CanFrame(0x35C, bytes([0x80 if charge_enable else 0x00, 0, 0, 0, 0, 0, 0, 0])),
-            # Populate status too, so reusing the wrong attribute (status vs
-            # request_flags) for charge-enable would throw and fail the test.
-            CanFrame(0x359, bytes(8)),
-        ]
-    )
+        ),
+        # Populate status too, so reusing the wrong attribute (status vs
+        # request_flags) for charge-enable would throw and fail the test.
+        CanFrame(0x359, bytes(8)),
+    ]
+    if include_request_flags:
+        frames.append(CanFrame(0x35C, bytes([0x80 if charge_enable else 0x00, 0, 0, 0, 0, 0, 0, 0])))
+    return decode_pylon_snapshot(frames)
 
 
 class _FakeRecorder:
@@ -693,6 +698,76 @@ class DryRunRecordingTest(unittest.TestCase):
         logger = ChargeAllocationLogger(ChargeCurrentAllocator())
         logger.record(make_snapshot(), recorder)  # no chargers -> nothing logged
         self.assertEqual(recorder.events, [])
+
+
+class ChargeEnableResolutionRecordTest(unittest.TestCase):
+    """End-to-end: a missing request-flags frame must not disable charge, and a
+    genuine BMS stop still must."""
+
+    def _active_classic(self):
+        return make_classic_telemetry(
+            pv_voltage_v=120.0,
+            pv_current_a=6.0,
+            battery_voltage_v=54.0,
+            battery_current_a=10.0,
+            charge_stage="BulkMppt",
+        )
+
+    def test_missing_request_flags_does_not_disable_charge(self) -> None:
+        # The exact 06:25 event: 0x351/0x356 present, 0x35C absent. Must release,
+        # not disable, and flag the degraded state loudly.
+        snapshot = make_snapshot(
+            battery=_battery_with_limits(
+                ccl_a=40.0, charge_enable=True, include_request_flags=False
+            ),
+            classic=self._active_classic(),
+        )
+        recorder = _FakeRecorder()
+        decision = ChargeAllocationLogger(ChargeCurrentAllocator()).record(snapshot, recorder)
+
+        self.assertNotEqual(decision.reason, "BMS charge disabled")
+        self.assertFalse(decision.targets["classic"].disable)
+        degraded = [e for e in recorder.events if e.event == "charge_enable_degraded"]
+        self.assertEqual(len(degraded), 1)
+        self.assertTrue((degraded[0].detail or {})["degraded"])
+        self.assertTrue((degraded[0].detail or {})["charge_enabled"])
+
+    def test_single_dropped_frame_after_good_read_holds_enabled(self) -> None:
+        # Good read then a dropped frame moments later (within grace): hold enabled,
+        # no disable, no degraded transition.
+        logger = ChargeAllocationLogger(ChargeCurrentAllocator())
+        recorder = _FakeRecorder()
+        good = make_snapshot(
+            battery=_battery_with_limits(ccl_a=40.0, charge_enable=True),
+            classic=self._active_classic(),
+        )
+        dropped = make_snapshot(
+            battery=_battery_with_limits(
+                ccl_a=40.0, charge_enable=True, include_request_flags=False
+            ),
+            classic=self._active_classic(),
+        )
+        logger.record(good, recorder)
+        decision = logger.record(dropped, recorder)
+
+        self.assertFalse(decision.targets["classic"].disable)
+        self.assertEqual(
+            [e for e in recorder.events if e.event == "charge_enable_degraded"], []
+        )
+
+    def test_genuine_bms_stop_still_disables(self) -> None:
+        snapshot = make_snapshot(
+            battery=_battery_with_limits(ccl_a=40.0, charge_enable=False),
+            classic=self._active_classic(),
+        )
+        recorder = _FakeRecorder()
+        decision = ChargeAllocationLogger(ChargeCurrentAllocator()).record(snapshot, recorder)
+
+        self.assertEqual(decision.reason, "BMS charge disabled")
+        self.assertTrue(decision.targets["classic"].disable)
+        self.assertEqual(
+            [e for e in recorder.events if e.event == "charge_enable_degraded"], []
+        )
 
 
 if __name__ == "__main__":

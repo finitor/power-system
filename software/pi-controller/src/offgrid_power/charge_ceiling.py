@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 import threading
+import time
 
-from .canbus import PylonCanSnapshot
+from .canbus import PylonCanSnapshot, PylonRequestFlags
 
 # The CCL scaling factor is an operator knob (it scales the BMS charge-current
 # limit down to a working budget near the taper knee). Keep it inside a sane
@@ -201,6 +202,102 @@ class ChargeCeiling:
             min(bms_ccl_a, bms_ccl_a * config.bms_ccl_scaling_factor),
         )
         return ChargeCeilingResult(round(allowance_a, 1), "BMS CCL fraction")
+
+
+@dataclass(frozen=True)
+class ChargeEnableResolution:
+    """Resolved BMS charge-enable command.
+
+    ``degraded`` is True when the resolver had no fresh request-flags frame and is
+    running on a held/defaulted value -- the signal for health to go loud.
+    """
+
+    charge_enabled: bool
+    degraded: bool
+    reason: str
+
+
+class ChargeEnableResolver:
+    """Fault-tolerant resolver for the BMS charge-enable request.
+
+    The Pylon 0x35C request-flags frame carries the charge-enable bit -- the
+    primary charge gate. A single dropped frame makes ``request_flags`` None, and
+    treating that momentary gap as an explicit "stop" pulses charge off. Worse, a
+    *sustained* stop is the dangerous failure for an off-grid pack: it walks the
+    bank to blackout and takes the supervisor (and its watchdog) down with it.
+    Disable-on-blindness is therefore not the conservative default -- releasing to
+    the charge controllers' own regulation is, because:
+
+      * both controllers self-regulate to a conservative absorb/float voltage well
+        below the BMS charge-voltage limit, so they cannot overcharge, and
+      * the BMS keeps independent hardware over-voltage and under-temperature
+        cutoffs regardless of this request bit or the Pi.
+
+    Note this only governs the BMS's *explicit* charge-enable bit. The cell,
+    temperature, and full-charge safety stops in :class:`ChargeCeiling` run off
+    whatever battery frames ARE present, so releasing here never bypasses them.
+
+    Policy (see docs/subsystems/charge-controller.md):
+
+      * flag present         -> use it verbatim (act on a genuine stop at once) and
+                                latch it as the last-known-good value.
+      * flag absent < hold_s -> hold last-known-good (debounce a dropped frame).
+      * flag absent >= hold_s -> RELEASE (enabled) so charging reverts to autonomous
+        (sustained blindness)   control, UNLESS an independent, CAN-agnostic ambient
+                                temperature is at/below ``cold_release_block_c`` (a
+                                blind release could cold-charge) -- then hold off.
+                                Marked ``degraded`` either way.
+    """
+
+    def __init__(
+        self,
+        *,
+        hold_s: float = 45.0,
+        cold_release_block_c: float = 2.0,
+    ) -> None:
+        self.hold_s = max(0.0, hold_s)
+        self.cold_release_block_c = cold_release_block_c
+        # Optimistic seed: with no BMS command seen yet, default to enabled. The
+        # ceiling's own safety stops still run off present battery frames, so this
+        # governs only the explicit request bit.
+        self._last_enable: bool = True
+        self._last_seen_monotonic: float | None = None
+
+    @property
+    def last_enable(self) -> bool:
+        return self._last_enable
+
+    def resolve(
+        self,
+        request_flags: PylonRequestFlags | None,
+        *,
+        ambient_c: float | None = None,
+        now: float | None = None,
+    ) -> ChargeEnableResolution:
+        current = time.monotonic() if now is None else now
+        if request_flags is not None:
+            self._last_enable = request_flags.charge_enable
+            self._last_seen_monotonic = current
+            return ChargeEnableResolution(request_flags.charge_enable, False, "bms request")
+
+        # Request-flags frame absent for this read.
+        if (
+            self._last_seen_monotonic is not None
+            and (current - self._last_seen_monotonic) < self.hold_s
+        ):
+            return ChargeEnableResolution(
+                self._last_enable, False, "hold last-known charge-enable (frame gap)"
+            )
+
+        # Sustained blindness: revert to autonomous controller regulation unless it
+        # is cold enough that a blind release risks cold-charging the pack.
+        if ambient_c is not None and ambient_c <= self.cold_release_block_c:
+            return ChargeEnableResolution(
+                False, True, f"blind + ambient {ambient_c:.1f}C <= {self.cold_release_block_c:.1f}C: hold off"
+            )
+        return ChargeEnableResolution(
+            True, True, "blind: release to controller regulation"
+        )
 
 
 def _validate_scaling_factor(fraction: float) -> float:

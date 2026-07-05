@@ -26,10 +26,11 @@ from offgrid_power.charge_allocator import (
     ChargerAllocationTarget,
     allocation_detail,
     charge_allocation_event,
+    charge_enable_degraded_event,
     charge_enable_write_event,
     charge_limit_write_event,
 )
-from offgrid_power.charge_ceiling import ChargeCeiling, ChargeCeilingConfig
+from offgrid_power.charge_ceiling import ChargeCeiling, ChargeCeilingConfig, ChargeEnableResolver
 from offgrid_power.charger_taper import (
     ChargerCurrentSettings,
     ChargerCurrentTaperController,
@@ -355,6 +356,8 @@ def main() -> int:
             target_quantum_a=_env_float("CHARGE_ALLOC_TARGET_QUANTUM_A", 5.0),
             classic_sleep_debounce_s=_env_float("CHARGE_ALLOC_CLASSIC_SLEEP_DEBOUNCE_S", 180.0),
             epever_sleep_debounce_s=_env_float("CHARGE_ALLOC_EPEVER_SLEEP_DEBOUNCE_S", 180.0),
+            charge_enable_hold_s=_env_float("CHARGE_ALLOC_ENABLE_HOLD_S", 45.0),
+            cold_release_block_c=_env_float("CHARGE_ALLOC_COLD_RELEASE_BLOCK_C", 2.0),
             override=allocation_override,
         )
         if args.charge_allocation or args.charge_allocation_dry_run
@@ -673,6 +676,8 @@ class ChargeAllocationLogger:
         target_quantum_a: float = 5.0,
         classic_sleep_debounce_s: float = 180.0,
         epever_sleep_debounce_s: float = 180.0,
+        charge_enable_hold_s: float = 45.0,
+        cold_release_block_c: float = 2.0,
         override: AllocationOverride | None = None,
     ) -> None:
         self.allocator = allocator
@@ -681,6 +686,13 @@ class ChargeAllocationLogger:
         self.live = live
         # Stateful (full-charge latch); evaluated once per cycle here.
         self.ceiling = ChargeCeiling(ceiling_config, on_scaling_change=on_scaling_change)
+        # Resolves the BMS charge-enable request with fault tolerance: a dropped
+        # 0x35C frame must not be read as a stop, and sustained blindness releases
+        # to controller regulation rather than latching charge off (blackout risk).
+        self.charge_enable_resolver = ChargeEnableResolver(
+            hold_s=charge_enable_hold_s, cold_release_block_c=cold_release_block_c
+        )
+        self._charge_enable_degraded: bool = False
         self.target_deadband_a = max(0.0, target_deadband_a)
         self.target_quantum_a = max(1.0, target_quantum_a)
         self._sleep_debounce_s = {
@@ -730,18 +742,23 @@ class ChargeAllocationLogger:
                 return None
             battery = snapshot.battery
             bms_ccl_a = battery_current_a = None
-            # Live writes must fail conservative: if the BMS charge-enable flag is
-            # unreadable, treat as disabled (stop). Dry-run can assume enabled to
-            # produce a useful trace.
-            charge_enabled = not self.live
+            request_flags = None
             if battery is not None:
                 if battery.charge_limits is not None:
                     bms_ccl_a = battery.charge_limits.charge_current_limit_a
                 if battery.measurements is not None:
                     battery_current_a = battery.measurements.current_a
-                if battery.request_flags is not None:
-                    charge_enabled = battery.request_flags.charge_enable
-            ceiling = self.ceiling.evaluate(battery, charge_enabled=charge_enabled)
+                request_flags = battery.request_flags
+            # A missing 0x35C frame (request_flags None) must NOT read as a stop:
+            # the resolver holds last-known for a grace window then releases to
+            # autonomous controller regulation (a sustained stop would blackout the
+            # pack), gated by the CAN-independent ambient sensor for cold-charge.
+            ambient_c = snapshot.ambient.temperature_c if snapshot.ambient is not None else None
+            enable_resolution = self.charge_enable_resolver.resolve(request_flags, ambient_c=ambient_c)
+            self._note_charge_enable_degraded(
+                enable_resolution, ambient_c, recorder, snapshot.captured_at
+            )
+            ceiling = self.ceiling.evaluate(battery, charge_enabled=enable_resolution.charge_enabled)
             decision = self.allocator.decide(
                 bms_ccl_a=bms_ccl_a,
                 charge_enabled=True,
@@ -769,6 +786,40 @@ class ChargeAllocationLogger:
         except Exception as exc:  # noqa: BLE001 - allocation must never kill telemetry.
             print(f"Charge allocation failed: {exc}", file=sys.stderr)
             return None
+
+    def _note_charge_enable_degraded(
+        self,
+        resolution,
+        ambient_c: float | None,
+        recorder: MetricRecorder | None,
+        captured_at: datetime,
+    ) -> None:
+        """Surface, on transition, when the BMS charge-enable command goes blind.
+
+        Durable event + a stderr line (journald) so a sustained request-flags
+        outage — and the release/hold-off the resolver chose — is loud, not silent.
+        """
+        if resolution.degraded == self._charge_enable_degraded:
+            return
+        self._charge_enable_degraded = resolution.degraded
+        if resolution.degraded:
+            print(
+                f"BMS charge-enable degraded: {resolution.reason} "
+                f"(charge_enabled={resolution.charge_enabled})",
+                file=sys.stderr,
+            )
+        else:
+            print("BMS charge-enable recovered: fresh request-flags frame", file=sys.stderr)
+        if recorder is not None:
+            recorder.record_event(
+                charge_enable_degraded_event(
+                    degraded=resolution.degraded,
+                    charge_enabled=resolution.charge_enabled,
+                    reason=resolution.reason,
+                    ambient_c=ambient_c,
+                    captured_at=captured_at,
+                )
+            )
 
     def _stabilized_decision(
         self,

@@ -148,16 +148,24 @@ def make_battery_snapshot(
     soc_percent: int = 92,
     min_cell_temperature_c: float | None = None,
     max_cell_temperature_c: float | None = None,
+    charge_enable: bool | None = True,
 ):
     """Battery snapshot with the given SOC, fixed flow, and 200Ah capacity.
 
-    Pass min/max cell temperatures in °C to include extended measurements.
+    Pass min/max cell temperatures in °C to include extended measurements. By
+    default a healthy 0x35C request-flags frame is included (charge + discharge
+    enabled); pass ``charge_enable=None`` to omit it entirely (models a dropped
+    request-flags frame), or ``charge_enable=False`` for a genuine BMS stop.
     """
     frames = [
         CanFrame(0x355, bytes([soc_percent, 0, 100, 0, 0, 0, 0, 0])),
         CanFrame(0x356, bytes.fromhex("B814D8FFA4000000")),
         CanFrame(0x379, bytes.fromhex("C800000000000000")),
     ]
+    if charge_enable is not None:
+        # 0x35C byte 0: charge_enable=0x80, discharge_enable=0x40.
+        flags_byte = 0x40 | (0x80 if charge_enable else 0x00)
+        frames.append(CanFrame(0x35C, bytes([flags_byte, 0, 0, 0, 0, 0, 0, 0])))
     if min_cell_temperature_c is not None or max_cell_temperature_c is not None:
         min_k = round((min_cell_temperature_c or 0.0) + 273.15)
         max_k = round((max_cell_temperature_c or min_cell_temperature_c or 0.0) + 273.15)

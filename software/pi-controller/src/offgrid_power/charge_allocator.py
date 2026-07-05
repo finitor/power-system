@@ -522,6 +522,34 @@ def charge_enable_write_event(
     )
 
 
+def charge_enable_degraded_event(
+    *,
+    degraded: bool,
+    charge_enabled: bool,
+    reason: str,
+    ambient_c: float | None,
+    captured_at: datetime | None = None,
+) -> TelemetryEvent:
+    """Transition event for the BMS charge-enable resolver entering/leaving its
+    degraded (no fresh request-flags frame) state.
+
+    Emitted only on change, so the store — and anyone tailing it — sees when the
+    supervisor started flying blind on the BMS charge-enable command and what it
+    did about it (held, released, or held-off for cold).
+    """
+    return TelemetryEvent(
+        captured_at=captured_at or datetime.now(timezone.utc),
+        source="charge_allocator",
+        event="charge_enable_degraded",
+        detail={
+            "degraded": degraded,
+            "charge_enabled": charge_enabled,
+            "reason": reason,
+            "ambient_c": ambient_c,
+        },
+    )
+
+
 def _waterfill_allocate(
     budget_a: float,
     weights: dict[str, float],

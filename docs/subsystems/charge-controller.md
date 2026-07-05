@@ -215,6 +215,40 @@ AUX2 is reconfigured to "Active HIGH (input) turn off" (register 4165, AUX2 func
 
 Charge disablement via the allocator has been confirmed working end-to-end: the allocator commanding 0 A / disable to the Classic closes relay CH2, AUX2 sees >6 V, and the Classic enters Resting.
 
+### BMS charge-enable fault tolerance (missing 0x35C)
+
+The allocator's charge-disable is gated on the BMS charge-enable request (Pylon
+`0x35C`, `request_flags.charge_enable`). That frame is abundant on the bus
+(~72 Hz), but the 1.5 s battery read occasionally assembles a snapshot without it
+(~1 read in 2000 — a benign gs_usb/USB delivery hiccup, **not** CAN bus
+ill-health: bus error counters stay clean). Previously a missing frame
+(`request_flags is None`) was read as "BMS said stop", pulsing charge off for one
+cycle and briefly energizing relay CH2 (observed 2026-07-05 06:25 at 74% SOC).
+
+`ChargeEnableResolver` (`charge_ceiling.py`) now separates the two conditions:
+
+- **Frame present** → use the bit verbatim; a genuine BMS stop acts immediately.
+- **Frame absent, within grace (`CHARGE_ALLOC_ENABLE_HOLD_S`, default 45 s)** →
+  hold the last-known value (debounce a dropped frame).
+- **Frame absent beyond grace (sustained blindness)** → **release** to the
+  controllers' own regulation rather than latching charge off. A sustained stop is
+  the *more dangerous* failure for an off-grid pack (it walks the bank to blackout
+  and takes the supervisor + watchdog down), and releasing is safe because both
+  controllers self-regulate to a conservative absorb/float (57.0 V, ~1.4 V below
+  the BMS CVL of 58.4 V) and the BMS keeps independent hardware over-voltage and
+  under-temperature cutoffs. This also matches the relay's own fail-off wiring: a
+  fully-dead Pi already de-energizes CH2 → charge enabled. Note total CAN loss
+  (`battery is None`) already released via the ceiling's "no battery telemetry"
+  path; this fix removes the inconsistency where *partial* loss was treated more
+  conservatively than *total* loss.
+- **Cold gate:** a blind release is suppressed (hold off) when the CAN-independent
+  ambient sensor (GPIO 4) reads at/below `CHARGE_ALLOC_COLD_RELEASE_BLOCK_C`
+  (default 2.0 °C), since with the BMS dark the supervisor can't see pack
+  temperature; the BMS hardware under-temp cutoff remains the ultimate backstop.
+
+Entering/leaving the degraded (blind) state emits a `charge_enable_degraded`
+telemetry event and a journald line, so a real request-flags outage is loud.
+
 Known AUX functions relevant to this project (from register map Table 4165-4):
 
 | AUX port | Function | Value | Behavior | Status |
