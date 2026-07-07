@@ -591,8 +591,8 @@ class WebDisplayTest(unittest.TestCase):
         # scaling the whole page down (tiny text, big right-hand gutter), and
         # arms the narrow-screen media query.
         self.assertIn(b'<meta name="viewport" content="width=device-width, initial-scale=1">', response.body)
-        self.assertIn(b'<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64">', response.body)
-        self.assertIn(b'<link rel="icon" href="/favicon.svg" type="image/svg+xml">', response.body)
+        self.assertIn(b'<link rel="icon" href="/favicon.png?v=', response.body)
+        self.assertIn(b'<link rel="icon" href="/favicon.svg?v=', response.body)
         self.assertIn(b"@media (max-width:480px)", response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
         self.assertIn(b"var LIVE_MS = 30000, RETRY_MS = 5000;", response.body)

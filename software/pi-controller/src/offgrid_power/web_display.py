@@ -33,6 +33,7 @@ FAVICON_PNG_PATH = "/favicon.png"
 FAVICON_ICO_PATH = "/favicon.ico"
 APPLE_TOUCH_ICON_PATH = "/apple-touch-icon.png"
 FAVICON_PATH = "/favicon.svg"
+FAVICON_VERSION = "20260707-bolt-transparent"
 FAVICON_PNG = base64.b64decode(
     "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"
 )
@@ -89,12 +90,13 @@ def favicon_ico_response() -> DisplayResponse:
 
 
 def _favicon_links() -> str:
+    version = f"?v={FAVICON_VERSION}"
     return "\n".join(
         [
-            f'<link rel="icon" href="{FAVICON_ICO_PATH}" sizes="any">',
-            f'<link rel="icon" href="{FAVICON_PNG_PATH}" type="image/png" sizes="64x64">',
-            f'<link rel="apple-touch-icon" href="{APPLE_TOUCH_ICON_PATH}">',
-            f'<link rel="icon" href="{FAVICON_PATH}" type="image/svg+xml">',
+            f'<link rel="icon" href="{FAVICON_ICO_PATH}{version}" sizes="any">',
+            f'<link rel="icon" href="{FAVICON_PNG_PATH}{version}" type="image/png" sizes="64x64">',
+            f'<link rel="apple-touch-icon" href="{APPLE_TOUCH_ICON_PATH}{version}">',
+            f'<link rel="icon" href="{FAVICON_PATH}{version}" type="image/svg+xml">',
         ]
     )
 
