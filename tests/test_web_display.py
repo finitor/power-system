@@ -626,7 +626,7 @@ class WebDisplayTest(unittest.TestCase):
         snapshot = make_snapshot()
         refreshed = []
 
-        for path in ("/favicon.png", "/favicon.ico"):
+        for path in ("/favicon.png", "/apple-touch-icon.png"):
             with self.subTest(path=path):
                 response = route_display_request(
                     snapshot,
@@ -638,6 +638,17 @@ class WebDisplayTest(unittest.TestCase):
                 self.assertEqual(response.status.value, 200)
                 self.assertEqual(response.content_type, "image/png")
                 self.assertTrue(response.body.startswith(b"\x89PNG\r\n\x1a\n"))
+        self.assertEqual(refreshed, [])
+
+        ico = route_display_request(
+            snapshot,
+            "/favicon.ico",
+            "Mozilla/5.0",
+            refresh_hook=lambda: refreshed.append(True),
+        )
+        self.assertEqual(ico.status.value, 200)
+        self.assertEqual(ico.content_type, "image/x-icon")
+        self.assertTrue(ico.body.startswith(b"\x00\x00\x01\x00\x01\x00"))
         self.assertEqual(refreshed, [])
 
     def test_kindle_paths_always_serve_kindle_content_regardless_of_user_agent(self) -> None:

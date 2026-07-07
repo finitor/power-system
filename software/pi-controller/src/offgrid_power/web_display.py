@@ -10,6 +10,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
+import struct
 from threading import Lock
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
@@ -30,6 +31,7 @@ BROWSER_WEATHER_REFRESH_SECONDS = 300
 BROWSER_RETRY_SECONDS = 5
 FAVICON_PNG_PATH = "/favicon.png"
 FAVICON_ICO_PATH = "/favicon.ico"
+APPLE_TOUCH_ICON_PATH = "/apple-touch-icon.png"
 FAVICON_PATH = "/favicon.svg"
 FAVICON_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAFYUlEQVR42u1ba2xURRitgAFNFX/gsqXb2tZiLWzbpdCmUPuglNpSKaW2UqyAjVDRUDFVW2wlroASHkpWE1IloI0kNoZoImobiGhIqPFREqU/DEZCjDEmaojxl4nms2eS2dy9e+/uzN7Xbnc3OcnmvuY7Z+Y787h30tIi/GbPvjkn/XbXsQWuxTfudBdQogDxIm7EnxbL76ZZs+64bb777UQirQfwAB9h8nPmzPUlWo2LtAjwikp+3i3zH51JxNUAv4g1P5PJc2i2BOTITGv2kdIhzBNmiuHJGGNIV5dM5DmCXST6y2QUALyZAMmS+1pewARIRvIhPUIyCzB3XnprUgtwa/oCf0oAKwto6V9Hdd1rKK+oJDkFAPGhz3sYuo60UeWmGspf9gB5a/1UtmGEKjePUf3OHxiadn9P/o+G2TGcwzXZBY2JnwKNuxqCIgB7zvVSz6kAdez/OEh+2+HzdHzyJToxNRQ8xlG99SKVrD1CmXlViSeAO6uUqjpP0cDYQIgIHP2f9NP+8QAjzqEWQInSdcfZMxNCgMLyHbSx7zptfuEv2h6YCCP/8kQvvXllMIR8NAGA1Y9NTqfR1vgVwO3xUXXHaUZcib4PDjHie794nAKTz4YR52h95lda+8TVqEKgNcSdABnZK6h555dh5IEtB67r1roSuLZjzx9CIlS0nzGUEqYKgJrXIw90H/w5InEOpIusCHEhgFazD0mBk5eEBHj+/G7q8v/G7kE6RBPASDqYJgAMLxJ5YN/Z94QEgE88/X4geF9T7zUhEWIxRlMEQA5yt1ej9+jf9O74P3Tpyn90+dqf9NnVb+jE1yP0yvg7NDj6KcNTw9/Sk69P0Y6jP2o+o33gdyEB0DvI+oEpApS3vKVL/sLlfxl5JXAM56K1GCUad/1kSSoYFgCjs5a+XzSD5jWvBZyTEQBliAgAyIwYDQuAISqaqFbQeuQ5ZAQQTQMAMdkmAMbpnUM3LBcAZYgKgJhsEQAzNRSoF7SZKQCICgCIziINCYDpaiQBzDRBWQEQm+UCYM6OwvRSQN0N8pqPhbxMCgCIzXIB+GKGngmaCRkTBBCb5QLwwvS6QTMh0w1y2CYABilWCyA6EHJEAKvTQLb5OyIAJixWCSA6GbJdAOWKLoCpq9nkRafDjpgg7wY5sHiBRQyzyIsuiDjWDfKBkBUiGCFv20CID4W1RDCSDqKLoo4PhflkSC8ImJdM74BrYzU8RyZDfDocLSD04RjIgKBy2Iz/OIZzsfTzevDdf4zcd1XYtyBiVuBm4L6uC5Rb1EXurOX2LYn5Gl6lNT1TjhLHemBZ6ygtqX6RPIsb7V0TXJhZTOUbR1kQdhOH8Ks6x6i0+SQtaxqm7MI2cmeX2b8snuN9kFZsOE1VWy7aRr562wQrE+SB/NIeqdo3/cWIt8bPAln50FlLU6Ju+3dU0f5hkDiApp9VsJ4yclY5+26wqO4gCwj5aEVKwOSWrx8JIV9Ud4iR99zTTK6MQmcFgB8srdnHAkOgZqUENzklcU4eeR9L7Vv2etw1LcKSqr3BICFEedsZlhqVD59juVvb/ZW0yanBmz2Ha5E3fj6QgBPDlODMWsGLiKM2OQ48E89Wkl+UWxN/3wkiKDRP1FQkEWSAZ/Emb7T2g1+KWvWtMAzJk9/AAszxbqLCykEqaXhDmjTuwb14hpo4q/281ca+Fbbya3H4AdxZGXBu8SN078rnaGntASqufy2MMI7hHK7BtVqklVjo8Rn7Wtzq/QLwAx4sxMi8uz4MSBe4uBoY04OgGqbuF0j6HSOpPUOpXWOpfYOpnaOpvcOp3eNim6oxdsYEIl6B+KSa+vTvf1zSl2U9lZ7wAAAAAElFTkSuQmCC"
@@ -44,6 +46,11 @@ FAVICON_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 <path d="M16 44c10 9 27 10 38-2-5 14-27 18-38 2z" fill="#24336c" opacity=".55"/>
 </svg>
 """
+FAVICON_ICO = (
+    struct.pack("<HHH", 0, 1, 1)
+    + struct.pack("<BBBBHHII", 64, 64, 0, 0, 1, 32, len(FAVICON_PNG), 22)
+    + FAVICON_PNG
+)
 
 # Largest single scalar-voltage nudge the API will accept. A backstop against a
 # buggy or runaway client: big moves should use an absolute voltage_v, not one
@@ -76,12 +83,16 @@ def favicon_png_response() -> DisplayResponse:
     return DisplayResponse(HTTPStatus.OK, "image/png", FAVICON_PNG)
 
 
+def favicon_ico_response() -> DisplayResponse:
+    return DisplayResponse(HTTPStatus.OK, "image/x-icon", FAVICON_ICO)
+
+
 def _favicon_links() -> str:
     return "\n".join(
         [
+            f'<link rel="icon" href="{FAVICON_ICO_PATH}" sizes="any">',
             f'<link rel="icon" href="{FAVICON_PNG_PATH}" type="image/png" sizes="64x64">',
-            f'<link rel="shortcut icon" href="{FAVICON_ICO_PATH}" type="image/png">',
-            f'<link rel="apple-touch-icon" href="{FAVICON_PNG_PATH}">',
+            f'<link rel="apple-touch-icon" href="{APPLE_TOUCH_ICON_PATH}">',
             f'<link rel="icon" href="{FAVICON_PATH}" type="image/svg+xml">',
         ]
     )
@@ -731,8 +742,10 @@ def route_display_request(
     # Both hooks only queue work for next time; this response still carries the
     # current snapshot/cached forecast, so a slow source never delays the reply.
     parsed_path = urlparse(path).path
-    if parsed_path in {FAVICON_PNG_PATH, FAVICON_ICO_PATH}:
+    if parsed_path in {FAVICON_PNG_PATH, APPLE_TOUCH_ICON_PATH}:
         return favicon_png_response()
+    if parsed_path == FAVICON_ICO_PATH:
+        return favicon_ico_response()
     if parsed_path == FAVICON_PATH:
         return favicon_response()
     if refresh_hook is not None and wants_source_refresh(path):
@@ -1983,8 +1996,11 @@ def run_display_server(
         server_version = "OffGridPowerDisplay/0.1"
 
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
-            if urlparse(self.path).path in {FAVICON_PNG_PATH, FAVICON_ICO_PATH}:
+            if urlparse(self.path).path in {FAVICON_PNG_PATH, APPLE_TOUCH_ICON_PATH}:
                 self._send_display_response(favicon_png_response())
+                return
+            if urlparse(self.path).path == FAVICON_ICO_PATH:
+                self._send_display_response(favicon_ico_response())
                 return
             if urlparse(self.path).path == FAVICON_PATH:
                 self._send_display_response(favicon_response())
