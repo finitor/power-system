@@ -591,7 +591,7 @@ class WebDisplayTest(unittest.TestCase):
         # scaling the whole page down (tiny text, big right-hand gutter), and
         # arms the narrow-screen media query.
         self.assertIn(b'<meta name="viewport" content="width=device-width, initial-scale=1">', response.body)
-        self.assertIn(b'<link rel="icon" href="/favicon.png?v=', response.body)
+        self.assertIn(b'<link rel="icon" href="/favicon.ico?v=', response.body)
         self.assertIn(b'<link rel="icon" href="/favicon.svg?v=', response.body)
         self.assertIn(b"@media (max-width:480px)", response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
@@ -638,7 +638,7 @@ class WebDisplayTest(unittest.TestCase):
 
         # The -precomposed name is probed unprompted by older iOS Safari; it is
         # served the same PNG rather than a cache-poisoning 404.
-        for path in ("/favicon.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
+        for path in ("/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
             with self.subTest(path=path):
                 response = route_display_request(
                     snapshot,

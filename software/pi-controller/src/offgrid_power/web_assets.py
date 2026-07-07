@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import struct
 
-FAVICON_PNG_PATH = "/favicon.png"
 FAVICON_ICO_PATH = "/favicon.ico"
 FAVICON_SVG_PATH = "/favicon.svg"
 APPLE_TOUCH_ICON_PATH = "/apple-touch-icon.png"
@@ -43,10 +42,10 @@ FAVICON_ICO = (
     + FAVICON_PNG
 )
 
-# path -> (content type, body)
+# path -> (content type, body). No standalone /favicon.png: the ICO wraps the
+# same 64px PNG, and every consumer prefers the ICO, the SVG, or a touch icon.
 ASSET_CONTENT: dict[str, tuple[str, bytes]] = {
     FAVICON_ICO_PATH: ("image/x-icon", FAVICON_ICO),
-    FAVICON_PNG_PATH: ("image/png", FAVICON_PNG),
     FAVICON_SVG_PATH: ("image/svg+xml", FAVICON_SVG),
     APPLE_TOUCH_ICON_PATH: ("image/png", FAVICON_PNG),
     APPLE_TOUCH_ICON_PRECOMPOSED_PATH: ("image/png", FAVICON_PNG),
@@ -58,7 +57,6 @@ def favicon_links() -> str:
     return "\n".join(
         [
             f'<link rel="icon" href="{FAVICON_ICO_PATH}{version}" sizes="any">',
-            f'<link rel="icon" href="{FAVICON_PNG_PATH}{version}" type="image/png" sizes="64x64">',
             f'<link rel="apple-touch-icon" href="{APPLE_TOUCH_ICON_PATH}{version}">',
             f'<link rel="icon" href="{FAVICON_SVG_PATH}{version}" type="image/svg+xml">',
         ]

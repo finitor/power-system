@@ -3,7 +3,6 @@
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <link rel="icon" href="/favicon.ico?v=20260707-bolt-transparent" sizes="any">
-<link rel="icon" href="/favicon.png?v=20260707-bolt-transparent" type="image/png" sizes="64x64">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=20260707-bolt-transparent">
 <link rel="icon" href="/favicon.svg?v=20260707-bolt-transparent" type="image/svg+xml">
 <script type="text/javascript">
