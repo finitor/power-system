@@ -34,6 +34,11 @@ ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.3.2:1.0", SYMLINK+="magnum-rs485"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.3.3:1.0", SYMLINK+="epever-rs485"
 
+# Telemetry SSD. If USB re-enumeration drops /srv/telemetry, ask systemd to
+# remount it when the filesystem comes back. The mount unit is generated from
+# /etc/fstab and runs fsck as needed.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{ID_FS_UUID}=="8e8a4fee-51ec-43b2-9b8b-b0a51cecf7e0", TAG+="systemd", ENV{SYSTEMD_WANTS}+="srv-telemetry.mount"
+
 # RTL8153 gigabit NIC built into the bench (port-powered) hub: unused, and
 # bus-powered draw competes with the Pi's shared USB budget. Deauthorize so
 # it never enumerates; delete this rule if the NIC is ever wanted.
