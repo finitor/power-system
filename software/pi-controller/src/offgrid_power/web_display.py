@@ -27,6 +27,17 @@ BATTERY_IDLE_CURRENT_A = 0.5
 BROWSER_POWER_REFRESH_SECONDS = 30
 BROWSER_WEATHER_REFRESH_SECONDS = 300
 BROWSER_RETRY_SECONDS = 5
+FAVICON_PATH = "/favicon.svg"
+FAVICON_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<rect width="64" height="64" rx="14" fill="#151827"/>
+<circle cx="34" cy="35" r="20" fill="#4468d8"/>
+<circle cx="29" cy="30" r="13" fill="#6587ff" opacity=".65"/>
+<path d="M23 14c7 1 12 4 15 10-8 0-13-3-15-10z" fill="#7bbf66"/>
+<path d="M36 15c-5 2-8 5-10 10 7 1 11-2 10-10z" fill="#9bd47b"/>
+<circle cx="26" cy="28" r="4" fill="#d8e2ff" opacity=".85"/>
+<path d="M16 44c10 9 27 10 38-2-5 14-27 18-38 2z" fill="#24336c" opacity=".55"/>
+</svg>
+"""
 
 # Largest single scalar-voltage nudge the API will accept. A backstop against a
 # buggy or runaway client: big moves should use an absolute voltage_v, not one
@@ -49,6 +60,14 @@ class DisplayResponse:
     status: HTTPStatus
     content_type: str
     body: bytes
+
+
+def favicon_response() -> DisplayResponse:
+    return DisplayResponse(HTTPStatus.OK, "image/svg+xml", FAVICON_SVG)
+
+
+def _favicon_links() -> str:
+    return f'<link rel="icon" href="{FAVICON_PATH}" type="image/svg+xml">'
 
 
 class SnapshotCache:
@@ -254,6 +273,7 @@ def render_kindle_snapshot(
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        _favicon_links(),
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power</title>",
         "<style>",
@@ -318,6 +338,7 @@ def render_kindle_details(
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        _favicon_links(),
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Power Details</title>",
         "<style>",
@@ -406,6 +427,7 @@ def render_kindle_weather(
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        _favicon_links(),
         _kindle_refresh_script(refresh_seconds),
         "<title>Off-Grid Weather</title>",
         "<style>",
@@ -512,6 +534,7 @@ def render_browser_snapshot(
             "<html>",
             "<head>",
             '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+            _favicon_links(),
             '<meta name="viewport" content="width=device-width, initial-scale=1">',
             _browser_refresh_script(BROWSER_POWER_REFRESH_SECONDS),
             "<title>Off-Grid Power</title>",
@@ -582,6 +605,7 @@ def render_browser_weather(payload: dict | None, annotations: list[str] | None =
         "<html>",
         "<head>",
         '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        _favicon_links(),
         '<meta name="viewport" content="width=device-width, initial-scale=1">',
         _browser_refresh_script(BROWSER_WEATHER_REFRESH_SECONDS),
         "<title>Off-Grid Weather</title>",
@@ -689,11 +713,13 @@ def route_display_request(
 ) -> DisplayResponse:
     # Both hooks only queue work for next time; this response still carries the
     # current snapshot/cached forecast, so a slow source never delays the reply.
+    parsed_path = urlparse(path).path
+    if parsed_path == FAVICON_PATH:
+        return favicon_response()
     if refresh_hook is not None and wants_source_refresh(path):
         refresh_hook()
     if weather_refresh_hook is not None and wants_weather_refresh(path):
         weather_refresh_hook()
-    parsed_path = urlparse(path).path
     if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
         return route_api_request(snapshot, parsed_path, load_summary=load_summary, allocation=allocation)
     if parsed_path == "/api/v1/weather":
@@ -1938,6 +1964,9 @@ def run_display_server(
         server_version = "OffGridPowerDisplay/0.1"
 
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
+            if urlparse(self.path).path == FAVICON_PATH:
+                self._send_display_response(favicon_response())
+                return
             try:
                 snapshot = provider()
             except Exception as exc:  # noqa: BLE001 - HTTP display should show readiness errors.
@@ -2483,6 +2512,7 @@ def render_snapshot_unavailable(exc: Exception, refresh_seconds: int = 10) -> st
             "<html>",
             "<head>",
             '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+            _favicon_links(),
             f'<meta http-equiv="refresh" content="{refresh_seconds}">',
             "<title>Off-Grid Power</title>",
             "<style>",
