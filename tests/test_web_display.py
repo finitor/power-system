@@ -621,12 +621,24 @@ class WebDisplayTest(unittest.TestCase):
         self.assertIn(b"<svg", response.body)
         self.assertIn(b"#4468d8", response.body)
         self.assertEqual(refreshed, [])
+        # Icon URLs are versioned (?v=FAVICON_VERSION), so their content never
+        # changes and browsers may cache them hard — unlike the live pages.
+        self.assertEqual(response.cache_control, "public, max-age=31536000, immutable")
+
+    def test_pages_stay_uncacheable_while_assets_cache_hard(self) -> None:
+        snapshot = make_snapshot()
+
+        page = route_display_request(snapshot, "/", "Mozilla/5.0")
+
+        self.assertEqual(page.cache_control, "no-store")
 
     def test_routes_favicon_png_and_ico_without_refreshing_sources(self) -> None:
         snapshot = make_snapshot()
         refreshed = []
 
-        for path in ("/favicon.png", "/apple-touch-icon.png"):
+        # The -precomposed name is probed unprompted by older iOS Safari; it is
+        # served the same PNG rather than a cache-poisoning 404.
+        for path in ("/favicon.png", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"):
             with self.subTest(path=path):
                 response = route_display_request(
                     snapshot,

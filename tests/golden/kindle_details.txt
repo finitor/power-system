@@ -76,9 +76,10 @@ li{line-height:1.15;}
 table{border-collapse:collapse;width:100%;}
 td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}
 td:first-child{font-size:17px;font-weight:bold;width:32%;}
+.bad{font-weight:bold;}
 .summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}
 .summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}
-.summary-table .soc-cell{font-size:30px;line-height:1;text-align:left;vertical-align:middle;width:32%;}
+.summary-table .primary-cell{font-size:30px;line-height:1;text-align:left;vertical-align:middle;width:32%;}
 .summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}
 .summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}
 .top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}
@@ -94,7 +95,7 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <a class="page-turn page-turn-left" href="/kindle">Back to Power</a>
 <a class="page-turn page-turn-right" href="/kindle/weather">Weather</a>
 <table class="summary-table">
-<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>
+<tr><td class="primary-cell">Details</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>
 </table>
 <h2>Inverter/Charger</h2>
 <table>

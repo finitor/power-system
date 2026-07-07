@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from html import escape
@@ -10,7 +9,6 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import logging
-import struct
 from threading import Lock
 from typing import Callable
 from urllib.parse import parse_qs, urlparse
@@ -21,6 +19,7 @@ from .load import LoadSampleBuffer, LoadSummary, LoadTracker
 from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot, snapshot_severity_text, snapshot_status_annotations
 from .terminal_display import format_cell_location_for_display, format_time, format_updated_time
 from .weather import WeatherReport, weather_api_payload
+from .web_assets import ASSET_CACHE_CONTROL, ASSET_CONTENT, favicon_links
 
 
 KINDLE_REFRESH_SECONDS = 60
@@ -29,30 +28,6 @@ BATTERY_IDLE_CURRENT_A = 0.5
 BROWSER_POWER_REFRESH_SECONDS = 30
 BROWSER_WEATHER_REFRESH_SECONDS = 300
 BROWSER_RETRY_SECONDS = 5
-FAVICON_PNG_PATH = "/favicon.png"
-FAVICON_ICO_PATH = "/favicon.ico"
-APPLE_TOUCH_ICON_PATH = "/apple-touch-icon.png"
-FAVICON_PATH = "/favicon.svg"
-FAVICON_VERSION = "20260707-bolt-transparent"
-FAVICON_PNG = base64.b64decode(
-    "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"
-)
-FAVICON_SVG = b"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-<circle cx="34" cy="35" r="20" fill="#4468d8"/>
-<circle cx="29" cy="30" r="13" fill="#6587ff" opacity=".65"/>
-<path d="M14 45c10 9 28 10 41-2-6 14-29 18-41 2z" fill="#24336c" opacity=".45"/>
-<path d="M21 11c8 1 14 5 18 13-9 0-15-4-18-13z" fill="#68b154"/>
-<path d="M38 12c-7 3-11 7-13 13 9 1 15-3 13-13z" fill="#92d369"/>
-<circle cx="25" cy="27" r="4" fill="#e1e8ff" opacity=".8"/>
-<path d="M39 13 25 34h9l-7 19 21-26H37z" fill="#171a27" opacity=".75"/>
-<path d="M39 13 25 34h9l-7 19 21-26H37z" fill="#ffd350"/>
-</svg>
-"""
-FAVICON_ICO = (
-    struct.pack("<HHH", 0, 1, 1)
-    + struct.pack("<BBBBHHII", 64, 64, 0, 0, 1, 32, len(FAVICON_PNG), 22)
-    + FAVICON_PNG
-)
 
 # Largest single scalar-voltage nudge the API will accept. A backstop against a
 # buggy or runaway client: big moves should use an absolute voltage_v, not one
@@ -75,30 +50,34 @@ class DisplayResponse:
     status: HTTPStatus
     content_type: str
     body: bytes
+    # Pages carry live data and must never be cached; the versioned sidecar
+    # assets override this with ASSET_CACHE_CONTROL.
+    cache_control: str = "no-store"
 
 
-def favicon_response() -> DisplayResponse:
-    return DisplayResponse(HTTPStatus.OK, "image/svg+xml", FAVICON_SVG)
+def asset_response(path: str) -> DisplayResponse | None:
+    """Response for a sidecar-asset path (favicons), or None for page paths."""
+    asset = ASSET_CONTENT.get(path)
+    if asset is None:
+        return None
+    content_type, body = asset
+    return DisplayResponse(HTTPStatus.OK, content_type, body, cache_control=ASSET_CACHE_CONTROL)
 
 
-def favicon_png_response() -> DisplayResponse:
-    return DisplayResponse(HTTPStatus.OK, "image/png", FAVICON_PNG)
-
-
-def favicon_ico_response() -> DisplayResponse:
-    return DisplayResponse(HTTPStatus.OK, "image/x-icon", FAVICON_ICO)
-
-
-def _favicon_links() -> str:
-    version = f"?v={FAVICON_VERSION}"
-    return "\n".join(
-        [
-            f'<link rel="icon" href="{FAVICON_ICO_PATH}{version}" sizes="any">',
-            f'<link rel="icon" href="{FAVICON_PNG_PATH}{version}" type="image/png" sizes="64x64">',
-            f'<link rel="apple-touch-icon" href="{APPLE_TOUCH_ICON_PATH}{version}">',
-            f'<link rel="icon" href="{FAVICON_PATH}{version}" type="image/svg+xml">',
-        ]
-    )
+def _page_head(title: str, head_items: list[str], css_lines: list[str]) -> list[str]:
+    """Assemble a page <head>. Every page goes through here, so the charset
+    meta and favicon links cannot be forgotten by a new or edited renderer."""
+    return [
+        "<head>",
+        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
+        favicon_links(),
+        *head_items,
+        f"<title>{escape(title)}</title>",
+        "<style>",
+        *css_lines,
+        "</style>",
+        "</head>",
+    ]
 
 
 class SnapshotCache:
@@ -290,24 +269,14 @@ def _browser_refresh_script(refresh_seconds: int) -> str:
     )
 
 
-def render_kindle_snapshot(
-    snapshot: SupervisorSnapshot,
-    refresh_seconds: int = KINDLE_REFRESH_SECONDS,
-    load_summary: LoadSummary | None = None,
-    allocation: dict | None = None,
-) -> str:
-    status = snapshot_severity_text(snapshot)
-    updated = format_kindle_time(snapshot.captured_at)
-    soc_text = _soc_text(snapshot)
-    lines = [
-        "<!doctype html>",
-        "<html>",
-        "<head>",
-        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-        _favicon_links(),
-        _kindle_refresh_script(refresh_seconds),
-        "<title>Off-Grid Power</title>",
-        "<style>",
+def _kindle_display_css(*, primary_font_px: int, label_width_pct: int, meta_width_pct: int) -> list[str]:
+    """Shared stylesheet for the Kindle pages.
+
+    The pages differ only in geometry: the summary row's primary-cell font size
+    and the label/meta column widths. Everything else — and the e-ink and
+    2011-WebKit workarounds encoded here — is one copy.
+    """
+    return [
         "html,body{height:100%;}",
         "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
         "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
@@ -317,12 +286,12 @@ def render_kindle_snapshot(
         # No grey cell dividers: e-ink ghosts hardest on these persistent light
         # lines. Bold first-column labels carry the row structure instead.
         "td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}",
-        "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
+        f"td:first-child{{font-size:17px;font-weight:bold;width:{label_width_pct}%;}}",
         ".bad{font-weight:bold;}",
         ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
         ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",
-        ".summary-table .soc-cell{font-size:36px;line-height:1;text-align:left;vertical-align:middle;width:32%;}",
-        ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
+        f".summary-table .primary-cell{{font-size:{primary_font_px}px;line-height:1;text-align:left;vertical-align:middle;width:{label_width_pct}%;}}",
+        f".summary-table .meta-cell{{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:{meta_width_pct}%;}}",
         ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
         ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
         # Plaintext nav hints after the last content, pointing to the invisible
@@ -338,14 +307,32 @@ def render_kindle_snapshot(
         ".page-turn-left{left:0;}",
         ".page-turn-right{right:0;}",
         ".small{font-size:13px;}",
-        "</style>",
-        "</head>",
+    ]
+
+
+def render_kindle_snapshot(
+    snapshot: SupervisorSnapshot,
+    refresh_seconds: int = KINDLE_REFRESH_SECONDS,
+    load_summary: LoadSummary | None = None,
+    allocation: dict | None = None,
+) -> str:
+    status = snapshot_severity_text(snapshot)
+    updated = format_kindle_time(snapshot.captured_at)
+    soc_text = _soc_text(snapshot)
+    lines = [
+        "<!doctype html>",
+        "<html>",
+        *_page_head(
+            "Off-Grid Power",
+            [_kindle_refresh_script(refresh_seconds)],
+            _kindle_display_css(primary_font_px=36, label_width_pct=32, meta_width_pct=52),
+        ),
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle/weather", "left", "Weather"),
         _page_turn_link("/kindle/details", "right", "More Power Info"),
         '<table class="summary-table">',
-        f'<tr><td class="soc-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
+        f'<tr><td class="primary-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
         "</table>",
     ]
     lines.extend(_load_section(load_summary))
@@ -367,49 +354,17 @@ def render_kindle_details(
     lines = [
         "<!doctype html>",
         "<html>",
-        "<head>",
-        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-        _favicon_links(),
-        _kindle_refresh_script(refresh_seconds),
-        "<title>Off-Grid Power Details</title>",
-        "<style>",
-        "html,body{height:100%;}",
-        "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
-        "ul{margin:0 0 4px 18px;padding:0;}",
-        "li{line-height:1.15;}",
-        "table{border-collapse:collapse;width:100%;}",
-        # No grey cell dividers: e-ink ghosts hardest on these persistent light
-        # lines. Bold first-column labels carry the row structure instead.
-        "td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}",
-        "td:first-child{font-size:17px;font-weight:bold;width:32%;}",
-        ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
-        ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",
-        ".summary-table .soc-cell{font-size:30px;line-height:1;text-align:left;vertical-align:middle;width:32%;}",
-        ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:52%;}",
-        ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
-        ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        # Plaintext nav hints after the last content, pointing to the invisible
-        # page-turn tap zones at the margins (no footer button — this browser
-        # can't reliably pin one to the screen bottom).
-        ".nav-hint{font-size:17px;font-weight:bold;margin:10px 0 0 0;}",
-        # The tap strip's height comes from padding-bottom — the one sizing
-        # property this 2011 WebKit honors on a fixed box (height: and bottom:0
-        # were both ignored / anchored to the short content box, so the strips
-        # fell short of the screen). top 58 + ~660 padding reaches past the 700px
-        # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:640px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
-        ".page-turn-left{left:0;}",
-        ".page-turn-right{right:0;}",
-        ".small{font-size:13px;}",
-        "</style>",
-        "</head>",
+        *_page_head(
+            "Off-Grid Power Details",
+            [_kindle_refresh_script(refresh_seconds)],
+            _kindle_display_css(primary_font_px=30, label_width_pct=32, meta_width_pct=52),
+        ),
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle", "left", "Back to Power"),
         _page_turn_link("/kindle/weather", "right", "Weather"),
         '<table class="summary-table">',
-        f'<tr><td class="soc-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
+        f'<tr><td class="primary-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
         "</table>",
     ]
     lines.extend(_inverter_charger_section(snapshot))
@@ -456,36 +411,11 @@ def render_kindle_weather(
     lines = [
         "<!doctype html>",
         "<html>",
-        "<head>",
-        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-        _favicon_links(),
-        _kindle_refresh_script(refresh_seconds),
-        "<title>Off-Grid Weather</title>",
-        "<style>",
-        "body{font-family:serif;color:#000;background:#fff;margin:4px;font-size:17px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-        "h2{font-size:19px;margin:8px 0 2px 0;border-bottom:1px solid #000;}",
-        "table{border-collapse:collapse;width:100%;}",
-        # No grey cell dividers: e-ink ghosts hardest on these persistent light
-        # lines. Bold first-column labels carry the row structure instead.
-        "td{font-size:17px;line-height:1.25;padding:1px 0;vertical-align:top;}",
-        "td:first-child{font-size:17px;font-weight:bold;width:38%;}",
-        ".summary-table{margin:0 0 6px 0;border-bottom:1px solid #000;}",
-        ".summary-table td{font-size:19px;font-weight:bold;border-bottom:0;padding:0 0 2px 0;}",
-        ".summary-table .weather-cell{font-size:30px;line-height:1;text-align:left;vertical-align:middle;width:38%;}",
-        ".summary-table .meta-cell{font-size:17px;line-height:1.05;text-align:left;vertical-align:middle;width:46%;}",
-        ".summary-table .button-cell{font-size:17px;line-height:1;text-align:right;vertical-align:middle;width:16%;}",
-        ".top-link{font-size:17px;line-height:2.1;color:#000;text-decoration:none;border:1px solid #000;padding:0 10px;display:block;text-align:center;}",
-        # The tap strip's height comes from padding-bottom — the one sizing
-        # property this 2011 WebKit honors on a fixed box (height: and bottom:0
-        # were both ignored / anchored to the short content box, so the strips
-        # fell short of the screen). top 58 + ~660 padding reaches past the 700px
-        # viewport bottom; fixed keeps it out of flow so it adds no scroll.
-        ".page-turn{position:fixed;top:58px;padding-bottom:640px;width:18%;z-index:10;text-indent:-9999px;overflow:hidden;}",
-        ".page-turn-left{left:0;}",
-        ".page-turn-right{right:0;}",
-        ".small{font-size:13px;}",
-        "</style>",
-        "</head>",
+        *_page_head(
+            "Off-Grid Weather",
+            [_kindle_refresh_script(refresh_seconds)],
+            _kindle_display_css(primary_font_px=30, label_width_pct=38, meta_width_pct=46),
+        ),
         "<body>",
         f"<!-- {KINDLE_LIVE_SENTINEL} -->",
         _page_turn_link("/kindle/details", "left", "Power Details"),
@@ -495,7 +425,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">Weather service has been unreachable since {escape(format_time(observed_at))}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="primary-cell">Weather</td><td class="meta-cell">Weather service has been unreachable since {escape(format_time(observed_at))}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Conditions</h2>",
                 "<p>Weather service unreachable.</p>",
@@ -508,7 +438,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">Weather</td><td class="meta-cell">{timestamp_line}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="primary-cell">Weather</td><td class="meta-cell">{timestamp_line}<br>{escape(status_text)}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Conditions</h2>",
                 f"<p>{escape(message)}</p>",
@@ -522,7 +452,7 @@ def render_kindle_weather(
         lines.extend(
             [
                 '<table class="summary-table">',
-                f'<tr><td class="weather-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>{timestamp_line}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
+                f'<tr><td class="primary-cell">{escape(temp or "--")}</td><td class="meta-cell">{escape(label)}: {escape(condition)}<br>{timestamp_line}</td><td class="button-cell"><a class="top-link" href="/kindle">Power</a></td></tr>',
                 "</table>",
                 "<h2>Current</h2>",
                 "<table>",
@@ -563,16 +493,14 @@ def render_browser_snapshot(
         [
             "<!doctype html>",
             "<html>",
-            "<head>",
-            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-            _favicon_links(),
-            '<meta name="viewport" content="width=device-width, initial-scale=1">',
-            _browser_refresh_script(BROWSER_POWER_REFRESH_SECONDS),
-            "<title>Off-Grid Power</title>",
-            "<style>",
-            _browser_display_css(),
-            "</style>",
-            "</head>",
+            *_page_head(
+                "Off-Grid Power",
+                [
+                    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+                    _browser_refresh_script(BROWSER_POWER_REFRESH_SECONDS),
+                ],
+                [_browser_display_css()],
+            ),
             "<body>",
             _browser_snapshot_header(payload),
             f"<pre>{escape(rendered)}</pre>",
@@ -634,16 +562,14 @@ def render_browser_weather(payload: dict | None, annotations: list[str] | None =
     lines = [
         "<!doctype html>",
         "<html>",
-        "<head>",
-        '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-        _favicon_links(),
-        '<meta name="viewport" content="width=device-width, initial-scale=1">',
-        _browser_refresh_script(BROWSER_WEATHER_REFRESH_SECONDS),
-        "<title>Off-Grid Weather</title>",
-        "<style>",
-        _browser_display_css(),
-        "</style>",
-        "</head>",
+        *_page_head(
+            "Off-Grid Weather",
+            [
+                '<meta name="viewport" content="width=device-width, initial-scale=1">',
+                _browser_refresh_script(BROWSER_WEATHER_REFRESH_SECONDS),
+            ],
+            [_browser_display_css()],
+        ),
         "<body>",
         _browser_weather_header(primary, updated + annotation_suffix, status_text, "/"),
         f"<pre>{escape(rendered)}</pre>",
@@ -745,12 +671,9 @@ def route_display_request(
     # Both hooks only queue work for next time; this response still carries the
     # current snapshot/cached forecast, so a slow source never delays the reply.
     parsed_path = urlparse(path).path
-    if parsed_path in {FAVICON_PNG_PATH, APPLE_TOUCH_ICON_PATH}:
-        return favicon_png_response()
-    if parsed_path == FAVICON_ICO_PATH:
-        return favicon_ico_response()
-    if parsed_path == FAVICON_PATH:
-        return favicon_response()
+    asset = asset_response(parsed_path)
+    if asset is not None:
+        return asset
     if refresh_hook is not None and wants_source_refresh(path):
         refresh_hook()
     if weather_refresh_hook is not None and wants_weather_refresh(path):
@@ -1998,44 +1921,33 @@ def run_display_server(
     class Handler(BaseHTTPRequestHandler):
         server_version = "OffGridPowerDisplay/0.1"
 
+        def do_HEAD(self) -> None:  # noqa: N802 - stdlib handler API
+            # Same routing as GET; _send_display_response suppresses the body.
+            self.do_GET()
+
         def do_GET(self) -> None:  # noqa: N802 - stdlib handler API
-            if urlparse(self.path).path in {FAVICON_PNG_PATH, APPLE_TOUCH_ICON_PATH}:
-                self._send_display_response(favicon_png_response())
-                return
-            if urlparse(self.path).path == FAVICON_ICO_PATH:
-                self._send_display_response(favicon_ico_response())
-                return
-            if urlparse(self.path).path == FAVICON_PATH:
-                self._send_display_response(favicon_response())
+            # Sidecar assets are served before the snapshot check: an icon
+            # request must succeed even while no snapshot is available yet.
+            asset = asset_response(urlparse(self.path).path)
+            if asset is not None:
+                self._send_display_response(asset)
                 return
             try:
                 snapshot = provider()
             except Exception as exc:  # noqa: BLE001 - HTTP display should show readiness errors.
                 if urlparse(self.path).path.startswith("/api/"):
-                    body = json.dumps(
-                        {
-                            "schema_version": 1,
-                            "ok": False,
-                            "status": "UNAVAILABLE",
-                            "error": str(exc),
-                        },
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ).encode("utf-8") + b"\n"
-                    self.send_response(HTTPStatus.SERVICE_UNAVAILABLE.value)
-                    self.send_header("Content-Type", "application/json; charset=utf-8")
-                    self.send_header("Cache-Control", "no-store")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
+                    payload = {
+                        "schema_version": 1,
+                        "ok": False,
+                        "status": "UNAVAILABLE",
+                        "error": str(exc),
+                    }
+                    self._send_display_response(_json_response(HTTPStatus.SERVICE_UNAVAILABLE, payload))
                     return
                 body = render_snapshot_unavailable(exc).encode("utf-8")
-                self.send_response(HTTPStatus.SERVICE_UNAVAILABLE.value)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+                self._send_display_response(
+                    DisplayResponse(HTTPStatus.SERVICE_UNAVAILABLE, "text/html; charset=utf-8", body)
+                )
                 return
             parsed_path = urlparse(self.path).path
             if parsed_path == "/healthz":
@@ -2083,12 +1995,7 @@ def run_display_server(
                 weather_refresh_hook=weather_refresh,
                 allocation=allocation,
             )
-            self.send_response(response.status.value)
-            self.send_header("Content-Type", response.content_type)
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Content-Length", str(len(response.body)))
-            self.end_headers()
-            self.wfile.write(response.body)
+            self._send_display_response(response)
 
         def do_POST(self) -> None:  # noqa: N802 - stdlib handler API
             parsed_path = urlparse(self.path).path
@@ -2115,10 +2022,11 @@ def run_display_server(
         def _send_display_response(self, response: DisplayResponse) -> None:
             self.send_response(response.status.value)
             self.send_header("Content-Type", response.content_type)
-            self.send_header("Cache-Control", "no-store")
+            self.send_header("Cache-Control", response.cache_control)
             self.send_header("Content-Length", str(len(response.body)))
             self.end_headers()
-            self.wfile.write(response.body)
+            if self.command != "HEAD":
+                self.wfile.write(response.body)
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib name
             return
@@ -2551,16 +2459,14 @@ def render_snapshot_unavailable(exc: Exception, refresh_seconds: int = 10) -> st
         [
             "<!doctype html>",
             "<html>",
-            "<head>",
-            '<meta http-equiv="Content-Type" content="text/html; charset=utf-8">',
-            _favicon_links(),
-            f'<meta http-equiv="refresh" content="{refresh_seconds}">',
-            "<title>Off-Grid Power</title>",
-            "<style>",
-            "body{font-family:serif;color:#000;background:#fff;margin:8px;font-size:16px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
-            ".small{font-size:12px;}",
-            "</style>",
-            "</head>",
+            *_page_head(
+                "Off-Grid Power",
+                [f'<meta http-equiv="refresh" content="{refresh_seconds}">'],
+                [
+                    "body{font-family:serif;color:#000;background:#fff;margin:8px;font-size:16px;-webkit-text-size-adjust:100%;text-size-adjust:100%;}",
+                    ".small{font-size:12px;}",
+                ],
+            ),
             "<body>",
             "<h2>Snapshot unavailable</h2>",
             f"<p>{escape(str(exc))}</p>",
