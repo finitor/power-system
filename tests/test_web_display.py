@@ -591,6 +591,7 @@ class WebDisplayTest(unittest.TestCase):
         # scaling the whole page down (tiny text, big right-hand gutter), and
         # arms the narrow-screen media query.
         self.assertIn(b'<meta name="viewport" content="width=device-width, initial-scale=1">', response.body)
+        self.assertIn(b'<link rel="icon" href="/favicon.png" type="image/png" sizes="64x64">', response.body)
         self.assertIn(b'<link rel="icon" href="/favicon.svg" type="image/svg+xml">', response.body)
         self.assertIn(b"@media (max-width:480px)", response.body)
         self.assertIn(b"grid-template-columns:24ch minmax(0,1fr) auto", response.body)
@@ -619,6 +620,24 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.content_type, "image/svg+xml")
         self.assertIn(b"<svg", response.body)
         self.assertIn(b"#4468d8", response.body)
+        self.assertEqual(refreshed, [])
+
+    def test_routes_favicon_png_and_ico_without_refreshing_sources(self) -> None:
+        snapshot = make_snapshot()
+        refreshed = []
+
+        for path in ("/favicon.png", "/favicon.ico"):
+            with self.subTest(path=path):
+                response = route_display_request(
+                    snapshot,
+                    path,
+                    "Mozilla/5.0",
+                    refresh_hook=lambda: refreshed.append(True),
+                )
+
+                self.assertEqual(response.status.value, 200)
+                self.assertEqual(response.content_type, "image/png")
+                self.assertTrue(response.body.startswith(b"\x89PNG\r\n\x1a\n"))
         self.assertEqual(refreshed, [])
 
     def test_kindle_paths_always_serve_kindle_content_regardless_of_user_agent(self) -> None:
