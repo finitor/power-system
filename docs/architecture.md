@@ -99,8 +99,8 @@ For a cross-appliance view of physical/link/application layers, see
 
 The Pi runs two separate USB RS485 adapters, each keyed to a stable `/dev` symlink by udev so they never swap on re-enumeration:
 
-- **KL0823B / generic 2-wire CH340 on direct Pi USB path `1.2`** → `/dev/magnum-rs485`, the Magnum inverter network (`MagnumClient`, read-only telemetry tap).
-- **KL0823B CH340 on USB path `1.5.3`** → `/dev/epever-rs485`, the EPEver TEP10425 COM port (Modbus RTU, read and write).
+- **KL0823B / generic 2-wire CH340 on powered hub USB path `1.3.2`** → `/dev/magnum-rs485`, the Magnum inverter network (`MagnumClient`, read-only telemetry tap).
+- **KL0823B CH340 on powered hub USB path `1.3.3`** → `/dev/epever-rs485`, the EPEver TEP10425 COM port (Modbus RTU, read and write).
 
 CH340 adapters expose no unique USB serial, so udev keys these names on the Pi's physical USB topology. If the two CH340 dongles are swapped between physical USB ports, their logical roles swap with the ports.
 

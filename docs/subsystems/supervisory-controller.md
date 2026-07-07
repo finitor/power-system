@@ -11,7 +11,7 @@
 | Storage | microSD boot plus external logging storage candidate |
 | Enclosure | TBD |
 | Battery CAN interface | DSD TECH SH-C31G isolated USB-to-CAN adapter, preferred candidate |
-| Magnum RS485 interface | Generic/KL CH340 USB-RS485 on direct Pi USB path `1.2`, installed at `/dev/magnum-rs485` |
+| Magnum RS485 interface | Generic/KL CH340 USB-RS485 on powered hub path `1.3.2`, installed at `/dev/magnum-rs485` |
 
 ## Power Supply Requirements
 

@@ -41,8 +41,8 @@ The supervisor uses stable OS-level names before any appliance protocol code run
 
 | Name | Current binding | Why |
 |---|---|---|
-| `/dev/magnum-rs485` | CH340 `1a86:7523` on direct Pi USB path `1.2` | CH340 has no unique serial; this direct port has shown the lowest Magnum error rates so far. |
-| `/dev/epever-rs485` | CH340 `1a86:7523` on powered hub path `1.5.3` | Same serial-less CH340 issue; identity follows the physical port. |
+| `/dev/magnum-rs485` | CH340 `1a86:7523` on powered hub path `1.3.2` | CH340 has no unique serial; identity follows the physical port. |
+| `/dev/epever-rs485` | CH340 `1a86:7523` on powered hub path `1.3.3` | Same serial-less CH340 issue; identity follows the physical port. |
 | `/dev/magnum-rs485-pl2303` | PL2303 SH-U11H serial `DZBSb11CN12`, if installed | Named fallback/spare, not canonical Magnum. |
 | `/dev/magnum-rs485-ft232r` | FT232R serial `BG041BAY`, if installed | Trial fallback; direct-port CH340 remains canonical. |
 | `/dev/cubix-rs485` | FT232R serial `A50285BI`, if installed | Bench/service RS485 path. |

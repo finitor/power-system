@@ -10,7 +10,7 @@ ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1d50", ATTR{idProduct}=="606f"
 
 # Prolific PL2303 — DSD TECH SH-U11H isolated RS485 adapter, formerly assigned
 # to the Magnum network tap. Kept as a named fallback/spare; the active Magnum
-# tap is the direct-port CH340 on physical path 1.2 below.
+# tap is the CH340 on powered hub physical path 1.3.2 below.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="067b", ATTR{idProduct}=="23a3", ATTR{power/control}="on"
 # Stable name keyed on the unique serial, so it never collides with another adapter.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="23a3", ATTRS{serial}=="DZBSb11CN12", SYMLINK+="magnum-rs485-pl2303"
@@ -28,11 +28,11 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{seria
 
 # KL0823B 2-wire USB-RS485 adapters (CH340) — EPEver and Magnum taps.
 # CH340s carry no unique serial, so stable names are keyed on physical USB
-# paths. Keep the Magnum adapter on the Pi USB port at path 1.2 and the
-# EPEver adapter on powered hub port 1.5.3.
+# paths. Keep the Magnum adapter on powered hub port 1.3.2 and the
+# EPEver adapter on powered hub port 1.3.3.
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="1a86", ATTR{idProduct}=="7523", ATTR{power/control}="on"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.2:1.0", SYMLINK+="magnum-rs485"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.5.3:1.0", SYMLINK+="epever-rs485"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.3.2:1.0", SYMLINK+="magnum-rs485"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", ENV{ID_PATH}=="platform-3f980000.usb-usb-0:1.3.3:1.0", SYMLINK+="epever-rs485"
 
 # RTL8153 gigabit NIC built into the bench (port-powered) hub: unused, and
 # bus-powered draw competes with the Pi's shared USB budget. Deauthorize so
