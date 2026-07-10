@@ -138,19 +138,35 @@ def render_snapshot(
     lines.append("")
 
     lines.append("Load")
+    refrigeration = snapshot.tasmota.get("refrigeration")
     if load_summary is not None:
-        lines.append(_row("Now", f"{load_summary.current_a:.1f}A  {load_summary.power_w}W"))
+        lines.append(_row("Now", _load_value_with_refrigeration(
+            f"{load_summary.current_a:.1f}A  {load_summary.power_w}W",
+            None if refrigeration is None else refrigeration.power_w,
+        )))
         if load_summary.average_today_text is not None:
-            lines.append(_row("3hr Rolling Avg", load_summary.average_today_text))
+            lines.append(_row("3hr Rolling Avg", _load_value_with_refrigeration(
+                load_summary.average_today_text,
+                None if refrigeration is None else refrigeration.rolling_average_power_w,
+            )))
         if load_summary.today_text is not None:
-            lines.append(_row("Cumulative Today", load_summary.today_text))
+            cumulative = load_summary.today_text
+            if refrigeration is not None:
+                cumulative += f"  (Refrigeration {refrigeration.energy_today_kwh:.1f}kWh)"
+            lines.append(_row("Cumulative Today", cumulative))
         if load_summary.remaining_text is not None:
             lines.append(_row("Estimated Autonomy", load_summary.remaining_text))
     elif load_totals is None:
         lines.append("  No data")
     else:
-        lines.append(_row("Now", f"{load_totals.current_a:.1f}A  {load_totals.power_w:.0f}W"))
-        lines.append(_row("Cumulative Today", f"{load_totals.consumed_ah:.1f}Ah {load_totals.consumed_percent:.1f}% of bank"))
+        lines.append(_row("Now", _load_value_with_refrigeration(
+            f"{load_totals.current_a:.1f}A  {load_totals.power_w:.0f}W",
+            None if refrigeration is None else refrigeration.power_w,
+        )))
+        cumulative = f"{load_totals.consumed_ah:.1f}Ah {load_totals.consumed_percent:.1f}% of bank"
+        if refrigeration is not None:
+            cumulative += f"  (Refrigeration {refrigeration.energy_today_kwh:.1f}kWh)"
+        lines.append(_row("Cumulative Today", cumulative))
 
     lines.append("")
     lines.extend(_battery_bank_lines(snapshot))
@@ -178,6 +194,12 @@ def render_snapshot(
             lines.append(f"  - {item}")
 
     return "\n".join(lines)
+
+
+def _load_value_with_refrigeration(value: str, refrigeration_power_w: float | None) -> str:
+    if refrigeration_power_w is None:
+        return value
+    return f"{value}  (Refrigeration {round(refrigeration_power_w)}W)"
 
 
 def _status_line(snapshot: SupervisorSnapshot) -> str:

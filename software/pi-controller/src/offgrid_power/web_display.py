@@ -335,7 +335,7 @@ def render_kindle_snapshot(
         f'<tr><td class="primary-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
         "</table>",
     ]
-    lines.extend(_load_section(load_summary))
+    lines.extend(_load_section(load_summary, snapshot.tasmota.get("refrigeration")))
     lines.extend(_battery_section(snapshot))
     lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=True))
     lines.extend(_status_summary_section(snapshot))
@@ -1638,6 +1638,7 @@ def snapshot_api_payload(
         "solar": _solar_api_payload(snapshot),
         "inverter": _inverter_api_payload(snapshot),
         "load": _load_api_payload(load_summary),
+        "monitored_loads": _tasmota_api_payload(snapshot),
         "allocation": allocation,
         "ambient": _ambient_api_payload(snapshot),
         "relay": {"heat_fan": snapshot.heat_fan_on, "charge_disable": snapshot.charge_disable_on},
@@ -1650,6 +1651,27 @@ def snapshot_api_payload(
 def _json_response(status: HTTPStatus, payload: dict) -> DisplayResponse:
     body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
     return DisplayResponse(status, "application/json; charset=utf-8", body)
+
+
+def _tasmota_api_payload(snapshot: SupervisorSnapshot) -> list[dict]:
+    return [
+        {
+            "name": name,
+            "host": telemetry.host,
+            "captured_at": telemetry.captured_at.isoformat(),
+            "voltage_v": telemetry.voltage_v,
+            "current_a": telemetry.current_a,
+            "power_w": telemetry.power_w,
+            "apparent_power_va": telemetry.apparent_power_va,
+            "reactive_power_var": telemetry.reactive_power_var,
+            "power_factor": telemetry.power_factor,
+            "energy_today_kwh": telemetry.energy_today_kwh,
+            "energy_yesterday_kwh": telemetry.energy_yesterday_kwh,
+            "energy_total_kwh": telemetry.energy_total_kwh,
+            "rolling_average_power_w": telemetry.rolling_average_power_w,
+        }
+        for name, telemetry in sorted(snapshot.tasmota.items())
+    ]
 
 
 def _age_seconds(captured_at: datetime, now: datetime | None = None) -> int:
@@ -2331,20 +2353,35 @@ def _inverter_charger_section(snapshot: SupervisorSnapshot) -> list[str]:
     return lines
 
 
-def _load_section(load_summary: LoadSummary | None) -> list[str]:
+def _load_section(load_summary: LoadSummary | None, refrigeration=None) -> list[str]:
     lines = ["<h2>Load</h2>", "<table>"]
     if load_summary is None:
         lines.append(_row("Now", "No data"))
     else:
-        lines.append(_row("Now", f"{load_summary.current_a:.1f}A  {load_summary.power_w}W"))
+        lines.append(_row("Now", _load_value_with_refrigeration(
+            f"{load_summary.current_a:.1f}A  {load_summary.power_w}W",
+            None if refrigeration is None else refrigeration.power_w,
+        )))
         if load_summary.average_today_text is not None:
-            lines.append(_row("3hr Rolling Avg", load_summary.average_today_text))
+            lines.append(_row("3hr Rolling Avg", _load_value_with_refrigeration(
+                load_summary.average_today_text,
+                None if refrigeration is None else refrigeration.rolling_average_power_w,
+            )))
         if load_summary.today_text is not None:
-            lines.append(_row("Cumulative Today", load_summary.today_text))
+            cumulative = load_summary.today_text
+            if refrigeration is not None:
+                cumulative += f"  (Refrigeration {refrigeration.energy_today_kwh:.1f}kWh)"
+            lines.append(_row("Cumulative Today", cumulative))
         if load_summary.remaining_text is not None:
             lines.append(_row("Estimated Autonomy", load_summary.remaining_text))
     lines.append("</table>")
     return lines
+
+
+def _load_value_with_refrigeration(value: str, refrigeration_power_w: float | None) -> str:
+    if refrigeration_power_w is None:
+        return value
+    return f"{value}  (Refrigeration {round(refrigeration_power_w)}W)"
 
 
 def _battery_section(snapshot: SupervisorSnapshot) -> list[str]:

@@ -61,6 +61,7 @@ def make_snapshot(**overrides) -> SupervisorSnapshot:
         "battery_can_health": None,
         "ambient": None,
         "magnum": None,
+        "tasmota": {},
         "errors": [],
     }
     fields.update(overrides)

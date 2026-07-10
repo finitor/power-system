@@ -49,6 +49,7 @@ from offgrid_power.metrics import MetricRecorder
 from offgrid_power.runtime_state import load_ccl_scaling_factor, save_ccl_scaling_factor
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
+from offgrid_power.tasmota import TasmotaClient
 from offgrid_power.weather import WeatherConfig, WeatherService
 from offgrid_power.load import LoadSampleBuffer, LoadTracker
 from offgrid_power.web_display import SnapshotCache, run_display_server
@@ -237,6 +238,13 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
         default=not config.ambient.enabled,
         help="Disable ambient sensor reads",
     )
+    parser.add_argument(
+        "--tasmota-device",
+        action="append",
+        default=_tasmota_devices_from_env(),
+        metavar="NAME=HOST",
+        help="Read a Tasmota energy monitor over HTTP; repeat for multiple devices",
+    )
 
 
 def build_supervisor(args: argparse.Namespace) -> Supervisor:
@@ -281,6 +289,14 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         if args.epever_device
         else None
     )
+    tasmota = {}
+    for item in args.tasmota_device:
+        if "=" not in item:
+            raise ValueError(f"invalid --tasmota-device {item!r}; expected NAME=HOST")
+        name, host = (part.strip() for part in item.split("=", 1))
+        if not name or not host:
+            raise ValueError(f"invalid --tasmota-device {item!r}; expected NAME=HOST")
+        tasmota[name] = TasmotaClient(name, host)
 
     return Supervisor(
         classic=None
@@ -296,7 +312,13 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         battery_can_interface=battery_can_interface,
         magnum=magnum,
         epever=epever,
+        tasmota=tasmota,
     )
+
+
+def _tasmota_devices_from_env() -> list[str]:
+    raw = os.getenv("TASMOTA_DEVICES", "")
+    return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 def main() -> int:
@@ -309,6 +331,8 @@ def main() -> int:
         mountpoint=args.metrics_db_mountpoint or None,
         fallback_path=args.metrics_fallback_db_path or None,
     )
+    for name, client in supervisor.tasmota.items():
+        client.seed_power_samples(metric_recorder.recent_metric_values(f"tasmota.{name}", "power"))
     # The buffer is in-memory; the metric store is the durable copy, so a
     # restart re-seeds the rolling window from it (best-effort).
     load_sample_buffer = LoadSampleBuffer()

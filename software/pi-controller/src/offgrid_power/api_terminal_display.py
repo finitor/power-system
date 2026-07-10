@@ -30,14 +30,24 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
 
     lines.append("Load")
     load = payload.get("load")
+    refrigeration = _monitored_load(payload, "refrigeration")
     if load is None:
         lines.append("  No data")
     else:
-        lines.append(_row("Now", f"{_fmt(load.get('current_a'), 1)}A  {_fmt(load.get('power_w'), 0)}W"))
+        lines.append(_row("Now", _load_value_with_refrigeration(
+            f"{_fmt(load.get('current_a'), 1)}A  {_fmt(load.get('power_w'), 0)}W",
+            None if refrigeration is None else refrigeration.get("power_w"),
+        )))
         if load.get("average_today_text") is not None:
-            lines.append(_row("3hr Rolling Avg", str(load["average_today_text"])))
+            lines.append(_row("3hr Rolling Avg", _load_value_with_refrigeration(
+                str(load["average_today_text"]),
+                None if refrigeration is None else refrigeration.get("rolling_average_power_w"),
+            )))
         if load.get("today_text") is not None:
-            lines.append(_row("Cumulative Today", str(load["today_text"])))
+            cumulative = str(load["today_text"])
+            if refrigeration is not None and refrigeration.get("energy_today_kwh") is not None:
+                cumulative += f"  (Refrigeration {float(refrigeration['energy_today_kwh']):.1f}kWh)"
+            lines.append(_row("Cumulative Today", cumulative))
         if load.get("remaining_text") is not None:
             lines.append(_row("Estimated Autonomy", str(load["remaining_text"])))
 
@@ -72,6 +82,19 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
             lines.append(f"  - {item}")
 
     return "\n".join(lines)
+
+
+def _monitored_load(payload: dict, name: str) -> dict | None:
+    for load in payload.get("monitored_loads") or []:
+        if str(load.get("name", "")).lower() == name.lower():
+            return load
+    return None
+
+
+def _load_value_with_refrigeration(value: str, refrigeration_power_w) -> str:
+    if refrigeration_power_w is None:
+        return value
+    return f"{value}  (Refrigeration {round(float(refrigeration_power_w))}W)"
 
 
 def render_api_unavailable(error: str) -> str:

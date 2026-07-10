@@ -13,6 +13,7 @@ from .classic import ClassicChargeSettings, ClassicClient, ClassicTelemetry
 from .epever import EpeverChargeSettings, EpeverClient, EpeverTelemetry
 from .network_monitor import NetworkMonitor
 from .readers import DeviceReading, PollingReader
+from .tasmota import TasmotaClient, TasmotaTelemetry
 
 if TYPE_CHECKING:
     from .magnum import MagnumClient, MagnumSnapshot
@@ -34,6 +35,7 @@ class SupervisorSnapshot:
     ambient: AmbientTelemetry | None
     magnum: MagnumSnapshot | None
     errors: list[str]
+    tasmota: dict[str, TasmotaTelemetry] = field(default_factory=dict)
     status_conditions: list[str] = field(default_factory=list)
     status_severity: str = STATUS_OK
     # Devices with no adapter configured at all, so no read is attempted. Lets
@@ -91,6 +93,7 @@ class Supervisor:
         battery_can_interface: str | None = None,
         magnum: MagnumClient | None = None,
         epever: EpeverClient | None = None,
+        tasmota: dict[str, TasmotaClient] | None = None,
     ) -> None:
         self.classic = classic
         self.ambient = ambient
@@ -98,6 +101,7 @@ class Supervisor:
         self.battery_can_interface = battery_can_interface
         self.magnum = magnum
         self.epever = epever
+        self.tasmota = tasmota or {}
         self._status_condition_counts: dict[str, int] = {}
         self._readers: dict[str, PollingReader] | None = None
         self._network_monitor: NetworkMonitor | None = None
@@ -143,6 +147,10 @@ class Supervisor:
                 interval_s,
                 stale_after_s=magnum_stale_after_s,
                 expire_after_s=expire_after_s,
+            )
+        for name, client in self.tasmota.items():
+            readers[f"tasmota.{name}"] = PollingReader(
+                f"tasmota.{name}", client.read, interval_s, expire_after_s=expire_after_s
             )
         for reader in readers.values():
             reader.start()
@@ -341,6 +349,7 @@ class Supervisor:
             ambient=devices["ambient"],
             magnum=devices["magnum"],
             errors=errors,
+            tasmota=devices["tasmota"],
             status_conditions=status_conditions,
             status_severity=status_severity,
             disabled_devices=self._disabled_devices(),
@@ -377,6 +386,7 @@ class Supervisor:
             "battery": None,
             "ambient": None,
             "magnum": None,
+            "tasmota": {},
         }
 
         if self.classic is not None:
@@ -411,6 +421,12 @@ class Supervisor:
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Magnum read failed: {exc}")
 
+        for name, client in self.tasmota.items():
+            try:
+                devices["tasmota"][name] = client.read()
+            except Exception as exc:  # noqa: BLE001 - device failure degrades the snapshot.
+                errors.append(f"Tasmota {name} read failed: {exc}")
+
         return devices, errors, []
 
     # Error message prefixes match the direct-read path so displays and
@@ -441,10 +457,29 @@ class Supervisor:
             "battery": None,
             "ambient": None,
             "magnum": None,
+            "tasmota": {},
         }
 
         for name, reader in self._readers.items():
             reading = reader.reading()
+
+            if name.startswith("tasmota."):
+                load_name = name.removeprefix("tasmota.")
+                if reading.value is not None and not reading.is_expired(now):
+                    devices["tasmota"][load_name] = reading.value
+                if reading.error is not None:
+                    age = reading.age_seconds(now)
+                    if age is None:
+                        errors.append(f"Tasmota {load_name} read failed: {reading.error}")
+                    elif age >= reading.stale_after_s:
+                        errors.append(f"Tasmota {load_name} read failed (last good read {age:.0f}s ago)")
+                elif reading.is_stale(now):
+                    age = reading.age_seconds(now)
+                    stale_candidates.append(StatusConditionCandidate(
+                        f"reader.{name}.stale",
+                        f"Tasmota {load_name} telemetry stale: last good read {age:.0f}s ago",
+                    ))
+                continue
 
             if name == "ambient":
                 # Ambient keeps direct-path semantics: a failed probe means

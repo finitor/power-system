@@ -214,6 +214,35 @@ class MetricRecorder:
 
         return self._read(query, [])
 
+    def recent_metric_values(
+        self,
+        source: str,
+        metric: str,
+        now: datetime | None = None,
+        window: timedelta = timedelta(hours=3),
+    ) -> list[tuple[datetime, float]]:
+        """Return recent numeric values for seeding a rolling device average."""
+        store = self._active_path()
+        if store is None or not store.exists():
+            return []
+        reference = now or datetime.now(timezone.utc)
+        cutoff = utc_timestamp_text(reference - window)
+
+        def query(connection: sqlite3.Connection) -> list[tuple[datetime, float]]:
+            rows = connection.execute(
+                """
+                SELECT captured_at, value
+                FROM samples
+                WHERE source = ? AND metric = ? AND value IS NOT NULL
+                  AND julianday(captured_at) >= julianday(?)
+                ORDER BY julianday(captured_at), captured_at
+                """,
+                (source, metric, cutoff),
+            ).fetchall()
+            return [(parse_timestamp(captured_at), float(value)) for captured_at, value in rows]
+
+        return self._read(query, [])
+
     def midnight_soc_percent(self, day: date) -> int | None:
         """First battery SOC recorded within 5 minutes of local midnight."""
         store = self._active_path()
@@ -620,6 +649,8 @@ def snapshot_metric_samples(
         yield from _magnum_samples(snapshot.magnum.captured_at.astimezone(timezone.utc), snapshot.magnum)
     if snapshot.ambient is not None:
         yield from _ambient_samples(snapshot.ambient.captured_at.astimezone(timezone.utc), snapshot.ambient)
+    for name, telemetry in snapshot.tasmota.items():
+        yield from _tasmota_samples(name, telemetry)
     if snapshot.lan_reachable is not None:
         yield MetricSample(captured_at, "network", "lan_reachable", value=1.0 if snapshot.lan_reachable else 0.0)
 
@@ -682,6 +713,20 @@ def _load_samples(captured_at: datetime, load_summary: LoadSummary) -> Iterable[
     autonomy_hours = _hours_text_value(load_summary.remaining_text)
     if autonomy_hours is not None:
         yield MetricSample(captured_at, "load", "estimated_autonomy", value=autonomy_hours, unit="h")
+
+
+def _tasmota_samples(name: str, telemetry) -> Iterable[MetricSample]:
+    captured_at = telemetry.captured_at.astimezone(timezone.utc)
+    source = f"tasmota.{name}"
+    yield MetricSample(captured_at, source, "voltage", value=telemetry.voltage_v, unit="V")
+    yield MetricSample(captured_at, source, "current", value=telemetry.current_a, unit="A")
+    yield MetricSample(captured_at, source, "power", value=telemetry.power_w, unit="W")
+    yield MetricSample(captured_at, source, "apparent_power", value=telemetry.apparent_power_va, unit="VA")
+    yield MetricSample(captured_at, source, "reactive_power", value=telemetry.reactive_power_var, unit="var")
+    yield MetricSample(captured_at, source, "power_factor", value=telemetry.power_factor)
+    yield MetricSample(captured_at, source, "daily_energy", value=telemetry.energy_today_kwh, unit="kWh")
+    yield MetricSample(captured_at, source, "yesterday_energy", value=telemetry.energy_yesterday_kwh, unit="kWh")
+    yield MetricSample(captured_at, source, "lifetime_energy", value=telemetry.energy_total_kwh, unit="kWh")
 
 
 def _classic_samples(captured_at: datetime, classic) -> Iterable[MetricSample]:
