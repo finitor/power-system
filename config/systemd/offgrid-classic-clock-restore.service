@@ -1,0 +1,29 @@
+[Unit]
+Description=Restore system clock from the MidNite Classic when NTP is unavailable
+After=network-online.target systemd-timesyncd.service
+Wants=network-online.target systemd-timesyncd.service
+Before=offgrid-supervisor.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=@SERVICE_USER@
+Group=@SERVICE_USER@
+WorkingDirectory=@PROJECT_DIR@
+Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
+EnvironmentFile=-/etc/offgrid-power.env
+ExecStart=-@PROJECT_DIR@/.venv/bin/python -m offgrid_power.cli.classic_clock_restore --ntp-wait-seconds 15 --classic-wait-seconds 30
+TimeoutStartSec=55
+CapabilityBoundingSet=CAP_SYS_TIME
+AmbientCapabilities=CAP_SYS_TIME
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6

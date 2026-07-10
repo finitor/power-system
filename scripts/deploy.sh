@@ -105,6 +105,7 @@ echo "== configs =="
 # Render @OFFGRID_USER@/@SERVICE_USER@/@PROJECT_DIR@ templates for this host.
 mkdir -p "${HOME}/.local/bin" "${HOME}/.config/autostart"
 render config/systemd/offgrid-supervisor.service | sudo tee /etc/systemd/system/offgrid-supervisor.service > /dev/null
+render config/systemd/offgrid-classic-clock-restore.service | sudo tee /etc/systemd/system/offgrid-classic-clock-restore.service > /dev/null
 render config/systemd/offgrid-console.service | sudo tee /etc/systemd/system/offgrid-console.service > /dev/null
 render config/systemd/offgrid-metrics-export.service | sudo tee /etc/systemd/system/offgrid-metrics-export.service > /dev/null
 render config/systemd/offgrid-can-watchdog.service | sudo tee /etc/systemd/system/offgrid-can-watchdog.service > /dev/null
