@@ -62,6 +62,32 @@ are preferred for scripts and future automation.
 - New fields may be added without changing `schema_version`.
 - Existing fields should not be renamed or removed without a new schema version.
 
+### Individually monitored loads
+
+`GET /api/v1/snapshot` includes `monitored_loads`, one object per configured
+Tasmota monitor, sorted by supervisor key:
+
+```json
+{
+  "name": "refrigeration",
+  "host": "192.168.0.210",
+  "voltage_v": 121.4,
+  "current_a": 0.82,
+  "power_w": 87.0,
+  "apparent_power_va": 99.0,
+  "reactive_power_var": 47.0,
+  "power_factor": 0.88,
+  "energy_today_kwh": 0.456,
+  "energy_yesterday_kwh": 1.234,
+  "energy_total_kwh": 123.456,
+  "rolling_average_power_w": 100.2
+}
+```
+
+See [Individual load metering](../subsystems/load-metering.md) for cadence,
+counter semantics, and the distinction between generic logging and explicit
+display annotations.
+
 ## Control
 
 Control endpoints accept JSON objects and return JSON. They are intended for

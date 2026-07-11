@@ -141,6 +141,7 @@ Common elements (see `.env.example` for the full list):
 | `BATTERY_CAN_PROTOCOL` | BMS CAN dialect (`pylon`) |
 | `MAGNUM_DEVICE` | Magnum RS485 serial device, e.g. `/dev/magnum-rs485`; **empty disables** the Magnum tap |
 | `AMBIENT_SENSOR_ENABLED` / `AMBIENT_SENSOR_KIND` / `AMBIENT_DS18B20_DEVICE_ID` | Ambient temp sensor on GPIO |
+| `TASMOTA_DEVICES` | Comma-separated `name=host` individual-load monitors. See [Adding a Tasmota Sonoff S31](add-tasmota-s31.md). |
 | `WEATHER_ENABLED` / `WEATHER_LATITUDE` / `WEATHER_LONGITUDE` / `WEATHER_LABEL` | Open-Meteo weather panel (lat/lon are required if enabled) |
 | `METRICS_DB_PATH` | SQLite telemetry store (`/srv/telemetry/data/metrics.sqlite`) |
 | `B2_*` | Backblaze B2 store-and-forward export (bucket, keys, endpoint) |
@@ -176,6 +177,7 @@ The arguments you'll touch most:
 |---|---|
 | `--classic-host HOST` | MidNite Classic IP (defaults to `CLASSIC_HOST`) |
 | `--epever-device PATH` | EPEver RS485 serial node (`/dev/epever-rs485`) |
+| `--tasmota-device NAME=HOST` | Add a Tasmota energy monitor; repeat for multiple devices. Production normally uses `TASMOTA_DEVICES`. |
 | `--interval N` | Seconds between poll cycles (`5`) |
 | `--web-display` / `--web-host` / `--web-port` | Serve the JSON API + Kindle/web display (nginx fronts it) |
 | `--weather` (+ `--weather-cache-path`) | Enable the weather panel |
@@ -218,6 +220,10 @@ after a hard 150-second service timeout so an unavailable Classic cannot prevent
 telemetry from starting. The helper runs as the unprivileged service account
 with only `CAP_SYS_TIME`; the long-running supervisor receives no added
 capability.
+
+The rationale, source hierarchy, Modbus findings, race handling, and failure
+semantics are documented in
+[System timekeeping and Classic/MNGP recovery](../subsystems/timekeeping.md).
 
 Diagnostic dry run (reads the Classic even though NTP is currently healthy):
 

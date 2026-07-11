@@ -16,3 +16,5 @@ This folder is the project map by physical subsystem. Each page should answer th
 - [Battery temperature control](battery-temperature-control.md)
 - [Inverter/charger](inverter-charger.md)
 - [Supervisory controller](supervisory-controller.md)
+- [Individual load metering](load-metering.md)
+- [System timekeeping and Classic/MNGP recovery](timekeeping.md)

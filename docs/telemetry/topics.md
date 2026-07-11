@@ -31,3 +31,6 @@ These names are transport-neutral for now. They could become MQTT topics, databa
 | `power/system/health` | JSON |  | Service health summary |
 | `network/lan_reachable` | number | 0/1 | LAN gateway (router) reachability; 0.0 when gateway ping fails, 1.0 when it succeeds, sampled every 30 s |
 | `network/wan_reachable` | event |  | WAN (internet) reachability; logged as `wan_up` / `wan_down` transition events only, not per-tick samples |
+| `tasmota/<name>/power` | number | W | Real power for an individually monitored load; SQLite source is `tasmota.<name>` |
+| `tasmota/<name>/daily_energy` | number | kWh | Device-local `Today` counter; Tasmota resets it at local midnight |
+| `tasmota/<name>/lifetime_energy` | number | kWh | Device-maintained cumulative energy counter |

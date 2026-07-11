@@ -104,7 +104,7 @@ Table: `samples`
 | column | notes |
 |---|---|
 | `captured_at` | ISO-8601 in **UTC**, e.g. `2026-06-15T14:07:12.284562+00:00` (always `+00:00`) |
-| `source` | `classic.0`, `epever.1`, `battery`, `battery.can`, `load`, `weather`, `supervisor` |
+| `source` | `classic.0`, `epever.1`, `battery`, `battery.can`, `load`, `tasmota.<name>`, `weather`, `supervisor` |
 | `metric` | metric name (see below) |
 | `value` | numeric |
 | `text` | string (for stage names, states, etc.) |
@@ -155,6 +155,14 @@ over time instead.
 | `current` | A | positive = charging |
 | `soc` | % | state of charge |
 | `temperature` | C | |
+
+### Key metrics — `tasmota.<name>`
+
+Each configured S31 has a stable source such as `tasmota.refrigeration`.
+Metrics are `voltage`, `current`, `power`, `apparent_power`, `reactive_power`,
+`power_factor`, `daily_energy`, `yesterday_energy`, and `lifetime_energy`.
+The device owns its energy counters; `daily_energy` follows the S31's configured
+local clock and resets at its local midnight.
 
 ### Example: peak charge power on a specific day
 

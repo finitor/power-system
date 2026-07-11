@@ -12,6 +12,8 @@ This project is organized around the major power-system subsystems that require 
 - [Inverter/charger](subsystems/inverter-charger.md): MagnaSine 4448 inverter/charger.
 - [Supervisory controller](subsystems/supervisory-controller.md): Raspberry Pi and local services.
 - [Display services](subsystems/display-services.md): Kindle wall display, desktop console, and the nginx/systemd restart chain.
+- [Individual load metering](subsystems/load-metering.md): Tasmota-flashed Sonoff S31 monitors for appliance-level AC power and energy.
+- [System timekeeping](subsystems/timekeeping.md): NTP-first Pi clock with boot-time recovery from the Classic/MNGP RTC.
 
 ```mermaid
 flowchart LR
@@ -28,6 +30,7 @@ flowchart LR
   Classic -. controller telemetry .-> Pi
   Epever -. controller telemetry .-> Pi
   Inverter -. inverter telemetry .-> Pi
+  ACLoads -. S31 load telemetry .-> Pi
   Pi -. current-limit writes (charge allocator) .-> Classic
   Pi -. current-limit + coil writes (charge allocator) .-> Epever
   Pi --> Telemetry[Local Telemetry Storage]
@@ -47,6 +50,7 @@ flowchart LR
 | Battery temperature control | Keeps batteries inside a safe temperature window | 48 V ceramic heater, insulated/ventilatable enclosure, thermostat, Pi permissive, thermal cutoffs |
 | Supervisory controller | Reads telemetry, logs state, displays dashboard, and coordinates non-critical control | Raspberry Pi |
 | Data services | Telemetry transport, database, dashboard, logs | Local-first SQLite with Backblaze B2 store-and-forward; MQTT remains an optional live transport |
+| Individual load metering | Measures selected AC appliances inside the inverter total | Tasmota Sonoff S31 over read-only local HTTP; refrigeration installed |
 
 ## Data Flow
 

@@ -48,3 +48,4 @@ Live communication paths as configured today:
 | Eco-Worthy Cubix bank | CAN 500 kbit/s | `can0` via SH-C31G, listen-only | Pylon-protocol frames; BMS may go silent at idle and recover under load |
 | MagnaSine MS4448PAE | Magnum RS485 (read) + OEM remote (control) | `/dev/magnum-rs485` (SH-U11H); ME-RC50 | Supervisor reads a passive Magnum-network telemetry tap (live since 2026-06-16). Control stays manual on the ME-RC50 — closed-loop takeover rejected (decision 0002) |
 | EPEver TEP10425 | RS485 Modbus RJ45 | `/dev/epever-rs485` (KL0823B CH340) | Array 1, committed and in service. KL0823B via straight-through CAT-6 breakout: COM RJ45 pin 6 -> adapter A, pin 3 -> adapter B; pin 8 GND is documented but bench comms also worked with A/B only |
+| Sonoff S31 (refrigeration) | Wi-Fi / Tasmota HTTP | `192.168.0.210`, key `refrigeration` | Read-only `Status 10` polling; 5-second live cadence and 60-second durable metrics under `tasmota.refrigeration` |
