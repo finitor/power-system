@@ -12,8 +12,8 @@ Group=@SERVICE_USER@
 WorkingDirectory=@PROJECT_DIR@
 Environment=PYTHONPATH=@PROJECT_DIR@/software/pi-controller/src
 EnvironmentFile=-/etc/offgrid-power.env
-ExecStart=-@PROJECT_DIR@/.venv/bin/python -m offgrid_power.cli.classic_clock_restore --ntp-wait-seconds 15 --classic-wait-seconds 30
-TimeoutStartSec=55
+ExecStart=-@PROJECT_DIR@/.venv/bin/python -m offgrid_power.cli.classic_clock_restore --ntp-wait-seconds 15 --classic-wait-seconds 120
+TimeoutStartSec=150
 CapabilityBoundingSet=CAP_SYS_TIME
 AmbientCapabilities=CAP_SYS_TIME
 NoNewPrivileges=yes

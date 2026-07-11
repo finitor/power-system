@@ -140,6 +140,97 @@ class RestoreSystemClockTest(unittest.TestCase):
 
         self.assertEqual(result.action, "invalid")
 
+    def test_waits_for_two_advancing_classic_samples(self) -> None:
+        system_time = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)
+        samples = iter(
+            [
+                datetime.fromisoformat("2026-07-10T17:00:00-04:00"),
+                datetime.fromisoformat("2026-07-10T17:00:01-04:00"),
+                datetime.fromisoformat("2026-07-10T17:00:02-04:00"),
+            ]
+        )
+        monotonic = [0.0]
+
+        result = restore_system_clock(
+            host="192.168.0.10",
+            ignore_ntp=True,
+            classic_wait_seconds=10,
+            poll_seconds=1,
+            now_fn=lambda: system_time,
+            monotonic_fn=lambda: monotonic[0],
+            sleep_fn=lambda seconds: monotonic.__setitem__(0, monotonic[0] + seconds),
+            read_clock_fn=lambda: next(samples),
+            set_clock_fn=lambda timestamp: None,
+        )
+
+        self.assertEqual(result.action, "restored")
+        self.assertEqual(monotonic[0], 2.0)
+
+    def test_reconfirms_after_classic_clock_jump(self) -> None:
+        system_time = datetime(2026, 7, 10, 20, 0, tzinfo=timezone.utc)
+        samples = iter(
+            [
+                datetime.fromisoformat("2026-07-10T16:00:00-04:00"),
+                datetime.fromisoformat("2026-07-10T17:00:01-04:00"),
+                datetime.fromisoformat("2026-07-10T17:00:02-04:00"),
+                datetime.fromisoformat("2026-07-10T17:00:03-04:00"),
+            ]
+        )
+        monotonic = [0.0]
+
+        result = restore_system_clock(
+            host="192.168.0.10",
+            ignore_ntp=True,
+            classic_wait_seconds=10,
+            poll_seconds=1,
+            now_fn=lambda: system_time,
+            monotonic_fn=lambda: monotonic[0],
+            sleep_fn=lambda seconds: monotonic.__setitem__(0, monotonic[0] + seconds),
+            read_clock_fn=lambda: next(samples),
+            set_clock_fn=lambda timestamp: None,
+        )
+
+        self.assertEqual(result.action, "restored")
+        self.assertEqual(monotonic[0], 3.0)
+
+    def test_fails_open_at_deadline_when_classic_never_boots(self) -> None:
+        monotonic = [0.0]
+
+        result = restore_system_clock(
+            host="192.168.0.10",
+            ignore_ntp=True,
+            classic_wait_seconds=5,
+            poll_seconds=1,
+            monotonic_fn=lambda: monotonic[0],
+            sleep_fn=lambda seconds: monotonic.__setitem__(0, monotonic[0] + seconds),
+            read_clock_fn=lambda: (_ for _ in ()).throw(ConnectionError("offline")),
+        )
+
+        self.assertEqual(result.action, "unavailable")
+        self.assertEqual(monotonic[0], 5.0)
+
+    def test_uses_ntp_if_it_arrives_while_waiting_for_classic(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "synchronized"
+            monotonic = [0.0]
+
+            def sleep(seconds: float) -> None:
+                monotonic[0] += seconds
+                marker.touch()
+
+            result = restore_system_clock(
+                host="192.168.0.10",
+                ntp_wait_seconds=0,
+                classic_wait_seconds=10,
+                poll_seconds=1,
+                timesync_marker=marker,
+                monotonic_fn=lambda: monotonic[0],
+                sleep_fn=sleep,
+                read_clock_fn=lambda: (_ for _ in ()).throw(ConnectionError("booting")),
+            )
+
+        self.assertEqual(result.action, "ntp")
+
 
 class ClockRestoreSystemdTest(unittest.TestCase):
     def test_supervisor_waits_for_clock_restore_service(self) -> None:
@@ -150,6 +241,8 @@ class ClockRestoreSystemdTest(unittest.TestCase):
         self.assertIn("Wants=network-online.target offgrid-classic-clock-restore.service", supervisor_unit)
         self.assertIn("CapabilityBoundingSet=CAP_SYS_TIME", restore_unit)
         self.assertIn("ExecStart=-@PROJECT_DIR@/.venv/bin/python", restore_unit)
+        self.assertIn("--classic-wait-seconds 120", restore_unit)
+        self.assertIn("TimeoutStartSec=150", restore_unit)
 
 
 if __name__ == "__main__":

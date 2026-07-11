@@ -17,6 +17,8 @@ from .classic import RegisterBlock, read_block, u32
 DEFAULT_TIMESYNC_MARKER = Path("/run/systemd/timesync/synchronized")
 DEFAULT_TIMEZONE = "America/Toronto"
 MAX_FORWARD_STEP_SECONDS = 2 * 366 * 24 * 60 * 60
+CLASSIC_CONFIRM_SECONDS = 2.0
+CLASSIC_ADVANCE_TOLERANCE_SECONDS = 2.0
 
 
 @dataclass(frozen=True)
@@ -101,7 +103,7 @@ def restore_system_clock(
     timeout: float = 3.0,
     timezone_name: str = DEFAULT_TIMEZONE,
     ntp_wait_seconds: float = 15.0,
-    classic_wait_seconds: float = 30.0,
+    classic_wait_seconds: float = 120.0,
     poll_seconds: float = 1.0,
     dry_run: bool = False,
     ignore_ntp: bool = False,
@@ -140,19 +142,64 @@ def restore_system_clock(
     deadline = monotonic_fn() + max(0.0, classic_wait_seconds)
     last_error: Exception | None = None
     classic_time: datetime | None = None
+    previous_classic_time: datetime | None = None
+    previous_read_at: float | None = None
     while True:
+        # NTP can become available at any point while the Classic is booting.
+        # Prefer it immediately rather than making telemetry wait for the full
+        # Classic readiness window.
+        if not ignore_ntp and timesync_marker.exists():
+            return ClockRestoreResult(
+                "ntp", "NTP synchronized while waiting for Classic; Classic fallback not applied"
+            )
         try:
-            classic_time = read_clock_fn()
-            break
+            candidate = read_clock_fn()
+            if candidate.tzinfo is None or candidate.utcoffset() is None:
+                raise ValueError("Classic clock decoder returned a naive timestamp")
+
+            read_at = monotonic_fn()
+            if classic_wait_seconds <= 0:
+                classic_time = candidate
+                break
+            if previous_classic_time is not None and previous_read_at is not None:
+                observed_elapsed = read_at - previous_read_at
+                rtc_elapsed = (candidate - previous_classic_time).total_seconds()
+                if (
+                    observed_elapsed >= CLASSIC_CONFIRM_SECONDS
+                    and rtc_elapsed > 0
+                    and abs(rtc_elapsed - observed_elapsed)
+                    <= CLASSIC_ADVANCE_TOLERANCE_SECONDS
+                ):
+                    classic_time = candidate
+                    break
+                if (
+                    rtc_elapsed <= 0
+                    or abs(rtc_elapsed - observed_elapsed)
+                    > CLASSIC_ADVANCE_TOLERANCE_SECONDS
+                ):
+                    last_error = ValueError(
+                        "Classic RTC changed discontinuously while booting "
+                        f"(RTC {rtc_elapsed:.1f}s, elapsed {observed_elapsed:.1f}s)"
+                    )
+                    # A discontinuity can be the MNGP copying its durable time
+                    # to the main board. Start confirmation again from the new
+                    # value rather than trusting either side of the jump.
+                    previous_classic_time = candidate
+                    previous_read_at = read_at
+            else:
+                previous_classic_time = candidate
+                previous_read_at = read_at
         except Exception as exc:  # noqa: BLE001 - boot fallback retries any adapter failure.
             last_error = exc
+            previous_classic_time = None
+            previous_read_at = None
         remaining = deadline - monotonic_fn()
         if remaining <= 0:
-            return ClockRestoreResult("unavailable", f"Classic clock unavailable: {last_error}")
+            detail = last_error or "Classic RTC did not produce two advancing samples"
+            return ClockRestoreResult("unavailable", f"Classic clock unavailable: {detail}")
         sleep_fn(min(poll_seconds, remaining))
 
-    if classic_time.tzinfo is None or classic_time.utcoffset() is None:
-        return ClockRestoreResult("invalid", "Classic clock decoder returned a naive timestamp")
+    assert classic_time is not None
     classic_utc = classic_time.astimezone(timezone.utc)
 
     # Close the small race where timesyncd succeeds while the Modbus request is

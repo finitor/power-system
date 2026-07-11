@@ -18,7 +18,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--classic-timeout", type=float, default=config.classic.timeout_s)
     parser.add_argument("--timezone", default="America/Toronto")
     parser.add_argument("--ntp-wait-seconds", type=float, default=15.0)
-    parser.add_argument("--classic-wait-seconds", type=float, default=30.0)
+    parser.add_argument("--classic-wait-seconds", type=float, default=120.0)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
         "--ignore-ntp",

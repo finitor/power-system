@@ -208,12 +208,16 @@ sudo systemctl start offgrid-supervisor
 
 Before the supervisor starts, `offgrid-classic-clock-restore.service` gives
 internet NTP 15 seconds to synchronize the Pi. If NTP is still unavailable, it
-reads the Classic's local RTC over Modbus, validates it as `America/Toronto`,
-and advances the Pi clock when the Classic is ahead. It never steps the clock
+allows the Classic up to 120 seconds to boot and produce two plausible,
+advancing RTC samples. A discontinuous clock change restarts confirmation so an
+MNGP-to-main-board time copy is not mistaken for a stable RTC. NTP is rechecked
+throughout the wait. The helper validates Classic time as `America/Toronto` and
+advances the Pi clock when the Classic is ahead. It never steps the clock
 backward, ignores the Classic's unreliable day-of-year register, and fails open
-so an unavailable Classic cannot prevent telemetry from starting. The helper
-runs as the unprivileged service account with only `CAP_SYS_TIME`; the
-long-running supervisor receives no added capability.
+after a hard 150-second service timeout so an unavailable Classic cannot prevent
+telemetry from starting. The helper runs as the unprivileged service account
+with only `CAP_SYS_TIME`; the long-running supervisor receives no added
+capability.
 
 Diagnostic dry run (reads the Classic even though NTP is currently healthy):
 
