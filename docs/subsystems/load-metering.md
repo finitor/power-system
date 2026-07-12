@@ -27,11 +27,16 @@ For device key `<name>`:
 - rolling average: three hours of real-power samples, with startup history
   restored from the durable metric store.
 
-The refrigeration value is appended to the Load group's **Now**, **3hr Rolling
-Avg**, and **Cumulative Today** lines on the terminal, API terminal, browser,
-and Kindle displays. The first two show watts; Cumulative Today shows Tasmota's
-local-day kWh counter. This annotation is an individual-load subset of the
-whole-system load, not a second independent total.
+Refrigeration has its own row at the bottom of the Load group on the terminal,
+API terminal, browser, and Kindle displays:
+
+```text
+Refrigeration          Now 87W  3hr 100W  Cumulative 0.5kWh
+```
+
+Now and 3hr show watts; Cumulative shows Tasmota's local-day kWh counter. This
+row is an individual-load subset of the whole-system load, not a second
+independent total.
 
 ## Configuration boundary
 

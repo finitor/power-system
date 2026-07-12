@@ -108,10 +108,10 @@ Every registered device is automatically:
 - given a three-hour rolling power average, re-seeded from SQLite after a
   supervisor restart.
 
-The current parenthetical display annotations are specifically keyed to
-`refrigeration`. A newly registered device is readable and loggable without a
-code change, but adding it to the Load lines on every display requires extending
-the display renderers and their tests.
+The dedicated Load-group display row is specifically keyed to `refrigeration`.
+A newly registered device is readable and loggable without a code change, but
+adding another dedicated row on every display requires extending the display
+renderers and their tests.
 
 ## 6. Verify durable logging
 

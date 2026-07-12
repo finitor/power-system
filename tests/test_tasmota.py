@@ -18,7 +18,11 @@ from offgrid_power.metrics import snapshot_metric_samples
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.tasmota import TasmotaClient, TasmotaTelemetry
 from offgrid_power.terminal_display import render_snapshot
-from offgrid_power.web_display import render_kindle_snapshot, snapshot_api_payload
+from offgrid_power.web_display import (
+    render_browser_snapshot,
+    render_kindle_snapshot,
+    snapshot_api_payload,
+)
 
 
 STATUS_10 = b'''{"StatusSNS":{"Time":"2026-07-10T12:00:00","ENERGY":{
@@ -77,7 +81,7 @@ class TasmotaClientTest(unittest.TestCase):
         self.assertEqual(payload["monitored_loads"][0]["name"], "refrigeration")
         self.assertEqual(payload["monitored_loads"][0]["energy_today_kwh"], 0.456)
 
-    def test_all_load_displays_annotate_refrigeration(self) -> None:
+    def test_all_load_displays_show_refrigeration_on_its_own_last_row(self) -> None:
         telemetry = make_telemetry()
         snapshot = make_snapshot(tasmota={"refrigeration": telemetry})
         summary = LoadSummary(
@@ -85,17 +89,22 @@ class TasmotaClientTest(unittest.TestCase):
             power_w=272,
             average_today_text="3.2A  169W",
             today_text="5.8kWh 106Ah",
+            remaining_text="24.0h",
         )
 
         direct = render_snapshot(snapshot, load_summary=summary)
         payload = snapshot_api_payload(snapshot, load_summary=summary)
         api_terminal = render_api_snapshot(payload)
         kindle = render_kindle_snapshot(snapshot, load_summary=summary)
+        browser = render_browser_snapshot(snapshot, load_summary=summary)
 
-        for rendered in (direct, api_terminal, kindle):
-            self.assertIn("(Refrigeration 87W)", rendered)
-            self.assertIn("(Refrigeration 100W)", rendered)
-            self.assertIn("(Refrigeration 0.5kWh)", rendered)
+        expected = "Now 87W  3hr 100W  Cumulative 0.5kWh"
+        for rendered in (direct, api_terminal, kindle, browser):
+            self.assertIn("Refrigeration", rendered)
+            self.assertIn(expected, rendered)
+            self.assertNotIn("(Refrigeration", rendered)
+            self.assertLess(rendered.index("Cumulative Today"), rendered.index("Refrigeration"))
+            self.assertLess(rendered.index("Estimated Autonomy"), rendered.index("Refrigeration"))
 
 
 def make_telemetry() -> TasmotaTelemetry:

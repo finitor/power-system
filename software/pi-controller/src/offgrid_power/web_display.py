@@ -17,7 +17,12 @@ from .api_terminal_display import render_api_snapshot, render_api_weather
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
 from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot, snapshot_severity_text, snapshot_status_annotations
-from .terminal_display import format_cell_location_for_display, format_time, format_updated_time
+from .terminal_display import (
+    format_cell_location_for_display,
+    format_refrigeration_summary,
+    format_time,
+    format_updated_time,
+)
 from .weather import WeatherReport, weather_api_payload
 from .web_assets import ASSET_CACHE_CONTROL, ASSET_CONTENT, favicon_links
 
@@ -2358,30 +2363,21 @@ def _load_section(load_summary: LoadSummary | None, refrigeration=None) -> list[
     if load_summary is None:
         lines.append(_row("Now", "No data"))
     else:
-        lines.append(_row("Now", _load_value_with_refrigeration(
-            f"{load_summary.current_a:.1f}A  {load_summary.power_w}W",
-            None if refrigeration is None else refrigeration.power_w,
-        )))
+        lines.append(_row("Now", f"{load_summary.current_a:.1f}A  {load_summary.power_w}W"))
         if load_summary.average_today_text is not None:
-            lines.append(_row("3hr Rolling Avg", _load_value_with_refrigeration(
-                load_summary.average_today_text,
-                None if refrigeration is None else refrigeration.rolling_average_power_w,
-            )))
+            lines.append(_row("3hr Rolling Avg", load_summary.average_today_text))
         if load_summary.today_text is not None:
-            cumulative = load_summary.today_text
-            if refrigeration is not None:
-                cumulative += f"  (Refrigeration {refrigeration.energy_today_kwh:.1f}kWh)"
-            lines.append(_row("Cumulative Today", cumulative))
+            lines.append(_row("Cumulative Today", load_summary.today_text))
         if load_summary.remaining_text is not None:
             lines.append(_row("Estimated Autonomy", load_summary.remaining_text))
+    if refrigeration is not None:
+        lines.append(_row("Refrigeration", format_refrigeration_summary(
+            refrigeration.power_w,
+            refrigeration.rolling_average_power_w,
+            refrigeration.energy_today_kwh,
+        )))
     lines.append("</table>")
     return lines
-
-
-def _load_value_with_refrigeration(value: str, refrigeration_power_w: float | None) -> str:
-    if refrigeration_power_w is None:
-        return value
-    return f"{value}  (Refrigeration {round(refrigeration_power_w)}W)"
 
 
 def _battery_section(snapshot: SupervisorSnapshot) -> list[str]:

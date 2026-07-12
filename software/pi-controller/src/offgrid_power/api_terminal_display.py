@@ -6,7 +6,11 @@ from datetime import datetime, timedelta
 import shutil
 
 from .charge_stage import NormalizedStage
-from .terminal_display import format_cell_location_for_display, format_updated_time
+from .terminal_display import (
+    format_cell_location_for_display,
+    format_refrigeration_summary,
+    format_updated_time,
+)
 
 
 ROW_LABEL_WIDTH = 21
@@ -34,22 +38,21 @@ def render_api_snapshot(payload: dict, now: datetime | None = None) -> str:
     if load is None:
         lines.append("  No data")
     else:
-        lines.append(_row("Now", _load_value_with_refrigeration(
-            f"{_fmt(load.get('current_a'), 1)}A  {_fmt(load.get('power_w'), 0)}W",
-            None if refrigeration is None else refrigeration.get("power_w"),
-        )))
+        lines.append(_row(
+            "Now", f"{_fmt(load.get('current_a'), 1)}A  {_fmt(load.get('power_w'), 0)}W"
+        ))
         if load.get("average_today_text") is not None:
-            lines.append(_row("3hr Rolling Avg", _load_value_with_refrigeration(
-                str(load["average_today_text"]),
-                None if refrigeration is None else refrigeration.get("rolling_average_power_w"),
-            )))
+            lines.append(_row("3hr Rolling Avg", str(load["average_today_text"])))
         if load.get("today_text") is not None:
-            cumulative = str(load["today_text"])
-            if refrigeration is not None and refrigeration.get("energy_today_kwh") is not None:
-                cumulative += f"  (Refrigeration {float(refrigeration['energy_today_kwh']):.1f}kWh)"
-            lines.append(_row("Cumulative Today", cumulative))
+            lines.append(_row("Cumulative Today", str(load["today_text"])))
         if load.get("remaining_text") is not None:
             lines.append(_row("Estimated Autonomy", str(load["remaining_text"])))
+    if refrigeration is not None:
+        lines.append(_row("Refrigeration", format_refrigeration_summary(
+            refrigeration.get("power_w"),
+            refrigeration.get("rolling_average_power_w"),
+            refrigeration.get("energy_today_kwh"),
+        )))
 
     lines.append("")
     lines.extend(_battery_lines(battery if payload.get("battery") is not None else None))
@@ -89,12 +92,6 @@ def _monitored_load(payload: dict, name: str) -> dict | None:
         if str(load.get("name", "")).lower() == name.lower():
             return load
     return None
-
-
-def _load_value_with_refrigeration(value: str, refrigeration_power_w) -> str:
-    if refrigeration_power_w is None:
-        return value
-    return f"{value}  (Refrigeration {round(float(refrigeration_power_w))}W)"
 
 
 def render_api_unavailable(error: str) -> str:
