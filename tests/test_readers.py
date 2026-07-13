@@ -304,6 +304,23 @@ class SupervisorReaderModeTest(unittest.TestCase):
         self.assertIsNone(snapshot.ambient)
         self.assertEqual(snapshot.errors, [])
 
+    def test_tasmota_error_hides_last_good_value_immediately(self) -> None:
+        now = datetime.now(timezone.utc)
+        supervisor = self._supervisor_with_readers(
+            {
+                "tasmota.refrigeration": FakeReader(
+                    "tasmota.refrigeration",
+                    "last-good",
+                    now,
+                    error="connection timed out",
+                )
+            }
+        )
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertNotIn("refrigeration", snapshot.tasmota)
+
     def test_partial_battery_snapshot_counts_as_failed_read(self) -> None:
         # A sparse frame burst decodes to a snapshot without measurements;
         # it must not overwrite the cached good snapshot.

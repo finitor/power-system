@@ -38,6 +38,11 @@ Now and 3hr show watts; Cumulative shows Tasmota's local-day kWh counter. This
 row is an individual-load subset of the whole-system load, not a second
 independent total.
 
+The row is live-only. If the current S31 poll fails, the supervisor omits the
+meter from its snapshot and all displays hide the Refrigeration row rather than
+showing cached power as though it were current. Existing SQLite history is not
+deleted, and the row returns automatically after the next successful poll.
+
 ## Configuration boundary
 
 The device registry is the comma-separated `TASMOTA_DEVICES` value in

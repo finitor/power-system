@@ -465,7 +465,15 @@ class Supervisor:
 
             if name.startswith("tasmota."):
                 load_name = name.removeprefix("tasmota.")
-                if reading.value is not None and not reading.is_expired(now):
+                # An appliance meter is optional display context, not a value
+                # worth carrying forward after a failed poll. Hiding it avoids
+                # presenting old power as live while the S31 is unreachable;
+                # its durable history remains in the metric store.
+                if (
+                    reading.error is None
+                    and reading.value is not None
+                    and not reading.is_expired(now)
+                ):
                     devices["tasmota"][load_name] = reading.value
                 if reading.error is not None:
                     age = reading.age_seconds(now)

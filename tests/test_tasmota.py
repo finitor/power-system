@@ -106,6 +106,21 @@ class TasmotaClientTest(unittest.TestCase):
             self.assertLess(rendered.index("Cumulative Today"), rendered.index("Refrigeration"))
             self.assertLess(rendered.index("Estimated Autonomy"), rendered.index("Refrigeration"))
 
+    def test_all_load_displays_hide_refrigeration_without_a_current_reading(self) -> None:
+        snapshot = make_snapshot(tasmota={})
+        summary = LoadSummary(current_a=5.1, power_w=272)
+        payload = snapshot_api_payload(snapshot, load_summary=summary)
+
+        rendered_displays = (
+            render_snapshot(snapshot, load_summary=summary),
+            render_api_snapshot(payload),
+            render_kindle_snapshot(snapshot, load_summary=summary),
+            render_browser_snapshot(snapshot, load_summary=summary),
+        )
+
+        for rendered in rendered_displays:
+            self.assertNotIn("Refrigeration", rendered)
+
 
 def make_telemetry() -> TasmotaTelemetry:
     return TasmotaTelemetry(

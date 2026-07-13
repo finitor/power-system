@@ -133,7 +133,9 @@ Expected metrics are `voltage`, `current`, `power`, `apparent_power`,
 - Connection refused/time-out: verify the DHCP reservation, Wi-Fi association,
   and IP address from the Tasmota Information page.
 - `Tasmota <key> read failed` in supervisor status: compare the direct `curl`
-  response with `journalctl -u offgrid-supervisor -n 50 --no-pager`.
+  response with `journalctl -u offgrid-supervisor -n 50 --no-pager`. The
+  device's display row is intentionally hidden until a poll succeeds again;
+  historical SQLite samples remain intact.
 - Wrong daily rollover: check `Status 7`/the Tasmota Information page for local
   time and reapply the timezone rules. Confirm WAN/NTP availability after a
   full power loss.
