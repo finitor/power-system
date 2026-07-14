@@ -19,6 +19,7 @@ sudo apt-get install -y \
     curl \
     git \
     iproute2 \
+    jq \
     nginx \
     nodejs \
     npm \
