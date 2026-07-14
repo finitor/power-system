@@ -14,6 +14,7 @@ wan_reachable is False rather than logging noise.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 import socket
 import subprocess
 from threading import Event, Lock, Thread
@@ -22,6 +23,9 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .metrics import TelemetryEvent
+
+
+logger = logging.getLogger(__name__)
 
 
 class NetworkMonitor:
@@ -97,14 +101,31 @@ class NetworkMonitor:
                 self._lan_reachable = False
 
     def _check_lan(self) -> bool:
+        started = time.monotonic()
         try:
             result = subprocess.run(
                 ["ping", "-c", "1", "-W", "1", self.gateway],
                 capture_output=True,
                 timeout=3,
             )
-            return result.returncode == 0
-        except Exception:  # noqa: BLE001
+            if result.returncode == 0:
+                return True
+            detail = result.stderr.decode(errors="replace").strip()
+            logger.warning(
+                "LAN gateway ping failed: gateway=%s returncode=%d duration=%.3fs%s",
+                self.gateway,
+                result.returncode,
+                time.monotonic() - started,
+                f" stderr={detail}" if detail else "",
+            )
+            return False
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "LAN gateway ping failed: gateway=%s exception=%s duration=%.3fs",
+                self.gateway,
+                exc,
+                time.monotonic() - started,
+            )
             return False
 
     def _check_wan(self) -> bool:

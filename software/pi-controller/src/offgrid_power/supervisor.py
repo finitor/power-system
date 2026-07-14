@@ -572,10 +572,16 @@ class Supervisor:
                     devices["ambient"] = reading.value
                 continue
 
-            # LAN down means Classic (Modbus TCP) is definitively offline — don't
-            # wait for the grace window to expire before hiding stale cached values.
-            # RS485/CAN devices are unaffected; their grace windows still apply.
-            lan_down = name == "classic" and self._network_monitor is not None and self._network_monitor.lan_reachable is False
+            # A gateway ping miss alone does not prove the Classic is offline.
+            # Hide it immediately only when its own latest Modbus poll also
+            # failed. A successful Classic poll is stronger path-specific
+            # evidence than an ICMP miss at the router.
+            lan_probe_down = (
+                name == "classic"
+                and self._network_monitor is not None
+                and self._network_monitor.lan_reachable is False
+            )
+            lan_down = lan_probe_down and reading.error is not None
 
             # Past the expiry, the cached value is too old to show: leave the
             # device None so the displays render "No data". Staleness below
@@ -597,7 +603,7 @@ class Supervisor:
             # for transient glitches, not just for the poll-stalled (no-error) case.
             if reading.error is not None:
                 age = reading.age_seconds(now)
-                if lan_down:
+                if lan_probe_down:
                     # LAN outage explains the Classic failure; suppress per-device noise.
                     # The LAN condition below covers it.
                     pass

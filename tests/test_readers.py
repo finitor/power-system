@@ -430,6 +430,50 @@ class SupervisorReaderModeTest(unittest.TestCase):
         self.assertGreater(len(classic_reads), classic_count)
         self.assertEqual(len(epever_reads), epever_count)
 
+    def test_gateway_ping_miss_does_not_hide_successful_classic_telemetry(self) -> None:
+        from snapshot_helpers import make_classic_telemetry
+
+        class NetworkDown:
+            lan_reachable = False
+            wan_reachable = False
+
+        classic = make_classic_telemetry()
+        supervisor = Supervisor(classic=object())
+        supervisor._readers = {
+            "classic": FakeReader("classic", (classic, None), datetime.now(timezone.utc))
+        }
+        supervisor._network_monitor = NetworkDown()
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertIs(snapshot.classic, classic)
+        self.assertEqual(snapshot.status_conditions, ["LAN unreachable"])
+
+    def test_gateway_and_classic_poll_failures_together_hide_classic(self) -> None:
+        from snapshot_helpers import make_classic_telemetry
+
+        class NetworkDown:
+            lan_reachable = False
+            wan_reachable = False
+
+        classic = make_classic_telemetry()
+        supervisor = Supervisor(classic=object())
+        supervisor._readers = {
+            "classic": FakeReader(
+                "classic",
+                (classic, None),
+                datetime.now(timezone.utc),
+                error="connection timed out",
+            )
+        }
+        supervisor._network_monitor = NetworkDown()
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertIsNone(snapshot.classic)
+        self.assertEqual(snapshot.errors, [])
+        self.assertEqual(snapshot.status_conditions, ["LAN unreachable"])
+
 
 if __name__ == "__main__":
     unittest.main()

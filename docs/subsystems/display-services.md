@@ -96,6 +96,13 @@ dropped ICMP reply preserves the last healthy state. A successful probe clears
 the failure count and restores LAN state immediately. This prevents a transient
 ping miss from hiding the TCP-connected Classic as unreachable.
 
+Gateway reachability is not, by itself, authoritative for the Classic. The
+display hides cached Classic telemetry immediately only when the gateway probe
+and the Classic actor's own latest Modbus poll both fail. A successful Classic
+poll is stronger, path-specific evidence and remains displayed even if ICMP to
+the router is unavailable. Failed ping exit/timeout details are retained in the
+supervisor journal for diagnosis.
+
 `snapshot_severity_text()` composes the parenthetical form shown on most screens
 (`"OK"`, `"WARN (LAN offline)"`, etc.). Weather pages pass annotations through
 separately so the Kindle weather header can format them as `"OFFLINE as of
