@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
 
 
@@ -173,18 +174,16 @@ class WebDisplayTest(unittest.TestCase):
             disabled_devices=frozenset(["classic", "epever"]),
         )
 
-        html = render_kindle_snapshot(
-            snapshot,
-            load_summary=LoadSummary(
-                current_a=5.1,
-                power_w=272,
-                average_today_text="3.2A  169W",
-                today_text="5.8kWh 106Ah",
-                remaining_text="18.7h",
-            ),
+        load_summary = LoadSummary(
+            current_a=5.1,
+            power_w=272,
+            average_today_text="3.2A  169W",
+            today_text="5.8kWh 106Ah",
+            remaining_text="18.7h",
         )
+        html = render_kindle_snapshot(snapshot, load_summary=load_summary)
 
-        details_html = render_kindle_details(snapshot)
+        details_html = render_kindle_details(snapshot, load_summary=load_summary)
 
         # Page layout, styling, sectioning, and decoded values live in the golden
         # frames; re-bless with UPDATE_GOLDEN=1 on an intended change.
@@ -479,20 +478,138 @@ class WebDisplayTest(unittest.TestCase):
 
     def test_kindle_details_shows_magnum_rs485_glitches_under_inverter_charger(self) -> None:
         snapshot = make_snapshot(
+            battery=make_battery_snapshot(),
             classic=make_classic_telemetry(),
             classic_settings=make_classic_settings(),
             epever=make_epever_telemetry(),
             magnum=make_magnum_snapshot(),
+            tasmota={
+                "refrigeration": SimpleNamespace(
+                    power_w=1.0,
+                    rolling_average_power_w=28.0,
+                    energy_today_kwh=0.4,
+                )
+            },
             reader_error_rates={"magnum": 1.666},
         )
+        load_summary = LoadSummary(
+            current_a=4.9,
+            power_w=264,
+            average_today_text="4.7A 252W",
+            today_text="2.6kWh 26% of bank",
+            remaining_text="33.6h",
+        )
 
-        html = render_kindle_details(snapshot)
+        html = render_kindle_details(snapshot, load_summary=load_summary)
 
         inverter_start = html.index("<h2>Inverter/Charger</h2>")
         temperatures_start = html.index("<h2>Temperatures</h2>")
         inverter_section = html[inverter_start:temperatures_start]
         self.assertIn("<td>RS485 Glitches</td><td>1.7% (5 min)</td>", inverter_section)
         self.assertLess(inverter_section.index("Charge Settings"), inverter_section.index("RS485 Glitches"))
+
+    def test_kindle_promotes_inverter_when_one_controller_leaves_space(self) -> None:
+        load_summary = LoadSummary(
+            current_a=4.9,
+            power_w=264,
+            average_today_text="4.7A 252W",
+            today_text="2.6kWh 26% of bank",
+            remaining_text="33.6h",
+        )
+        snapshot = make_snapshot(
+            battery=make_battery_snapshot(),
+            classic=make_classic_telemetry(),
+            classic_settings=make_classic_settings(),
+            magnum=make_magnum_snapshot(),
+            tasmota={
+                "refrigeration": SimpleNamespace(
+                    power_w=1.0,
+                    rolling_average_power_w=28.0,
+                    energy_today_kwh=0.4,
+                )
+            },
+            reader_error_rates={"magnum": 0.0},
+            disabled_devices=frozenset({"epever"}),
+        )
+        allocation = {
+            "reason": "unconstrained",
+            "targets": {"classic": {"target_a": 80.0, "reason": "unconstrained"}},
+        }
+
+        main = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
+        details = render_kindle_details(snapshot, load_summary=load_summary, allocation=allocation)
+
+        self.assertIn("<h2>Inverter/Charger</h2>", main)
+        self.assertNotIn("<h2>Inverter/Charger</h2>", details)
+
+    def test_kindle_keeps_inverter_on_details_when_both_controllers_fill_main(self) -> None:
+        snapshot = make_snapshot(
+            battery=make_battery_snapshot(),
+            classic=make_classic_telemetry(),
+            classic_settings=make_classic_settings(),
+            epever=make_epever_telemetry(),
+            epever_settings=make_epever_settings(),
+            magnum=make_magnum_snapshot(),
+            tasmota={
+                "refrigeration": SimpleNamespace(
+                    power_w=1.0,
+                    rolling_average_power_w=28.0,
+                    energy_today_kwh=0.4,
+                )
+            },
+        )
+        load_summary = LoadSummary(
+            current_a=4.9,
+            power_w=264,
+            average_today_text="4.7A 252W",
+            today_text="2.6kWh 26% of bank",
+            remaining_text="33.6h",
+        )
+        allocation = {
+            "reason": "unconstrained",
+            "targets": {"classic": {"target_a": 80.0, "reason": "unconstrained"}},
+        }
+
+        main = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
+        details = render_kindle_details(snapshot, load_summary=load_summary, allocation=allocation)
+
+        self.assertNotIn("<h2>Inverter/Charger</h2>", main)
+        self.assertIn("<h2>Inverter/Charger</h2>", details)
+
+    def test_kindle_keeps_inverter_on_details_when_warning_consumes_spare_space(self) -> None:
+        snapshot = make_snapshot(
+            battery=make_battery_snapshot(),
+            classic=make_classic_telemetry(),
+            classic_settings=make_classic_settings(),
+            magnum=make_magnum_snapshot(),
+            tasmota={
+                "refrigeration": SimpleNamespace(
+                    power_w=1.0,
+                    rolling_average_power_w=28.0,
+                    energy_today_kwh=0.4,
+                )
+            },
+            reader_error_rates={"magnum": 0.0},
+            disabled_devices=frozenset({"epever"}),
+            status_conditions=["Battery temperature warning"],
+        )
+        load_summary = LoadSummary(
+            current_a=4.9,
+            power_w=264,
+            average_today_text="4.7A 252W",
+            today_text="2.6kWh 26% of bank",
+            remaining_text="33.6h",
+        )
+        allocation = {
+            "reason": "unconstrained",
+            "targets": {"classic": {"target_a": 80.0, "reason": "unconstrained"}},
+        }
+
+        main = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
+        details = render_kindle_details(snapshot, load_summary=load_summary, allocation=allocation)
+
+        self.assertNotIn("<h2>Inverter/Charger</h2>", main)
+        self.assertIn("<h2>Inverter/Charger</h2>", details)
 
     def test_kindle_details_hides_magnum_rs485_glitches_until_available(self) -> None:
         snapshot = make_snapshot(magnum=make_magnum_snapshot(), reader_error_rates={"magnum": None})
@@ -766,7 +883,7 @@ class WebDisplayTest(unittest.TestCase):
         self.assertEqual(response.status.value, 200)
         self.assertEqual(response.content_type, "text/html; charset=utf-8")
         self.assertIn(b"Off-Grid Power Details", response.body)
-        self.assertIn(b"Inverter/Charger", response.body)
+        self.assertIn(b"Temperatures", response.body)
         self.assertIn(b"Weather", response.body)
         self.assertIn(b"&lt; BACK", response.body)
 

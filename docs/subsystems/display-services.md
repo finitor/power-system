@@ -43,6 +43,16 @@ per-snapshot `user_enabled=0` heartbeat and records a `user_enabled_changed`
 event at each transition. The switch is persisted in the supervisor runtime
 state and survives restarts.
 
+## Kindle Primary-Page Layout
+
+The Kindle renderer estimates the vertical space used by the primary page from
+the section headings and table rows it is about to emit. When the complete
+Inverter/Charger group fits within the e-ink content area, that group is moved
+from **More Power Info** onto the primary page. This commonly happens when a
+charge controller is user-disabled for maintenance. If a second controller,
+extra telemetry rows, or warnings consume the space, the inverter group stays
+on the details page; the group is never split between pages.
+
 Tune mode is **staged-commit**: `+`/`-` stage a change to the selected row
 (shown as `→ target (Δ)` in the overlay) but send nothing; the change is applied
 only on `Enter`. The overlay has a row per controller voltage plus a **CCL

@@ -28,6 +28,14 @@ from .web_assets import ASSET_CACHE_CONTROL, ASSET_CONTENT, favicon_links
 
 
 KINDLE_REFRESH_SECONDS = 60
+# Approximate vertical budget for the 800x600 Kindle browser viewport. The
+# renderer uses this to promote the inverter group from Details when shorter
+# live sections leave enough room. Values mirror the Kindle CSS below: h2 is
+# ~32px including margins, table rows ~23px, and header/navigation ~80px.
+KINDLE_PRIMARY_HEIGHT_BUDGET_PX = 695
+KINDLE_PRIMARY_FIXED_HEIGHT_PX = 80
+KINDLE_SECTION_HEADING_HEIGHT_PX = 32
+KINDLE_TABLE_ROW_HEIGHT_PX = 23
 WEATHER_STALE_AFTER = timedelta(hours=1)
 BATTERY_IDLE_CURRENT_A = 0.5
 BROWSER_POWER_REFRESH_SECONDS = 30
@@ -340,10 +348,19 @@ def render_kindle_snapshot(
         f'<tr><td class="primary-cell">SOC {escape(soc_text)}</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
         "</table>",
     ]
-    lines.extend(_load_section(load_summary, snapshot.tasmota.get("refrigeration")))
-    lines.extend(_battery_section(snapshot))
-    lines.extend(_charge_controller_sections(snapshot, allocation=allocation, include_settings=True))
-    lines.extend(_status_summary_section(snapshot))
+    load_lines = _load_section(load_summary, snapshot.tasmota.get("refrigeration"))
+    battery_lines = _battery_section(snapshot)
+    controller_lines = _charge_controller_sections(snapshot, allocation=allocation, include_settings=True)
+    status_lines = _status_summary_section(snapshot)
+    base_sections = load_lines + battery_lines + controller_lines + status_lines
+    promote_inverter = _kindle_should_promote_inverter(snapshot, base_sections)
+
+    lines.extend(load_lines)
+    lines.extend(battery_lines)
+    lines.extend(controller_lines)
+    if promote_inverter:
+        lines.extend(_inverter_charger_section(snapshot))
+    lines.extend(status_lines)
     lines.extend(_kindle_nav_hint("MORE >", "right"))
     lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
@@ -353,6 +370,7 @@ def render_kindle_details(
     snapshot: SupervisorSnapshot,
     refresh_seconds: int = KINDLE_REFRESH_SECONDS,
     allocation: dict | None = None,
+    load_summary: LoadSummary | None = None,
 ) -> str:
     status = snapshot_severity_text(snapshot)
     updated = format_kindle_time(snapshot.captured_at)
@@ -372,11 +390,40 @@ def render_kindle_details(
         f'<tr><td class="primary-cell">Details</td><td class="meta-cell">Updated: {escape(updated)}<br>Status: {escape(status)}</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>',
         "</table>",
     ]
-    lines.extend(_inverter_charger_section(snapshot))
+    base_sections = (
+        _load_section(load_summary, snapshot.tasmota.get("refrigeration"))
+        + _battery_section(snapshot)
+        + _charge_controller_sections(snapshot, allocation=allocation, include_settings=True)
+        + _status_summary_section(snapshot)
+    )
+    if not _kindle_should_promote_inverter(snapshot, base_sections):
+        lines.extend(_inverter_charger_section(snapshot))
     lines.extend(_temperature_section(snapshot))
     lines.extend(_kindle_nav_hint("< BACK", "left"))
     lines.extend(["</body>", "</html>"])
     return "\n".join(lines)
+
+
+def _kindle_should_promote_inverter(
+    snapshot: SupervisorSnapshot,
+    base_sections: list[str],
+) -> bool:
+    """Whether the complete inverter group fits on the primary Kindle page."""
+    if snapshot.magnum is None:
+        return False
+    candidate = base_sections + _inverter_charger_section(snapshot)
+    height = KINDLE_PRIMARY_FIXED_HEIGHT_PX
+    height += sum(
+        KINDLE_SECTION_HEADING_HEIGHT_PX
+        for line in candidate
+        if line.startswith("<h2>")
+    )
+    height += sum(
+        KINDLE_TABLE_ROW_HEIGHT_PX
+        for line in candidate
+        if line.startswith("<tr>")
+    )
+    return height <= KINDLE_PRIMARY_HEIGHT_BUDGET_PX
 
 
 def render_kindle_weather(
@@ -708,7 +755,7 @@ def route_display_request(
         html = render_kindle_snapshot(snapshot, load_summary=load_summary, allocation=allocation)
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     if parsed_path == "/kindle/details":
-        html = render_kindle_details(snapshot, allocation=allocation)
+        html = render_kindle_details(snapshot, allocation=allocation, load_summary=load_summary)
         return DisplayResponse(HTTPStatus.OK, content_type, html.encode("utf-8"))
     if parsed_path == "/kindle/weather":
         html = render_kindle_weather(weather_api_payload(weather_report), annotations=snapshot_status_annotations(snapshot))

@@ -96,14 +96,6 @@ td:first-child{font-size:17px;font-weight:bold;width:32%;}
 <table class="summary-table">
 <tr><td class="primary-cell">Details</td><td class="meta-cell">Updated: 08:00:00 EDT<br>Status: OK</td><td class="button-cell"><a class="top-link" href="/kindle/weather">Weather</a></td></tr>
 </table>
-<h2>Inverter/Charger</h2>
-<table>
-<tr><td>DC</td><td>53.2V  4A  213W</td></tr>
-<tr><td>AC Output</td><td>120V  1A  60.0Hz</td></tr>
-<tr><td>AC Input</td><td>0V  no source</td></tr>
-<tr><td>Status</td><td>Inverting</td></tr>
-<tr><td>Charge Settings</td><td>Absorb 54.4V 3.0h Float 54.4V Shore 30A</td></tr>
-</table>
 <h2>Temperatures</h2>
 <table>
 <tr><td>Battery cells</td><td>16-17C</td></tr>
