@@ -400,6 +400,36 @@ class SupervisorReaderModeTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "user disabled"):
             supervisor.write_classic_charge_settings(battery_current_limit_a=40.0)
 
+    def test_disabling_epever_does_not_interrupt_classic_polling(self) -> None:
+        classic_reads = []
+        epever_reads = []
+
+        class FakeClassic:
+            def read(self):
+                classic_reads.append(time.monotonic())
+                return ("classic telemetry", "classic settings")
+
+        class FakeEpever:
+            def read(self):
+                epever_reads.append(time.monotonic())
+                return ("epever telemetry", "epever settings")
+
+        supervisor = Supervisor(classic=FakeClassic(), epever=FakeEpever())
+        supervisor.start_readers(interval_s=0.01)
+        try:
+            deadline = time.monotonic() + 1.0
+            while (not classic_reads or not epever_reads) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            supervisor.set_charge_controller_enabled(1, False)
+            classic_count = len(classic_reads)
+            epever_count = len(epever_reads)
+            time.sleep(0.06)
+        finally:
+            supervisor.stop_readers()
+
+        self.assertGreater(len(classic_reads), classic_count)
+        self.assertEqual(len(epever_reads), epever_count)
+
 
 if __name__ == "__main__":
     unittest.main()

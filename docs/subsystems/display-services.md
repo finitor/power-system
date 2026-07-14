@@ -91,6 +91,11 @@ LAN supersedes WAN because WAN goes down as a side effect of LAN outage — if
 the router is off, both fail together and "LAN offline" is the root cause.
 Showing "WAN offline" during a LAN outage would be misleading.
 
+LAN loss is declared only after two consecutive failed gateway probes; one
+dropped ICMP reply preserves the last healthy state. A successful probe clears
+the failure count and restores LAN state immediately. This prevents a transient
+ping miss from hiding the TCP-connected Classic as unreachable.
+
 `snapshot_severity_text()` composes the parenthetical form shown on most screens
 (`"OK"`, `"WARN (LAN offline)"`, etc.). Weather pages pass annotations through
 separately so the Kindle weather header can format them as `"OFFLINE as of

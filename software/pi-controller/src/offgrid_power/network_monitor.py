@@ -29,12 +29,15 @@ class NetworkMonitor:
         self,
         gateway: str = "192.168.0.1",
         check_interval_s: float = 30.0,
+        lan_failure_threshold: int = 2,
         wan_host: str = "8.8.8.8",
         wan_port: int = 53,
         wan_timeout_s: float = 3.0,
     ) -> None:
         self.gateway = gateway
         self.check_interval_s = check_interval_s
+        self._lan_failure_threshold = max(1, lan_failure_threshold)
+        self._lan_consecutive_failures = 0
         self._wan_host = wan_host
         self._wan_port = wan_port
         self._wan_timeout_s = wan_timeout_s
@@ -71,10 +74,27 @@ class NetworkMonitor:
         while not self._stop.is_set():
             lan = self._check_lan()
             wan = self._check_wan()
+            self._observe_lan_probe(lan)
             with self._lock:
-                self._lan_reachable = lan
                 self._wan_reachable = wan
             self._stop.wait(timeout=self.check_interval_s)
+
+    def _observe_lan_probe(self, reachable: bool) -> None:
+        """Debounce LAN loss, while accepting recovery immediately.
+
+        One ICMP reply can be dropped on an otherwise healthy LAN. Promoting
+        that single miss to a hard LAN fault hides the TCP-connected Classic
+        from displays even though its cached telemetry is sound. Require
+        consecutive failed probes before declaring the LAN down.
+        """
+        with self._lock:
+            if reachable:
+                self._lan_consecutive_failures = 0
+                self._lan_reachable = True
+                return
+            self._lan_consecutive_failures += 1
+            if self._lan_consecutive_failures >= self._lan_failure_threshold:
+                self._lan_reachable = False
 
     def _check_lan(self) -> bool:
         try:
