@@ -12,6 +12,10 @@ a stray keypress can't move the system — the change is only sent on the explic
 commit). Nudges go through the supervisor's delta API. Tune mode is bounded by a
 per-session budget and auto-exits after a spell of inactivity; the supervisor's
 BMS-CVL guard is the hard backstop regardless of what this client sends.
+
+``o`` opens *options mode*. Controller 0/1 keys stage operational enablement
+changes and Enter applies them. Disabling a controller turns off its control,
+telemetry polling/storage, and normal display as one coherent maintenance mode.
 """
 
 from __future__ import annotations
@@ -43,6 +47,7 @@ SNAPSHOT_SUFFIX = "/api/v1/snapshot"
 WEATHER_SUFFIX = "/api/v1/weather"
 VOLTAGE_CONTROL_SUFFIX = "/api/v1/control/charge-controller/voltage"
 CCL_SCALING_CONTROL_SUFFIX = "/api/v1/control/ccl-scaling-factor"
+CONTROLLER_ENABLED_CONTROL_SUFFIX = "/api/v1/control/charge-controller/enabled"
 
 # Tune mode disarms after this long without a keypress so it's never left live.
 TUNE_IDLE_TIMEOUT_S = 20.0
@@ -92,7 +97,7 @@ def derive_weather_url(snapshot_url: str) -> str:
 
 
 def resolve_key(char: str, view: str) -> str | None:
-    """Map a keypress to an action: a view name, "tune", "quit", or None."""
+    """Map a keypress to an action: a view name, panel, "quit", or None."""
     lowered = char.lower()
     if lowered == "q":
         return "quit"
@@ -102,6 +107,8 @@ def resolve_key(char: str, view: str) -> str | None:
         return VIEW_WEATHER
     if lowered == "t":
         return "tune"
+    if lowered == "o":
+        return "options"
     if char in (" ", "\t"):
         return VIEW_WEATHER if view == VIEW_POWER else VIEW_POWER
     return None
@@ -136,6 +143,50 @@ def resolve_tune_key(char: str) -> str | None:
     if char == "]":
         return "step_up"
     return None
+
+
+def resolve_options_key(char: str) -> str | None:
+    """Map a keypress in options mode to a staged controller switch action."""
+    if char in ("\r", "\n"):
+        return "commit"
+    if char in ("\x1b", "q", "Q", "o", "O"):
+        return "cancel"
+    if char in ("0", "1"):
+        return f"toggle:{char}"
+    return None
+
+
+@dataclass
+class ControllerOption:
+    controller: int
+    label: str
+    base: bool
+    pending: bool
+
+    @property
+    def dirty(self) -> bool:
+        return self.pending != self.base
+
+
+class OptionsState:
+    """Staged per-controller operational switches."""
+
+    def __init__(self, enabled: dict[int, bool]):
+        self.options = [
+            ControllerOption(index, CONTROLLER_LABELS[index], enabled.get(index, True), enabled.get(index, True))
+            for index in (0, 1)
+        ]
+        self.message = ""
+
+    def toggle(self, controller: int) -> None:
+        for option in self.options:
+            if option.controller == controller:
+                option.pending = not option.pending
+                self.message = ""
+                return
+
+    def dirty(self) -> bool:
+        return any(option.dirty for option in self.options)
 
 
 @dataclass
@@ -274,6 +325,7 @@ def footer(view: str) -> str:
             tag("w", "Weather", view == VIEW_WEATHER),
             "[space] Toggle",
             "[t] Tune",
+            "[o] Options",
             "[q] Quit",
             # Font size is an outer-tmux concern (F7/F8 at the root table), not
             # a renderer key — this is just a reminder the controls exist. The
@@ -310,6 +362,22 @@ def tune_footer(tune: TuneState) -> str:
     )
     if tune.message:
         lines.append(f"   {tune.message}")
+    return "\n".join(lines)
+
+
+def options_footer(options: OptionsState) -> str:
+    """Render the staged controller-maintenance panel."""
+    lines = ["", "── OPTIONS charge controllers ───────"]
+    for option in options.options:
+        base = "ENABLED" if option.base else "DISABLED"
+        staged = ""
+        if option.dirty:
+            staged = f"  → {'ENABLED' if option.pending else 'DISABLED'}"
+        lines.append(f"   [{option.controller}] {option.label:<10} {base}{staged}")
+    lines.append("   Disabled = no control, telemetry/storage, or display")
+    lines.append("   [0/1] toggle  [Enter] apply  [Esc] cancel")
+    if options.message:
+        lines.append(f"   {options.message}")
     return "\n".join(lines)
 
 
@@ -384,6 +452,7 @@ def main() -> int:
     view = args.view
     previous_render: str | None = None
     tune: TuneState | None = None
+    options: OptionsState | None = None
     last_activity = time.monotonic()
 
     # A manual panel load queues an out-of-cycle source poll (fire-and-forget,
@@ -397,17 +466,23 @@ def main() -> int:
             while True:
                 # Tune mode auto-disarms after a spell of inactivity so the
                 # system is never left armed for edits unattended.
-                if tune is not None and time.monotonic() - last_activity > TUNE_IDLE_TIMEOUT_S:
+                if (tune is not None or options is not None) and time.monotonic() - last_activity > TUNE_IDLE_TIMEOUT_S:
                     tune = None
+                    options = None
                     previous_render = None
                 started = time.monotonic()
                 # While tuning, keep the power panel up so the operator watches
                 # the taper react; the tune overlay replaces the footer.
-                display_view = VIEW_POWER if tune is not None else view
+                display_view = VIEW_POWER if tune is not None or options is not None else view
                 rendered = render_view(display_view, args.url, weather_url, timeout=args.timeout, refresh=pending_refresh)
                 pending_refresh = False
                 body = highlight_changed_digits(previous_render, rendered)
-                footer_text = tune_footer(tune) if tune is not None else footer(view)
+                if tune is not None:
+                    footer_text = tune_footer(tune)
+                elif options is not None:
+                    footer_text = options_footer(options)
+                else:
+                    footer_text = footer(view)
                 if not args.no_clear:
                     clear_screen()
                 if interactive:
@@ -457,6 +532,16 @@ def main() -> int:
                             pending_refresh = True  # re-poll so settings/taper reflect the write
                         previous_render = None
                         break
+                    if options is not None:
+                        outcome = _handle_options_key(char, options, args)
+                        if outcome is None:
+                            continue
+                        if outcome == "exit":
+                            options = None
+                        elif outcome == "applied":
+                            pending_refresh = True
+                        previous_render = None
+                        break
                     action = resolve_key(char, view)
                     if action == "quit":
                         return 0
@@ -465,6 +550,12 @@ def main() -> int:
                     if action == "tune":
                         tune = _enter_tune(args)
                         if tune is not None:
+                            view = VIEW_POWER
+                        previous_render = None
+                        break
+                    if action == "options":
+                        options = _enter_options(args)
+                        if options is not None:
                             view = VIEW_POWER
                         previous_render = None
                         break
@@ -488,6 +579,14 @@ def _enter_tune(args: argparse.Namespace) -> TuneState | None:
     if not tunables:
         return None
     return TuneState(tunables)
+
+
+def _enter_options(args: argparse.Namespace) -> OptionsState | None:
+    try:
+        enabled = fetch_controller_options(args.url, timeout=args.timeout)
+    except (OSError, URLError, json.JSONDecodeError):
+        return None
+    return OptionsState(enabled)
 
 
 def _handle_tune_key(char: str, tune: TuneState, args: argparse.Namespace) -> str | None:
@@ -517,6 +616,24 @@ def _handle_tune_key(char: str, tune: TuneState, args: argparse.Namespace) -> st
         tune.cycle_step(-1)
     elif action == "step_up":
         tune.cycle_step(+1)
+    return "staged"
+
+
+def _handle_options_key(
+    char: str,
+    options: OptionsState,
+    args: argparse.Namespace,
+) -> str | None:
+    action = resolve_options_key(char)
+    if action is None:
+        return None
+    if action == "cancel":
+        return "exit"
+    if action == "commit":
+        commit_options(options, args.control_url, timeout=args.timeout)
+        return "applied"
+    if action.startswith("toggle:"):
+        options.toggle(int(action.split(":", 1)[1]))
     return "staged"
 
 
@@ -608,6 +725,23 @@ def fetch_tune_inputs(url: str, timeout: float = 5.0) -> tuple[dict[int, float],
     return scalars_from_snapshot(payload), scaling_factor_from_snapshot(payload)
 
 
+def controller_options_from_snapshot(payload: dict) -> dict[int, bool]:
+    """Extract the durable operational switches, defaulting absent entries on."""
+    enabled = {0: True, 1: True}
+    for entry in payload.get("charge_controllers") or []:
+        controller = entry.get("controller")
+        value = entry.get("enabled")
+        if controller in (0, 1) and isinstance(value, bool):
+            enabled[controller] = value
+    return enabled
+
+
+def fetch_controller_options(url: str, timeout: float = 5.0) -> dict[int, bool]:
+    with urlopen(url, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return controller_options_from_snapshot(payload)
+
+
 def _post_control(control_url: str, suffix: str, body: dict, timeout: float) -> dict:
     """POST a control request and return its JSON reply.
 
@@ -638,6 +772,20 @@ def post_nudge(control_url: str, controller: int, delta_v: float, timeout: float
 def post_scaling_nudge(control_url: str, delta: float, timeout: float = 5.0) -> dict:
     """POST a CCL scaling-fraction delta to the supervisor and return its reply."""
     return _post_control(control_url, CCL_SCALING_CONTROL_SUFFIX, {"delta": round(delta, 4)}, timeout)
+
+
+def post_controller_enabled(
+    control_url: str,
+    controller: int,
+    enabled: bool,
+    timeout: float = 5.0,
+) -> dict:
+    return _post_control(
+        control_url,
+        CONTROLLER_ENABLED_CONTROL_SUFFIX,
+        {"controller": controller, "enabled": enabled},
+        timeout,
+    )
 
 
 def _commit_one(tunable: Tunable, control_url: str, timeout: float) -> str:
@@ -682,6 +830,38 @@ def commit_tune(tune: TuneState, control_url: str, timeout: float = 5.0) -> bool
     outcomes = [_commit_one(t, control_url, timeout) for t in dirty]
     tune.message = "  |  ".join(outcomes)
     return all("refused" not in o and "failed" not in o for o in outcomes)
+
+
+def commit_options(options: OptionsState, control_url: str, timeout: float = 5.0) -> bool:
+    """Apply every staged controller switch and report the per-controller result."""
+    dirty = [option for option in options.options if option.dirty]
+    if not dirty:
+        options.message = "nothing staged"
+        return False
+    outcomes: list[str] = []
+    succeeded = True
+    for option in dirty:
+        try:
+            reply = post_controller_enabled(
+                control_url,
+                option.controller,
+                option.pending,
+                timeout=timeout,
+            )
+        except (OSError, URLError, json.JSONDecodeError) as exc:
+            outcomes.append(f"{option.label} failed: {exc}")
+            option.pending = option.base
+            succeeded = False
+            continue
+        if not reply.get("ok"):
+            outcomes.append(f"{option.label} refused: {reply.get('error', 'unknown error')}")
+            option.pending = option.base
+            succeeded = False
+            continue
+        option.base = option.pending = bool(reply.get("enabled", option.pending))
+        outcomes.append(f"{option.label} {'enabled' if option.base else 'disabled'}")
+    options.message = "  |  ".join(outcomes)
+    return succeeded
 
 
 if __name__ == "__main__":

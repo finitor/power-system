@@ -818,6 +818,8 @@ def route_control_request(
 ) -> DisplayResponse:
     if path == "/api/v1/control/ccl-scaling-factor":
         return _control_ccl_scaling_factor(charge_ceiling, payload)
+    if path == "/api/v1/control/charge-controller/enabled":
+        return _control_charge_controller_enabled(supervisor, payload)
     if path == "/api/v1/control/charge-controller/voltage":
         return _control_charge_controller_voltage(supervisor, payload)
     if path in ("/api/v1/control/charge-controller/charge-settings", "/api/v1/control/classic/charge-settings", "/api/v1/control/epever/charge-settings"):
@@ -835,6 +837,23 @@ def route_control_request(
     if path == "/api/v1/control/relay":
         return _control_relay(relay_controller, payload)
     return _json_response(HTTPStatus.NOT_FOUND, {"ok": False, "error": "not found"})
+
+
+def _control_charge_controller_enabled(supervisor: Supervisor, payload: dict) -> DisplayResponse:
+    try:
+        controller = _controller_number(payload)
+        enabled = payload.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be a boolean")
+        previous = supervisor.set_charge_controller_enabled(controller, enabled)
+        return _json_response(
+            HTTPStatus.OK,
+            {"ok": True, "controller": controller, "previous_enabled": previous, "enabled": enabled},
+        )
+    except ValueError as exc:
+        return _json_response(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+    except RuntimeError as exc:
+        return _json_response(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
 
 
 def _control_charge_controller_voltage(supervisor: Supervisor, payload: dict) -> DisplayResponse:
@@ -1641,6 +1660,14 @@ def snapshot_api_payload(
         },
         "battery": _battery_api_payload(snapshot),
         "solar": _solar_api_payload(snapshot),
+        "charge_controllers": [
+            {
+                "controller": controller,
+                "name": "Classic" if controller == 0 else "Epever",
+                "enabled": snapshot.charge_controller_enabled.get(controller, True),
+            }
+            for controller in (0, 1)
+        ],
         "inverter": _inverter_api_payload(snapshot),
         "load": _load_api_payload(load_summary),
         "monitored_loads": _tasmota_api_payload(snapshot),

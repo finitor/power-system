@@ -135,6 +135,30 @@ class PollingReaderTest(unittest.TestCase):
 
         self.assertEqual(len(reads), 1)
 
+    def test_disabled_reader_drops_cache_stops_polls_and_rejects_commands(self) -> None:
+        reads = []
+        reader = PollingReader("dev", lambda: reads.append(1) or len(reads), interval_s=0.01)
+        reader.read_now()
+        self.assertEqual(reader.reading().value, 1)
+
+        reader.set_enabled(False)
+        reader.start()
+        try:
+            time.sleep(0.04)
+            self.assertEqual(reads, [1])
+            self.assertIsNone(reader.reading().value)
+            with self.assertRaisesRegex(RuntimeError, "user disabled"):
+                reader.submit(lambda: "write")
+
+            reader.set_enabled(True)
+            deadline = time.monotonic() + 1.0
+            while len(reads) == 1 and time.monotonic() < deadline:
+                time.sleep(0.01)
+        finally:
+            reader.stop()
+
+        self.assertGreater(len(reads), 1)
+
     def test_reads_and_commands_share_one_thread(self) -> None:
         seen_threads: set[str] = set()
 
@@ -352,6 +376,29 @@ class SupervisorReaderModeTest(unittest.TestCase):
             supervisor.stop_readers()
 
         self.assertEqual(write_threads, ["reader-classic"])
+
+    def test_user_disabled_controller_is_not_polled_displayed_or_controlled(self) -> None:
+        from snapshot_helpers import make_classic_telemetry
+
+        reads = []
+
+        class FakeClassic:
+            def read(self):
+                reads.append(1)
+                return (make_classic_telemetry(), None)
+
+            def write_charge_settings(self, **kwargs):
+                raise AssertionError("disabled controller must not be written")
+
+        supervisor = Supervisor(classic=FakeClassic(), charge_controller_enabled={0: False})
+        snapshot = supervisor.read_snapshot()
+
+        self.assertEqual(reads, [])
+        self.assertIsNone(snapshot.classic)
+        self.assertIn("classic", snapshot.disabled_devices)
+        self.assertFalse(snapshot.charge_controller_enabled[0])
+        with self.assertRaisesRegex(RuntimeError, "user disabled"):
+            supervisor.write_classic_charge_settings(battery_current_limit_a=40.0)
 
 
 if __name__ == "__main__":

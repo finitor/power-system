@@ -176,6 +176,19 @@ state file has no value. It returns `409` when charge allocation is not running
 (the knob would have no effect). The current value is published under the
 snapshot's `allocation.ccl_scaling_factor`.
 
+`POST /api/v1/control/charge-controller/enabled` changes one controller's
+operational maintenance switch:
+
+```json
+{ "controller": 1, "enabled": false }
+```
+
+Controller `0` is the Classic and controller `1` is the EPEver. Disabling is a
+single coherent action across control, telemetry polling/storage, allocation,
+and display. The state is persisted in the same runtime-state file and exposed
+in `snapshot.charge_controllers`, independently of the `solar` list so a
+disabled controller remains observable even though its telemetry is omitted.
+
 `POST /api/v1/control/classic/charge-settings` accepts any subset of:
 
 ```json

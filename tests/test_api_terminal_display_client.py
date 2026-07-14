@@ -19,16 +19,21 @@ from offgrid_power.cli.api_terminal_display import (
     VIEW_WEATHER,
     VOLTAGE_SESSION_BUDGET_V,
     TuneState,
+    OptionsState,
     _with_refresh,
     scaling_factor_from_snapshot,
     build_tunables,
     commit_tune,
+    commit_options,
     compose_frame,
     derive_weather_url,
     footer,
+    controller_options_from_snapshot,
+    options_footer,
     resize_wakeup,
     resolve_key,
     resolve_tune_key,
+    resolve_options_key,
     scalars_from_snapshot,
     tune_footer,
 )
@@ -136,6 +141,10 @@ class ResolveKeyTuneEntryTest(unittest.TestCase):
         self.assertEqual(resolve_key("t", VIEW_POWER), "tune")
         self.assertEqual(resolve_key("T", VIEW_WEATHER), "tune")
 
+    def test_o_enters_options(self) -> None:
+        self.assertEqual(resolve_key("o", VIEW_POWER), "options")
+        self.assertEqual(resolve_key("O", VIEW_WEATHER), "options")
+
 
 class ResolveTuneKeyTest(unittest.TestCase):
     def test_commit_and_cancel(self) -> None:
@@ -159,6 +168,49 @@ class ResolveTuneKeyTest(unittest.TestCase):
     def test_unknown_ignored(self) -> None:
         self.assertIsNone(resolve_tune_key("x"))
         self.assertIsNone(resolve_tune_key(" "))
+
+
+class OptionsModeTest(unittest.TestCase):
+    def test_extracts_switches_and_stages_either_or_both(self) -> None:
+        payload = {"charge_controllers": [
+            {"controller": 0, "enabled": True},
+            {"controller": 1, "enabled": False},
+        ]}
+        state = OptionsState(controller_options_from_snapshot(payload))
+        state.toggle(0)
+        state.toggle(1)
+
+        self.assertTrue(state.dirty())
+        self.assertFalse(state.options[0].pending)
+        self.assertTrue(state.options[1].pending)
+        panel = options_footer(state)
+        self.assertIn("Classic    ENABLED  → DISABLED", panel)
+        self.assertIn("EPEver     DISABLED  → ENABLED", panel)
+
+    def test_key_map_requires_enter_to_commit(self) -> None:
+        self.assertEqual(resolve_options_key("0"), "toggle:0")
+        self.assertEqual(resolve_options_key("1"), "toggle:1")
+        self.assertEqual(resolve_options_key("\r"), "commit")
+        self.assertEqual(resolve_options_key("\x1b"), "cancel")
+
+    def test_commit_posts_each_dirty_switch(self) -> None:
+        state = OptionsState({0: True, 1: True})
+        state.toggle(0)
+        state.toggle(1)
+        calls = []
+
+        import offgrid_power.cli.api_terminal_display as mod
+        original = mod.post_controller_enabled
+        mod.post_controller_enabled = lambda url, controller, enabled, timeout=5.0: (
+            calls.append((controller, enabled)) or {"ok": True, "enabled": enabled}
+        )
+        try:
+            self.assertTrue(commit_options(state, "http://x"))
+        finally:
+            mod.post_controller_enabled = original
+
+        self.assertEqual(calls, [(0, False), (1, False)])
+        self.assertFalse(state.dirty())
 
 
 class ScalarsFromSnapshotTest(unittest.TestCase):

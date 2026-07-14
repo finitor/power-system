@@ -45,8 +45,13 @@ from offgrid_power.config import load_config, load_relay_config
 from offgrid_power.relay import RelayController
 from offgrid_power.relay_control import RelaySupervisor, heat_fan_transition_event
 from offgrid_power.load import estimate_load_current_a, LoadTotalsTracker
-from offgrid_power.metrics import MetricRecorder
-from offgrid_power.runtime_state import load_ccl_scaling_factor, save_ccl_scaling_factor
+from offgrid_power.metrics import MetricRecorder, TelemetryEvent
+from offgrid_power.runtime_state import (
+    load_ccl_scaling_factor,
+    load_charge_controller_enabled,
+    save_ccl_scaling_factor,
+    save_charge_controller_enabled,
+)
 from offgrid_power.supervisor import Supervisor
 from offgrid_power.terminal_display import clear_screen, highlight_changed_digits, render_snapshot
 from offgrid_power.tasmota import TasmotaClient
@@ -247,7 +252,10 @@ def add_supervisor_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def build_supervisor(args: argparse.Namespace) -> Supervisor:
+def build_supervisor(
+    args: argparse.Namespace,
+    charge_controller_enabled: dict[int, bool] | None = None,
+) -> Supervisor:
     ambient = None
     if not args.no_ambient:
         if args.ambient_kind == "ds18b20":
@@ -313,6 +321,7 @@ def build_supervisor(args: argparse.Namespace) -> Supervisor:
         magnum=magnum,
         epever=epever,
         tasmota=tasmota,
+        charge_controller_enabled=charge_controller_enabled,
     )
 
 
@@ -323,7 +332,11 @@ def _tasmota_devices_from_env() -> list[str]:
 
 def main() -> int:
     args = parse_args()
-    supervisor = build_supervisor(args)
+    state_path = args.runtime_state_path or None
+    supervisor = build_supervisor(
+        args,
+        charge_controller_enabled=load_charge_controller_enabled(state_path),
+    )
     load_totals_tracker = LoadTotalsTracker(battery_capacity_ah=args.battery_capacity_ah)
     metric_recorder = MetricRecorder(
         args.metrics_db_path or None,
@@ -331,6 +344,19 @@ def main() -> int:
         mountpoint=args.metrics_db_mountpoint or None,
         fallback_path=args.metrics_fallback_db_path or None,
     )
+
+    def controller_enabled_changed(controller: int, enabled: bool) -> None:
+        save_charge_controller_enabled(state_path, supervisor.charge_controller_enabled())
+        metric_recorder.record_event(
+            TelemetryEvent(
+                captured_at=datetime.now().astimezone(),
+                source="classic.0" if controller == 0 else "epever.1",
+                event="user_enabled_changed",
+                detail={"controller": controller, "enabled": enabled},
+            )
+        )
+
+    supervisor.set_charge_controller_enabled_change_hook(controller_enabled_changed)
     for name, client in supervisor.tasmota.items():
         client.seed_power_samples(metric_recorder.recent_metric_values(f"tasmota.{name}", "power"))
     # The buffer is in-memory; the metric store is the durable copy, so a
@@ -360,7 +386,6 @@ def main() -> int:
         )
     # CCL scaling factor: a persisted operator override (if any) wins over the
     # env default; the env default applies only when the JSON has no value.
-    state_path = args.runtime_state_path or None
     ceiling_config = _config_from_env(ChargeCeilingConfig, "CHARGE_CEILING_")
     persisted_scaling = load_ccl_scaling_factor(state_path)
     if persisted_scaling is not None:

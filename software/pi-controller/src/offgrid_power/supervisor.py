@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import time
-from typing import TYPE_CHECKING
+from threading import Lock
+from typing import Callable, TYPE_CHECKING
 
 from .ambient import AmbientDhtClient, AmbientDs18b20Client, AmbientProbeDisconnected, AmbientTelemetry
 from .canbus import BatteryCanClient, CanBusHealth, PylonCanSnapshot, canbus_health
@@ -47,6 +48,11 @@ class SupervisorSnapshot:
     wan_reachable: bool | None = None
     heat_fan_on: bool = False
     charge_disable_on: bool = False
+    # User-owned operational switch. False means no control writes, telemetry
+    # polling/storage, or normal controller display for that controller.
+    charge_controller_enabled: dict[int, bool] = field(
+        default_factory=lambda: {0: True, 1: True}
+    )
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:
@@ -94,6 +100,8 @@ class Supervisor:
         magnum: MagnumClient | None = None,
         epever: EpeverClient | None = None,
         tasmota: dict[str, TasmotaClient] | None = None,
+        charge_controller_enabled: dict[int, bool] | None = None,
+        on_charge_controller_enabled_change: Callable[[int, bool], None] | None = None,
     ) -> None:
         self.classic = classic
         self.ambient = ambient
@@ -102,6 +110,12 @@ class Supervisor:
         self.magnum = magnum
         self.epever = epever
         self.tasmota = tasmota or {}
+        self._charge_controller_enabled = {
+            0: (charge_controller_enabled or {}).get(0, True),
+            1: (charge_controller_enabled or {}).get(1, True),
+        }
+        self._charge_controller_enabled_lock = Lock()
+        self._on_charge_controller_enabled_change = on_charge_controller_enabled_change
         self._status_condition_counts: dict[str, int] = {}
         self._readers: dict[str, PollingReader] | None = None
         self._network_monitor: NetworkMonitor | None = None
@@ -152,6 +166,10 @@ class Supervisor:
             readers[f"tasmota.{name}"] = PollingReader(
                 f"tasmota.{name}", client.read, interval_s, expire_after_s=expire_after_s
             )
+        if "classic" in readers:
+            readers["classic"].set_enabled(self.charge_controller_is_enabled(0))
+        if "epever" in readers:
+            readers["epever"].set_enabled(self.charge_controller_is_enabled(1))
         for reader in readers.values():
             reader.start()
         self._readers = readers
@@ -202,6 +220,42 @@ class Supervisor:
         for reader in self._readers.values():
             reader.request_refresh()
 
+    def charge_controller_is_enabled(self, controller: int) -> bool:
+        if controller not in (0, 1):
+            raise ValueError(f"unknown charge controller number: {controller}")
+        with self._charge_controller_enabled_lock:
+            return self._charge_controller_enabled[controller]
+
+    def charge_controller_enabled(self) -> dict[int, bool]:
+        with self._charge_controller_enabled_lock:
+            return dict(self._charge_controller_enabled)
+
+    def set_charge_controller_enabled(self, controller: int, enabled: bool) -> bool:
+        """Set the user operational switch; return its previous value."""
+        if controller not in (0, 1):
+            raise ValueError(f"unknown charge controller number: {controller}")
+        client = self.classic if controller == 0 else self.epever
+        if client is None:
+            raise RuntimeError(f"charge controller {controller} is not configured")
+        with self._charge_controller_enabled_lock:
+            previous = self._charge_controller_enabled[controller]
+            self._charge_controller_enabled[controller] = bool(enabled)
+        name = "classic" if controller == 0 else "epever"
+        if self._readers is not None and name in self._readers:
+            self._readers[name].set_enabled(bool(enabled))
+        if previous != bool(enabled) and self._on_charge_controller_enabled_change is not None:
+            self._on_charge_controller_enabled_change(controller, bool(enabled))
+        return previous
+
+    def set_charge_controller_enabled_change_hook(
+        self, hook: Callable[[int, bool], None] | None
+    ) -> None:
+        self._on_charge_controller_enabled_change = hook
+
+    def _require_charge_controller_enabled(self, controller: int) -> None:
+        if not self.charge_controller_is_enabled(controller):
+            raise RuntimeError(f"charge controller {controller} is user disabled")
+
     def write_classic_charge_settings(self, **kwargs):
         """Write Classic charge settings via the device's actor thread.
 
@@ -209,6 +263,7 @@ class Supervisor:
         the write executes on the classic reader thread between polls, so it
         can never race a read on the shared Modbus connection.
         """
+        self._require_charge_controller_enabled(0)
         if self.classic is None:
             raise RuntimeError("no Classic adapter configured")
 
@@ -227,6 +282,7 @@ class Supervisor:
         keeps the read on the same thread that performs the subsequent write,
         so the value can't be read from a stale poll cache.
         """
+        self._require_charge_controller_enabled(0)
         if self.classic is None:
             raise RuntimeError("no Classic adapter configured")
 
@@ -242,6 +298,7 @@ class Supervisor:
 
         The EPEver counterpart of read_classic_settings; see that method.
         """
+        self._require_charge_controller_enabled(1)
         if self.epever is None:
             raise RuntimeError("no EPEver adapter configured")
 
@@ -254,6 +311,7 @@ class Supervisor:
 
     def write_epever_charge_voltages(self, **kwargs) -> EpeverChargeSettings:
         """Write EPEver charge voltages via the device actor thread."""
+        self._require_charge_controller_enabled(1)
         if self.epever is None:
             raise RuntimeError("no EPEver adapter configured")
 
@@ -266,6 +324,7 @@ class Supervisor:
 
     def write_epever_max_charging_current(self, current_a: float) -> EpeverChargeSettings:
         """Write EPEver BAT Max Charging Current via the device actor thread."""
+        self._require_charge_controller_enabled(1)
         if self.epever is None:
             raise RuntimeError("no EPEver adapter configured")
 
@@ -278,6 +337,7 @@ class Supervisor:
 
     def write_epever_charge_times(self, **kwargs) -> EpeverChargeSettings:
         """Write EPEver charge-stage timers via the device actor thread."""
+        self._require_charge_controller_enabled(1)
         if self.epever is None:
             raise RuntimeError("no EPEver adapter configured")
 
@@ -290,6 +350,7 @@ class Supervisor:
 
     def set_epever_charging(self, enabled: bool) -> bool:
         """Write EPEver charge-enable coil via the device actor thread."""
+        self._require_charge_controller_enabled(1)
         if self.epever is None:
             raise RuntimeError("no EPEver adapter configured")
 
@@ -356,15 +417,21 @@ class Supervisor:
             reader_error_rates=self._reader_error_rates(),
             lan_reachable=self._network_monitor.lan_reachable if self._network_monitor else None,
             wan_reachable=self._network_monitor.wan_reachable if self._network_monitor else None,
+            charge_controller_enabled=self.charge_controller_enabled(),
         )
 
     def _reader_error_rates(self, window_s: float = 300.0) -> dict[str, float | None]:
         if self._readers is None:
             return {}
-        return {name: reader.error_rate_pct(window_s) for name, reader in self._readers.items()}
+        return {
+            name: reader.error_rate_pct(window_s)
+            for name, reader in self._readers.items()
+            if not (name == "classic" and not self.charge_controller_is_enabled(0))
+            and not (name == "epever" and not self.charge_controller_is_enabled(1))
+        }
 
     def _disabled_devices(self) -> frozenset[str]:
-        return frozenset(
+        disabled = {
             name
             for name, client in (
                 ("classic", self.classic),
@@ -374,7 +441,12 @@ class Supervisor:
                 ("ambient", self.ambient),
             )
             if client is None
-        )
+        }
+        if not self.charge_controller_is_enabled(0):
+            disabled.add("classic")
+        if not self.charge_controller_is_enabled(1):
+            disabled.add("epever")
+        return frozenset(disabled)
 
     def _collect_direct(self) -> tuple[dict, list[str], list[StatusConditionCandidate]]:
         errors: list[str] = []
@@ -389,13 +461,13 @@ class Supervisor:
             "tasmota": {},
         }
 
-        if self.classic is not None:
+        if self.classic is not None and self.charge_controller_is_enabled(0):
             try:
                 devices["classic"], devices["classic_settings"] = self.classic.read()
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Classic read failed: {exc}")
 
-        if self.epever is not None:
+        if self.epever is not None and self.charge_controller_is_enabled(1):
             try:
                 devices["epever"], devices["epever_settings"] = self.epever.read()
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
@@ -461,6 +533,10 @@ class Supervisor:
         }
 
         for name, reader in self._readers.items():
+            if name == "classic" and not self.charge_controller_is_enabled(0):
+                continue
+            if name == "epever" and not self.charge_controller_is_enabled(1):
+                continue
             reading = reader.reading()
 
             if name.startswith("tasmota."):

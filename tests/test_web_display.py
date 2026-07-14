@@ -54,9 +54,14 @@ class FakeControlSupervisor:
         self.last_float_v = 53.6
         self.last_equalize_v = 54.7
         self.last_current_a = None
+        self.enabled_calls = []
 
     def read_snapshot(self):
         return self.snapshot
+
+    def set_charge_controller_enabled(self, controller, enabled):
+        self.enabled_calls.append((controller, enabled))
+        return not enabled
 
     def read_classic_settings(self):
         return self.snapshot.classic_settings or make_classic_settings()
@@ -1014,6 +1019,45 @@ class WebDisplayTest(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(supervisor.classic_calls, [{"absorb_time_s": 1800}])
         self.assertEqual(payload["settings"]["absorb_time_minutes"], 30)
+
+    def test_control_api_sets_charge_controller_operational_switch(self) -> None:
+        supervisor = FakeControlSupervisor()
+        response = route_control_request(
+            supervisor,
+            "/api/v1/control/charge-controller/enabled",
+            {"controller": 1, "enabled": False},
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(supervisor.enabled_calls, [(1, False)])
+        self.assertFalse(payload["enabled"])
+        self.assertTrue(payload["previous_enabled"])
+
+    def test_control_api_rejects_non_boolean_controller_switch(self) -> None:
+        response = route_control_request(
+            FakeControlSupervisor(),
+            "/api/v1/control/charge-controller/enabled",
+            {"controller": 1, "enabled": "false"},
+        )
+        self.assertEqual(response.status.value, 400)
+
+    def test_snapshot_api_exposes_disabled_controller_switch_outside_solar(self) -> None:
+        payload = snapshot_api_payload(
+            make_snapshot(
+                charge_controller_enabled={0: True, 1: False},
+                disabled_devices=frozenset({"classic", "epever"}),
+            )
+        )
+
+        self.assertEqual(payload["solar"], [])
+        self.assertEqual(
+            payload["charge_controllers"],
+            [
+                {"controller": 0, "name": "Classic", "enabled": True},
+                {"controller": 1, "name": "Epever", "enabled": False},
+            ],
+        )
 
     def test_control_api_rejects_classic_voltage_above_bms_cvl(self) -> None:
         supervisor = FakeControlSupervisor(snapshot=make_snapshot(

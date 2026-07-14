@@ -30,7 +30,18 @@ Port assignments:
 
 On an interactive tty the `api_terminal_display` client takes single keypresses:
 `p` power, `w` weather, space toggles the two, `q` quits. `t` opens **tune
-mode** for nudging a controller's scalar charge voltage from the console.
+mode** for nudging a controller's scalar charge voltage from the console, and
+`o` opens **options mode** for controller maintenance switches.
+
+Options mode is staged-commit. `0` and `1` toggle the pending operational state
+for the Classic (CC0) and EPEver (CC1), respectively; either or both may be
+staged. `Enter` applies and `Esc` cancels. A disabled controller is treated as
+deliberately absent: its device actor stops bus polling and rejects control
+writes, it is removed from allocation and normal displays, and its individual
+telemetry/settings values are not stored. The metric store continues a
+per-snapshot `user_enabled=0` heartbeat and records a `user_enabled_changed`
+event at each transition. The switch is persisted in the supervisor runtime
+state and survives restarts.
 
 Tune mode is **staged-commit**: `+`/`-` stage a change to the selected row
 (shown as `→ target (Δ)` in the overlay) but send nothing; the change is applied

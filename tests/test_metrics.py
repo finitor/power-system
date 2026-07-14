@@ -117,6 +117,15 @@ class SnapshotMetricSamplesTest(unittest.TestCase):
         self.assertTrue(any(sample.source == "magnum" and sample.metric == "inverter_on" and sample.value == 1.0 for sample in samples))
         self.assertTrue(any(sample.source == "magnum" and sample.metric == "status" and sample.text == "INVERT" for sample in samples))
 
+    def test_disabled_controller_records_only_user_enabled_heartbeat(self) -> None:
+        snapshot = make_snapshot(charge_controller_enabled={0: True, 1: False})
+
+        samples = [sample for sample in snapshot_metric_samples(snapshot) if sample.source == "epever.1"]
+
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0].metric, "user_enabled")
+        self.assertEqual(samples[0].value, 0.0)
+
 
 class MetricRecorderTest(unittest.TestCase):
     def setUp(self) -> None:

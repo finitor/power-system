@@ -94,6 +94,8 @@ class PollingReader:
         self._error: str | None = None
         self._commands: queue.Queue[tuple[Callable[[], object], Future]] = queue.Queue()
         self._stop = Event()
+        self._enabled = Event()
+        self._enabled.set()
         self._thread: Thread | None = None
         # Ring buffer of (monotonic_timestamp, was_success) for error rate calc.
         # 720 entries ≈ 1 hour at 5 s interval — enough for any display window.
@@ -101,19 +103,33 @@ class PollingReader:
 
     def read_now(self) -> None:
         """Perform one read attempt synchronously (also used by the thread loop)."""
+        if not self._enabled.is_set():
+            return
         try:
             value = self._read_fn()
         except Exception as exc:  # noqa: BLE001 - reader must survive any adapter failure.
+            if not self._enabled.is_set():
+                return
             with self._lock:
+                if not self._enabled.is_set():
+                    return
                 self._error = str(exc) or type(exc).__name__
                 self._poll_history.append((time.monotonic(), False))
             return
         if value is None:
+            if not self._enabled.is_set():
+                return
             with self._lock:
+                if not self._enabled.is_set():
+                    return
                 self._error = "no reading"
                 self._poll_history.append((time.monotonic(), False))
             return
+        if not self._enabled.is_set():
+            return
         with self._lock:
+            if not self._enabled.is_set():
+                return
             self._value = value
             self._captured_at = datetime.now(timezone.utc)
             self._error = None
@@ -165,6 +181,8 @@ class PollingReader:
         race a poll. Blocks the caller until the command completes; raises
         whatever fn raised.
         """
+        if not self._enabled.is_set():
+            raise RuntimeError(f"{self.name} is user disabled")
         if self._thread is None:
             # Actor not running: execute inline (single-threaded mode).
             return fn()
@@ -179,6 +197,8 @@ class PollingReader:
         the command queue near-instantly), so a slow or wedged adapter can
         never block the caller. The fresh value lands on a later reading().
         """
+        if not self._enabled.is_set():
+            return
         if self._thread is None:
             self.read_now()
             return
@@ -197,22 +217,44 @@ class PollingReader:
             self._thread.join(timeout=timeout_s)
             self._thread = None
 
+    def set_enabled(self, enabled: bool) -> None:
+        """Enable/disable polling and commands, dropping cached telemetry when off."""
+        if enabled:
+            was_enabled = self._enabled.is_set()
+            self._enabled.set()
+            if not was_enabled:
+                self.request_refresh()
+            return
+        self._enabled.clear()
+        with self._lock:
+            self._value = None
+            self._captured_at = None
+            self._error = None
+            self._poll_history.clear()
+
     def _run(self) -> None:
         next_read_at = 0.0
         while not self._stop.is_set():
             now = time.monotonic()
-            if now >= next_read_at:
+            if self._enabled.is_set() and now >= next_read_at:
                 self.read_now()
                 next_read_at = time.monotonic() + self.interval_s
 
             # Service commands until the next poll is due, in slices short
             # enough to notice stop().
-            wait_s = min(max(0.0, next_read_at - time.monotonic()), _COMMAND_WAIT_SLICE_S)
+            wait_s = (
+                min(max(0.0, next_read_at - time.monotonic()), _COMMAND_WAIT_SLICE_S)
+                if self._enabled.is_set()
+                else _COMMAND_WAIT_SLICE_S
+            )
             try:
                 fn, future = self._commands.get(timeout=wait_s)
             except queue.Empty:
                 continue
             if not future.set_running_or_notify_cancel():
+                continue
+            if not self._enabled.is_set():
+                future.set_exception(RuntimeError(f"{self.name} is user disabled"))
                 continue
             try:
                 future.set_result(fn())

@@ -631,6 +631,12 @@ def snapshot_metric_samples(
     for index, condition in enumerate(snapshot.status_conditions):
         yield MetricSample(captured_at, "supervisor", "status_condition", text=condition, tags={"index": str(index)})
 
+    # This heartbeat remains while a controller is user disabled; its
+    # individual telemetry/settings samples below disappear with snapshot data.
+    for controller, source in ((0, "classic.0"), (1, "epever.1")):
+        enabled = snapshot.charge_controller_enabled.get(controller, True)
+        yield MetricSample(captured_at, source, "user_enabled", value=1.0 if enabled else 0.0)
+
     if load_summary is not None:
         yield from _load_samples(captured_at, load_summary)
     if snapshot.classic is not None:
