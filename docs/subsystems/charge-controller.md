@@ -20,7 +20,7 @@ The system runs two PV sources on two charge controllers (MidNite Classic on arr
 | PV source | Controller | Array | Status | Notes |
 |---|---|---|---|---|
 | PV array 0 | MidNite Solar Classic 200 | Canadian Solar CS6X-300-adjacent modules, 4s2p | In service | 8 modules total; exact module ratings may vary around 295-305 W |
-| PV array 1 | EPEver TEP10425 | Canadian Solar CS6X-300-adjacent modules, 3s4p | In service (PV connected 2026-06-16; rewired 3s4p 2026-07-02); platform mount construction outstanding | 12 modules total; exact module ratings may vary around 295-305 W. See [Array 1 String Topology](#array-1-string-topology-3s4p-decided-2026-07-02) |
+| PV array 1 | EPEver TEP10425 | Canadian Solar CS6X-300-adjacent modules, 3s4p | **Decommissioned 2026-07-18** for mount construction, expected complete ~Sep 2027 (was in service 2026-06-16..07-18; rewired 3s4p 2026-07-02) | 12 modules total; final plan: 3s4p at 45° on a cabin rooftop, same footprint as the ground dry run, ~10 ft higher. See [Array 1 String Topology](#array-1-string-topology-3s4p-decided-2026-07-02) |
 
 ## Array 1 Controller (EPEver TEP10425)
 

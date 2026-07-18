@@ -62,14 +62,25 @@ array 0 should run ≈ 1.27 × 8/7 ≈ **1.45 W per W/m²** (~60% of nameplate).
 Scenario numbers below use the corrected value; the post-fix recalibration
 (open measurements) confirms it.
 
-## Site solar geometry (array 1 platform)
+## Array 1 status (updated 2026-07-18)
 
-AR winter-solstice-path survey from the exact first-tier panel position
-(2026-07-02): morning 9:30–11:30 crosses mixed trees (deciduous, ~30–40%
-leaf-off beam transmission, one conifer spire at ~11:00); **12:30–14:30 is
-blocked by the building roofline** — the richest beam hours; 15:00+ is
-trees/horizon. Energy-weighted December direct-beam passage ≈ **15%** at
-first-tier height.
+**Array 1 is decommissioned until mount construction completes, expected
+~September 2027.** Planned final configuration: 3s4p (unchanged), 45° tilt,
+on a **cabin rooftop** — same footprint as the ground dry run but
+~10 ft higher, with slightly reduced shading expected from the added height.
+Until then the system runs on array 0 alone (see the interim scenario table
+below). The AR shading survey below was taken at the old ground-platform
+first-tier height; its December beam figure is now a conservative floor —
+re-survey from the rooftop mounting height when access allows.
+
+## Site solar geometry (array 1 site)
+
+AR winter-solstice-path survey from the ground-platform first-tier panel
+position (2026-07-02): morning 9:30–11:30 crosses mixed trees (deciduous,
+~30–40% leaf-off beam transmission, one conifer spire at ~11:00);
+**12:30–14:30 is blocked by the building roofline** — the richest beam hours;
+15:00+ is trees/horizon. Energy-weighted December direct-beam passage ≈
+**15%** at that height.
 
 Key facts: solstice noon sun elevation here is 18.7° (25° by mid-February, so
 February largely self-recovers). At 45° tilt, late-December plane-of-array
@@ -86,8 +97,29 @@ envelope in the charge-controller doc).
 
 Weekly-average PV potential vs load across the year (mean of 10 years):
 surplus roughly March through September, structural deficit mid-October
-through February, bottoming in the Dec 20 – Jan 1 weeks. Scenario results,
-as-built (array 1 mounted 45° S, December beam 15%). Because mounted array 1's
+through February, bottoming in the Dec 20 – Jan 1 weeks.
+
+### Interim: array 0 only (until array 1 remount, ~Sep 2027)
+
+With array 1 decommissioned, winter 2026–27 runs on array 0 alone
+(corrected coefficient 1.45; darkest-week potential ~1.5 kWh/day):
+
+| Mode | Worst 7-day (median winter) | Median winter deficit | Generator sessions/winter |
+|---|---|---|---|
+| Full occupancy | −32 kWh | ~550 kWh | ~46 — generator is a routine appliance |
+| No refrigeration | −12 kWh | ~116 kWh | ~10 — not bank-survivable unattended |
+| Lean unattended caretaker | **+0.8 kWh** (−1.1 worst of 10) | ~5 kWh | 0 — survives every winter at nominal heater duty |
+
+The lean caretaker verdict carries the load: **unattended winter 2026–27 is
+viable on array 0 alone**, with min SOC ≥ 76% at nominal heater duty — but
+the margin is thin against heater-duty error (1.5× duty produces a handful of
+dead days; 2× is structural). This winter *is* the heater-duty measurement
+winter; instrument it before leaving the site unattended.
+
+### Post-mount scenarios (array 1 on the cabin roof, ~Sep 2027+)
+
+Scenario results with array 1 mounted (45°, December beam 15% — conservative
+now that the roof adds ~10 ft). Because mounted array 1's
 real-world health is unknown until it is on the platform, its **performance
 ratio (PR)** — delivered output as a fraction of nameplate under the same
 irradiance, absorbing wiring, mismatch, soiling, and conversion losses — is
@@ -204,23 +236,27 @@ leg. December beam passage is the number that decides whether a leg delivers
 
 In rough order of information value:
 
-1. **Battery heater duty vs temperature** (first winter; heater is
-   Pi-permissive, so log it). The 2× heater sensitivity is the failure mode of
-   unattended winters — this measurement retires the model's biggest unknown.
+1. **Battery heater duty vs temperature** (winter 2026–27; heater is
+   Pi-permissive, so log it). With the interim system on array 0 alone, the
+   lean-caretaker margin is thin against heater-duty error — this
+   measurement is now urgent, not just informative, and it retires the
+   model's biggest unknown.
 2. **Post-fix recalibration of array 0** (`calibrate_pv.py 2026-07-19` after
-   a week of corrected 4s2p wiring): expect the slope near 1.45; a
-   materially lower result means the array has losses beyond the wiring
-   fault, and the scenario numbers revert toward the pre-correction column.
-3. **Post-mount recalibration** of array 1 (`calibrate_pv.py <date>` after a
-   week of telemetry): does per-kW effectiveness recover from the 16% flat
-   floor toward the PR 0.55–0.70 band?
-4. **AR solstice-path screenshots at +1.4 m and +2.1 m** (upper-row
-   sightlines over the roofline).
-5. **Clear-day December `epever.1 pv_power` trace**: a midday notch vs a
-   clean bell is the roofline occlusion profile, measured — replaces the AR
-   estimate outright.
-6. Post-rewire check (3s4p, dry-run 2026-07-02): `epever.1 pv_voltage`
-   ~108 V class instead of ~144 V.
+   a week of corrected 4s2p wiring; scheduled 2026-07-26): expect the slope
+   near 1.45; a materially lower result means the array has losses beyond
+   the wiring fault, and the scenario numbers revert toward the
+   pre-correction column. Array 1 is decommissioned, so its slope should
+   read ~0/absent in this run.
+3. **AR solstice-path survey from the cabin rooftop mounting height**
+   (whenever roof access exists, ideally near solstice-relevant sun angles):
+   replaces the old +1.4/+2.1 m ladder follow-ups; quantifies how much of
+   the December noon block the ~10 ft of extra height recovers.
+4. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
+   array 1 (`calibrate_pv.py <date>`): does per-kW effectiveness recover
+   from the 16% flat floor toward the PR 0.55–0.70 band? Verify
+   `epever.1 pv_voltage` ~108 V class (3s4p) on reconnect, and capture a
+   clear-day December `pv_power` trace — a midday notch vs a clean bell is
+   the measured occlusion profile.
 
 ## History
 
@@ -230,3 +266,8 @@ In rough order of information value:
   disconnected, 4s ∥ 3s during the whole calibration window); array 0
   coefficient revised 1.27 → ~1.45 going forward and all scenario numbers
   re-run ([journal](journal/2026-07-18.md)).
+- 2026-07-18 — array 1 decommissioned for mount construction, expected
+  complete ~Sep 2027; final plan 3s4p at 45° on a cabin rooftop (~10 ft
+  higher than the surveyed ground position, slightly reduced shading).
+  Interim array-0-only scenario table added; unattended winter 2026–27
+  remains viable on array 0 alone.
