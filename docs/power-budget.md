@@ -44,12 +44,23 @@ the array 1 wiring that fell out of this analysis:
 | Quantity | Value | Notes |
 |---|---|---|
 | System PV effectiveness | 1.84 W per W/m² GHI | 261 uncurtailed bins; BMS charge limit (~10.6 kW) never binding |
-| Array 0 (2.4 kW rooftop) | 1.27 (~53% of nameplate) | normal for an older fixed array |
+| Array 0 (2.4 kW rooftop) | 1.27 measured; **~1.45 expected going forward** | measured with a wiring fault (below); corrected 2026-07-18 |
 | Array 1 (3.6 kW, flat on ground) | 0.57 (~16% of nameplate) | flat + tight tree horizon + vegetation; expected to recover substantially when mounted — re-measure |
 | Load, June occupancy | 5.15 kWh/day (214 W avg) | DC-bus basis |
 | Overnight load floor | ~95 W | Starlink gen 2 ~34 W DC-side + Magnum no-load ~44 W + Pi/comms ~15 W |
 | Refrigeration share | ~2.6 kWh/day | duty-cycled ~100–120 W average |
 | Bank usable | ~8.7 kWh | 2× Cubix 100 (10.24 kWh nominal) at 85% |
+
+**Array 0 wiring-fault correction (discovered 2026-07-18, ~13:45):** during
+the entire calibration window one array 0 panel was disconnected and the
+remaining seven were wired 4s ∥ 3s instead of the intended 4s2p. With a 3s
+string (Voc ~135 V) paralleled onto a 4s string (Vmp ~144 V), the Classic's
+global MPP sits near ~108 V where both strings conduct — delivering
+essentially 7 panels' worth, i.e. ~7/8 of intended output. The measured 1.27
+therefore characterizes the *faulted* array; with the wiring corrected,
+array 0 should run ≈ 1.27 × 8/7 ≈ **1.45 W per W/m²** (~60% of nameplate).
+Scenario numbers below use the corrected value; the post-fix recalibration
+(open measurements) confirms it.
 
 ## Site solar geometry (array 1 platform)
 
@@ -86,9 +97,9 @@ post-mount recalibration below replaces this bracket with a measurement.
 
 | Mode | Load | Darkest-week balance | Winter outcome (9 simulated winters) |
 |---|---|---|---|
-| Full occupancy | ~5.7 kWh/day incl. heater | −2.5 to −3 kWh/day | Structural deficit, ~140–290 kWh/winter; generator required (~14–19 bank-empty events/winter) |
-| No refrigeration | ~2.3 + heater | ≈ −0.5 kWh/day | Bank rides through: at PR 0.55 the bank empties once in 9 winters (by 0.8 kWh); at PR 0.70 it never empties, bottoming at 38% SOC in the worst winter |
-| Lean unattended caretaker | ~0.5 + heater | positive to neutral | Robust in every scenario tested, incl. zero December beam and 2× heater duty; min SOC ≥ 64% even with array 1 contributing nothing |
+| Full occupancy | ~5.7 kWh/day incl. heater | −2.2 to −2.7 kWh/day | Structural deficit, ~165–215 kWh/winter; generator required (~13–17 bank-empty events/winter) |
+| No refrigeration | ~2.3 + heater | ≈ −0.3 kWh/day | Bank rides through in **all 9 winters at both bracket ends**: worst-winter minimum SOC 24% at PR 0.55, 43% at PR 0.70 |
+| Lean unattended caretaker | ~0.5 + heater | positive to neutral | Robust in every scenario tested, incl. zero December beam and 2× heater duty; min SOC ≥ 76% even with array 1 contributing nothing |
 
 Lean caretaker stack: Pi + comms ~15 W continuous; inverter hard-off except a
 daily ~60-minute window (supervisor toggles the Magnum — the one Magnum write
@@ -112,18 +123,19 @@ A battery bridges deficits; it cannot erase a structural one.
 
 | Scenario | 200 Ah | 400 Ah | Verdict |
 |---|---|---|---|
-| Full load, occupied | ~14–19 generator sessions/winter | ~7–10 | Halves generator *starts*; same total energy |
-| No-fridge, occupied | 1 bank-empty event in 9 winters (worst corner) | 0 | Already solved at 200 Ah |
+| Full load, occupied | ~13–17 generator sessions/winter | ~7–9 | Halves generator *starts*; same total energy |
+| No-fridge, occupied | 0 bank-empty events in 9 winters, both PR bracket ends | 0 | Already solved at 200 Ah |
 | Lean unattended, as-built | 0 failures (even 2× heater duty) | 0 | Already solved at 200 Ah |
-| Lean unattended + array 1 failed + 1.5× heater | 37 dead days, runs to 13 days (cold-lock risk) | 6 dead days, runs ≤ 3 | The one outcome-class change |
-| Same double fault at 2× heater | 183 dead days | 97 | Structural; nothing saves it |
+| Lean unattended + array 1 failed + 1.5× heater | 4 dead days in 9 winters | 0 | Was 37 vs 6 before the array 0 wiring-fault correction; the corrected array largely closes this corner on its own |
+| Same double fault at 2× heater | 98 dead days | 38 | Structural; neither bank size saves it |
 
 The marginal value of doubling is (a) fewer, longer generator sessions when
-occupied at full load, and (b) insurance depth against the *double-fault*
-unattended winter (an array failure combined with underestimated heater duty).
-The same budget pointed at winter *supply* — unshaded winter panel capacity,
-or platform height that clears the roofline — attacks the deficit directly
-and is worth more per dollar in every non-fault scenario.
+occupied at full load, and (b) residual insurance depth in the *double-fault*
+unattended winter (an array failure combined with underestimated heater duty)
+— a corner the array 0 wiring-fault correction already shrank from 37 dead
+days to 4. The same budget pointed at winter *supply* — unshaded winter panel
+capacity, or platform height that clears the roofline — attacks the deficit
+directly and is worth more per dollar in every non-fault scenario.
 
 **Decision (2026-07-02): collect a full season of data first** (heater duty,
 post-mount calibration), then choose between insurance (battery), supply
@@ -195,18 +207,26 @@ In rough order of information value:
 1. **Battery heater duty vs temperature** (first winter; heater is
    Pi-permissive, so log it). The 2× heater sensitivity is the failure mode of
    unattended winters — this measurement retires the model's biggest unknown.
-2. **Post-mount recalibration** of array 1 (`calibrate_pv.py <date>` after a
+2. **Post-fix recalibration of array 0** (`calibrate_pv.py 2026-07-19` after
+   a week of corrected 4s2p wiring): expect the slope near 1.45; a
+   materially lower result means the array has losses beyond the wiring
+   fault, and the scenario numbers revert toward the pre-correction column.
+3. **Post-mount recalibration** of array 1 (`calibrate_pv.py <date>` after a
    week of telemetry): does per-kW effectiveness recover from the 16% flat
    floor toward the PR 0.55–0.70 band?
-3. **AR solstice-path screenshots at +1.4 m and +2.1 m** (upper-row
+4. **AR solstice-path screenshots at +1.4 m and +2.1 m** (upper-row
    sightlines over the roofline).
-4. **Clear-day December `epever.1 pv_power` trace**: a midday notch vs a
+5. **Clear-day December `epever.1 pv_power` trace**: a midday notch vs a
    clean bell is the roofline occlusion profile, measured — replaces the AR
    estimate outright.
-5. Post-rewire check (3s4p, dry-run 2026-07-02): `epever.1 pv_voltage`
+6. Post-rewire check (3s4p, dry-run 2026-07-02): `epever.1 pv_voltage`
    ~108 V class instead of ~144 V.
 
 ## History
 
 - 2026-07-02 — initial model, AR shading survey, 3s4p decision, battery
   200-vs-400 Ah analysis ([journal](journal/2026-07-02.md)).
+- 2026-07-18 — array 0 wiring fault discovered and corrected (one panel
+  disconnected, 4s ∥ 3s during the whole calibration window); array 0
+  coefficient revised 1.27 → ~1.45 going forward and all scenario numbers
+  re-run ([journal](journal/2026-07-18.md)).
