@@ -56,12 +56,14 @@ This state is deliberately visible:
 - deploy and `scripts/health-check.sh` fail unless the primary store is
   writable.
 
-Recovery is normally `sudo systemctl restart offgrid-supervisor`: the unit's
-privileged preflight repairs `/srv/telemetry` ownership, the first write proves
-the primary, and the fallback then merges automatically. The data directory is
-setgid with a default group-writable ACL so WAL/SHM files created during an
-operator SQLite session remain writable by the service. Prefer SQLite
-`mode=ro` for all ad-hoc queries regardless.
+Recovery is normally to restore the WAL/SHM files to `offgrid:offgrid` mode 660;
+the next successful write proves the primary and merges the fallback
+automatically. Restarting `offgrid-supervisor` also runs a privileged preflight
+that repairs ownership. The data directory is setgid with a default
+group-writable ACL, but SQLite can restrict the inherited ACL mask when it
+creates sidecars as another account. Run **all** live-database access as
+`offgrid`, including `mode=ro` queries. For repeated or long analysis, use the
+snapshot command documented in [Querying the Telemetry Log](querying.md).
 
 `export_batches` keeps one row per object-storage batch attempt/result. The exporter builds/uploads a batch without holding a SQLite write transaction, then stamps the exported rows (`exported_at`, `export_batch_id`) and appends the batch row in a short transaction after object storage accepts the upload.
 

@@ -118,7 +118,7 @@ renderers and their tests.
 After at least one minute:
 
 ```sh
-sqlite3 'file:/srv/telemetry/data/metrics.sqlite?mode=ro' \
+sudo -u offgrid sqlite3 'file:/srv/telemetry/data/metrics.sqlite?mode=ro' \
   "SELECT captured_at, metric, value, unit FROM samples WHERE source='tasmota.refrigeration' ORDER BY captured_at DESC LIMIT 12;"
 ```
 

@@ -7,14 +7,14 @@ The supervisor writes all readings to `/srv/telemetry/data/metrics.sqlite` once 
 ### What was peak charging power today?
 
 ```
-python3 scripts/query_metrics.py peak-power
-python3 scripts/query_metrics.py peak-power --date 2026-06-14
+sudo -u offgrid python3 scripts/query_metrics.py peak-power
+sudo -u offgrid python3 scripts/query_metrics.py peak-power --date 2026-06-14
 ```
 
 ### What's today's energy total?
 
 ```
-python3 scripts/query_metrics.py daily-summary
+sudo -u offgrid python3 scripts/query_metrics.py daily-summary
 ```
 
 Prints energy (kWh + Ah), peak charge power and when it occurred, peak PV voltage, and last open-circuit voltage.
@@ -22,7 +22,7 @@ Prints energy (kWh + Ah), peak charge power and when it occurred, peak PV voltag
 ### What is the system doing right now?
 
 ```
-python3 scripts/query_metrics.py now
+sudo -u offgrid python3 scripts/query_metrics.py now
 ```
 
 Latest reading for every key metric across the Classic, battery pack, and CAN bus.
@@ -30,7 +30,7 @@ Latest reading for every key metric across the Classic, battery pack, and CAN bu
 ### When did the charge stage change today?
 
 ```
-python3 scripts/query_metrics.py charge-history
+sudo -u offgrid python3 scripts/query_metrics.py charge-history
 ```
 
 Lists each Bulk → Absorb → Float transition with the time it occurred.
@@ -50,23 +50,34 @@ sudo usermod -aG offgrid $USER   # then log out and back in
 Even after that, prefer the read-only URI for inspection:
 
 ```
-sqlite3 'file:/srv/telemetry/data/metrics.sqlite?mode=ro'
+sudo -u offgrid sqlite3 'file:/srv/telemetry/data/metrics.sqlite?mode=ro'
 ```
 
-An ordinary writable open creates or replaces SQLite WAL/SHM sidecars. The
-telemetry directory now has setgid and a default group-writable ACL so those
-sidecars remain usable by the `offgrid` service, but read-only mode avoids the
-interaction entirely. Use a writable session only for an intentional database
-maintenance operation, and run it as the service account:
+SQLite may create or update WAL/SHM sidecars even for a `mode=ro` connection.
+If another account creates them as mode 0644, the `offgrid` supervisor cannot
+write and falls back to its SD-card store. The directory's setgid/default ACL
+does not prevent SQLite from restricting the ACL mask. Therefore **every open
+of the live database must run as `offgrid`**, including read-only queries.
+`scripts/query_metrics.py` enforces this ownership rule. Use a writable session
+only for intentional maintenance:
 
 ```
 sudo -u offgrid sqlite3 /srv/telemetry/data/metrics.sqlite
 ```
 
-Do **not** use `immutable=1` on this database: it tells SQLite the file cannot
+Do **not** use `immutable=1` on the live database: it tells SQLite the file cannot
 change, but the supervisor writes once a minute (WAL mode), so long scans fail
-midway with spurious `database disk image is malformed` errors. `mode=ro`
-takes proper read locks and stays consistent against the live writer.
+midway with spurious `database disk image is malformed` errors. Owner-matched
+`mode=ro` takes proper read locks and stays consistent against the live writer.
+
+For a long or repeated analysis, create one consistent snapshot as `offgrid`,
+then query the snapshot as your normal account. The command refuses to
+overwrite an existing file:
+
+```sh
+sudo -u offgrid python3 scripts/query_metrics.py snapshot \
+  --output /tmp/metrics-snapshot.sqlite
+```
 
 Useful dot-commands:
 
@@ -80,7 +91,7 @@ PRAGMA table_info(samples);
 When you need to further process a result set — reshape it, feed it into a plot, compute things SQL can't express cleanly — use the Python shell instead:
 
 ```
-python3 scripts/query_metrics.py shell
+sudo -u offgrid python3 scripts/query_metrics.py shell
 ```
 
 Drops into a Python REPL with `conn` (`sqlite3.Connection`, `row_factory=Row`) pre-loaded:
@@ -97,8 +108,8 @@ dict(rows[0])   # {'captured_at': '2026-06-15T10:07:12...', 'value': 1620.0, ...
 Open read-only without copying the file:
 
 ```python
-import sqlite3
-conn = sqlite3.connect('file:/srv/telemetry/data/metrics.sqlite?mode=ro', uri=True)
+from scripts.sqlite_readonly import open_readonly_database
+conn = open_readonly_database('/srv/telemetry/data/metrics.sqlite')
 ```
 
 ### Schema quick reference

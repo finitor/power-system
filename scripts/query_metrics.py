@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Ad-hoc queries against the local telemetry SQLite store.
 
-Run on the Pi (or any host with access to /srv/telemetry/data/metrics.sqlite):
+Run on the Pi as the database owner (or against a user-owned snapshot):
 
-    python3 scripts/query_metrics.py peak-power
-    python3 scripts/query_metrics.py daily-summary
-    python3 scripts/query_metrics.py daily-summary --date 2026-06-14
-    python3 scripts/query_metrics.py now
-    python3 scripts/query_metrics.py charge-history
-    python3 scripts/query_metrics.py charge-history --date 2026-06-14
+    sudo -u offgrid python3 scripts/query_metrics.py peak-power
+    sudo -u offgrid python3 scripts/query_metrics.py daily-summary
+    sudo -u offgrid python3 scripts/query_metrics.py daily-summary --date 2026-06-14
+    sudo -u offgrid python3 scripts/query_metrics.py now
+    sudo -u offgrid python3 scripts/query_metrics.py charge-history
+    sudo -u offgrid python3 scripts/query_metrics.py charge-history --date 2026-06-14
+    sudo -u offgrid python3 scripts/query_metrics.py snapshot --output /tmp/metrics-snapshot.sqlite
 """
 
 from __future__ import annotations
@@ -18,14 +19,13 @@ import sqlite3
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
+from sqlite_readonly import open_readonly_database
+
 DB_PATH = "/srv/telemetry/data/metrics.sqlite"
 
 
 def open_db(path: str = DB_PATH) -> sqlite3.Connection:
-    p = Path(path)
-    if not p.exists():
-        raise SystemExit(f"Database not found: {path}")
-    return sqlite3.connect(f"file:{path}?immutable=1", uri=True)
+    return open_readonly_database(path)
 
 
 def day_bounds(d: date) -> tuple[str, str]:
@@ -197,6 +197,30 @@ def cmd_shell(args: argparse.Namespace) -> None:
     code.interact(banner=banner, local={"conn": conn, "sqlite3": sqlite3})
 
 
+def cmd_snapshot(args: argparse.Namespace) -> None:
+    """Create a consistent, user-queryable snapshot using SQLite's backup API."""
+    output = Path(args.output).expanduser().resolve()
+    if output.exists():
+        raise SystemExit(f"Refusing to overwrite existing snapshot: {output}")
+    if not output.parent.is_dir():
+        raise SystemExit(f"Snapshot directory not found: {output.parent}")
+
+    source = open_db(args.db)
+    try:
+        destination = sqlite3.connect(output)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+    except Exception:
+        for suffix in ("", "-wal", "-shm", "-journal"):
+            Path(f"{output}{suffix}").unlink(missing_ok=True)
+        raise
+    finally:
+        source.close()
+    print(f"Created consistent telemetry snapshot: {output}")
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -234,6 +258,10 @@ def main() -> None:
 
     p_shell = sub.add_parser("shell", help="Interactive Python REPL with conn pre-loaded")
     p_shell.set_defaults(func=cmd_shell)
+
+    p_snapshot = sub.add_parser("snapshot", help="Create a consistent SQLite backup for analysis")
+    p_snapshot.add_argument("--output", required=True, help="New snapshot path (must not exist)")
+    p_snapshot.set_defaults(func=cmd_snapshot)
 
     args = parser.parse_args()
     args.func(args)

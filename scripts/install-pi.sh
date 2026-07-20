@@ -66,6 +66,7 @@ echo "== deploy =="
 "${PROJECT_DIR}/scripts/deploy.sh"
 # offgrid group is created by deploy.sh (adduser --system --group); add operator now.
 sudo usermod -aG offgrid "$USER"
-# Allow operator-created SQLite sidecars while preserving service access.
+# Retain shared group access for telemetry artifacts. Live SQLite access must
+# still run as offgrid because SQLite can create WAL/SHM files as mode 0644.
 sudo chmod 2775 /srv/telemetry/data /srv/telemetry/logs
 sudo setfacl -m d:u::rwx,d:g::rwx,d:o::r-x,d:m::rwx /srv/telemetry/data /srv/telemetry/logs

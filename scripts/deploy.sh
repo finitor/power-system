@@ -100,9 +100,9 @@ if [ -f /etc/offgrid-power.env ]; then
     sudo chown root:root /etc/offgrid-power.env
     sudo chmod 600 /etc/offgrid-power.env
 fi
-# Keep SQLite sidecars service-writable even when an operator creates them.
-# The recursive chown also repairs a pre-existing ownership incident; the
-# default ACL + setgid bit prevent the same failure from recurring.
+# Repair pre-existing ownership incidents and retain shared group access for
+# telemetry artifacts. SQLite can override an inherited ACL mask when another
+# user creates WAL/SHM files, so live DB access must still run as SERVICE_USER.
 sudo mkdir -p /srv/telemetry/data /srv/telemetry/logs /var/lib/offgrid
 sudo chown -R "${SERVICE_USER}:${SERVICE_USER}" /srv/telemetry /var/lib/offgrid
 sudo chmod 2775 /srv/telemetry/data /srv/telemetry/logs

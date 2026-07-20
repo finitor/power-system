@@ -50,13 +50,13 @@ echo "telemetry-health: $(curl -s --max-time 5 http://127.0.0.1:8081/api/v1/heal
 DB=/srv/telemetry/data/metrics.sqlite
 # The store is owned by the service account; a plain WAL read as the
 # operator would fail on the -shm/-wal sidecars, so go through sudo.
-echo "store: $(sudo -n sqlite3 -readonly "${DB}" "SELECT 'samples=' || COUNT(*) || ' newest=' || COALESCE(MAX(captured_at), 'none') FROM samples" 2>/dev/null || echo unreadable)"
+echo "store: $(sudo -n -u offgrid sqlite3 -readonly "${DB}" "SELECT 'samples=' || COUNT(*) || ' newest=' || COALESCE(MAX(captured_at), 'none') FROM samples" 2>/dev/null || echo unreadable)"
 
-echo "events: $(sudo -n sqlite3 -readonly "${DB}" "SELECT COALESCE(MAX(captured_at || ' ' || source || '/' || event), 'none logged') FROM events" 2>/dev/null || echo unreadable)"
+echo "events: $(sudo -n -u offgrid sqlite3 -readonly "${DB}" "SELECT COALESCE(MAX(captured_at || ' ' || source || '/' || event), 'none logged') FROM events" 2>/dev/null || echo unreadable)"
 
 FALLBACK=/var/lib/offgrid/metrics-fallback.sqlite
 if [ -f "${FALLBACK}" ]; then
-    echo "fallback-store: $(sudo -n sqlite3 -readonly "${FALLBACK}" "SELECT 'samples=' || COUNT(*) || ' oldest=' || COALESCE(MIN(captured_at), 'none') || ' newest=' || COALESCE(MAX(captured_at), 'none') FROM samples" 2>/dev/null || echo unreadable)"
+    echo "fallback-store: $(sudo -n -u offgrid sqlite3 -readonly "${FALLBACK}" "SELECT 'samples=' || COUNT(*) || ' oldest=' || COALESCE(MIN(captured_at), 'none') || ' newest=' || COALESCE(MAX(captured_at), 'none') FROM samples" 2>/dev/null || echo unreadable)"
 else
     echo "fallback-store: none"
 fi

@@ -1,6 +1,6 @@
 """Calibrate PV output vs GHI from uncurtailed intervals; run on the Pi.
 
-Usage: python3 calibrate_pv.py [start-date]      (default 2026-06-20)
+Usage: sudo -u offgrid python3 calibrate_pv.py [start-date]  (default 2026-06-20)
 
 Selects 10-minute bins where the system is in Bulk with SOC <= 88% (i.e.
 production is sun-limited, not curtailment-limited) and regresses total
@@ -9,12 +9,14 @@ W-per-W/m2 effectiveness figures used by annual_model.py; re-run after any
 array change (3s4p rewire 2026-07-02, platform mount) to update them.
 Baseline 2026-06-20..07-02: total 1.84, classic.0 1.27, epever.1 0.57 (flat
 on the ground)."""
-import sqlite3, json, sys
+import json, sys
 from collections import defaultdict
 from datetime import datetime
 
+from sqlite_readonly import open_readonly_database
+
 START = sys.argv[1] if len(sys.argv) > 1 else '2026-06-20'
-conn = sqlite3.connect('file:/srv/telemetry/data/metrics.sqlite?mode=ro', uri=True)
+conn = open_readonly_database('/srv/telemetry/data/metrics.sqlite')
 
 def fetch(source, metric, textcol=False):
     col = 'text' if textcol else 'value'
