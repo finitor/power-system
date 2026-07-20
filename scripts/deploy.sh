@@ -181,7 +181,12 @@ echo "== health =="
 sleep 6
 sudo systemctl start offgrid-console
 systemctl is-active offgrid-supervisor offgrid-console nginx
-code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/healthz)"
+code="000"
+for _attempt in $(seq 1 60); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:8081/healthz || true)"
+    [ "${code}" = "200" ] && break
+    sleep 2
+done
 echo "supervisor /healthz: ${code}"
 if [ "${code}" != "200" ]; then
     echo "ERROR: supervisor healthz not serving 200" >&2
