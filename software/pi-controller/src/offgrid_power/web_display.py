@@ -16,7 +16,15 @@ from urllib.parse import parse_qs, urlparse
 from .api_terminal_display import render_api_snapshot, render_api_weather
 from .charge_stage import NormalizedStage
 from .load import LoadSampleBuffer, LoadSummary, LoadTracker
-from .supervisor import STATUS_ERROR, Supervisor, SupervisorSnapshot, snapshot_severity_text, snapshot_status_annotations
+from .supervisor import (
+    STATUS_ERROR,
+    STATUS_OK,
+    STATUS_WARNING,
+    Supervisor,
+    SupervisorSnapshot,
+    snapshot_severity_text,
+    snapshot_status_annotations,
+)
 from .terminal_display import (
     format_cell_location_for_display,
     format_refrigeration_summary,
@@ -719,6 +727,7 @@ def route_display_request(
     refresh_hook: Callable[[], None] | None = None,
     weather_refresh_hook: Callable[[], None] | None = None,
     allocation: dict | None = None,
+    telemetry: dict | None = None,
 ) -> DisplayResponse:
     # Both hooks only queue work for next time; this response still carries the
     # current snapshot/cached forecast, so a slow source never delays the reply.
@@ -731,7 +740,13 @@ def route_display_request(
     if weather_refresh_hook is not None and wants_weather_refresh(path):
         weather_refresh_hook()
     if parsed_path in {"/api/v1/health", "/api/v1/snapshot"}:
-        return route_api_request(snapshot, parsed_path, load_summary=load_summary, allocation=allocation)
+        return route_api_request(
+            snapshot,
+            parsed_path,
+            load_summary=load_summary,
+            allocation=allocation,
+            telemetry=telemetry,
+        )
     if parsed_path == "/api/v1/weather":
         return _json_response(HTTPStatus.OK, weather_api_payload(weather_report))
     if parsed_path not in {"/", "/kindle", "/kindle/details", "/kindle/weather", "/display", "/weather", "/healthz"}:
@@ -781,18 +796,25 @@ def route_api_request(
     load_summary: LoadSummary | None = None,
     now: datetime | None = None,
     allocation: dict | None = None,
+    telemetry: dict | None = None,
 ) -> DisplayResponse:
     if path == "/api/v1/health":
-        payload = health_api_payload(snapshot, now=now)
+        payload = health_api_payload(snapshot, now=now, telemetry=telemetry)
         # Only a critical ERROR fails the check (503). A degraded WARNING — an
         # offline device or a non-critical condition — stays 200 so monitors
         # don't treat "one controller offline" the same as "supervisor down".
-        status = HTTPStatus.SERVICE_UNAVAILABLE if snapshot.status_text == STATUS_ERROR else HTTPStatus.OK
+        status = HTTPStatus.SERVICE_UNAVAILABLE if payload["status"] == STATUS_ERROR else HTTPStatus.OK
         return _json_response(status, payload)
     if path == "/api/v1/snapshot":
         return _json_response(
             HTTPStatus.OK,
-            snapshot_api_payload(snapshot, load_summary=load_summary, now=now, allocation=allocation),
+            snapshot_api_payload(
+                snapshot,
+                load_summary=load_summary,
+                now=now,
+                allocation=allocation,
+                telemetry=telemetry,
+            ),
         )
     return _json_response(HTTPStatus.NOT_FOUND, {"error": "not found"})
 
@@ -1671,18 +1693,47 @@ def _health_checks(snapshot: SupervisorSnapshot) -> dict:
     return checks
 
 
-def health_api_payload(snapshot: SupervisorSnapshot, now: datetime | None = None) -> dict:
+def _telemetry_status(
+    snapshot: SupervisorSnapshot,
+    telemetry: dict | None,
+) -> tuple[str, bool, list[str], list[str]]:
+    conditions = list(snapshot.status_conditions)
+    annotations = snapshot_status_annotations(snapshot)
+    telemetry_condition = None if telemetry is None else telemetry.get("condition")
+    if telemetry_condition and telemetry_condition not in conditions:
+        conditions.append(telemetry_condition)
+    if telemetry_condition and telemetry_condition not in annotations:
+        annotations.append(telemetry_condition)
+    status = snapshot.status_text
+    if telemetry_condition and status == STATUS_OK:
+        status = STATUS_WARNING
+    return status, status != STATUS_ERROR, conditions, annotations
+
+
+def health_api_payload(
+    snapshot: SupervisorSnapshot,
+    now: datetime | None = None,
+    telemetry: dict | None = None,
+) -> dict:
     # schema_version 2: "status" now distinguishes WARNING (degraded, HTTP 200)
     # from ERROR (HTTP 503), and per-device "checks" + "conditions" are added.
+    status, ok, conditions, _ = _telemetry_status(snapshot, telemetry)
+    checks = _health_checks(snapshot)
+    if telemetry is not None:
+        checks["telemetry"] = {
+            "status": telemetry.get("status", "initializing"),
+            "reason": telemetry.get("reason"),
+            "detail": telemetry.get("detail"),
+        }
     return {
         "schema_version": 2,
-        "ok": snapshot.ok,
-        "status": snapshot.status_text,
+        "ok": ok,
+        "status": status,
         "captured_at": snapshot.captured_at.isoformat(),
         "age_seconds": _age_seconds(snapshot.captured_at, now=now),
         "errors": list(snapshot.errors),
-        "conditions": list(snapshot.status_conditions),
-        "checks": _health_checks(snapshot),
+        "conditions": conditions,
+        "checks": checks,
     }
 
 
@@ -1692,18 +1743,20 @@ def snapshot_api_payload(
     now: datetime | None = None,
     site_id: str = "cabin",
     allocation: dict | None = None,
+    telemetry: dict | None = None,
 ) -> dict:
+    status, ok, conditions, annotations = _telemetry_status(snapshot, telemetry)
     return {
         "schema_version": 1,
         "site_id": site_id,
         "captured_at": snapshot.captured_at.isoformat(),
         "age_seconds": _age_seconds(snapshot.captured_at, now=now),
         "status": {
-            "ok": snapshot.ok,
-            "severity": snapshot.status_text,
-            "annotations": snapshot_status_annotations(snapshot),
+            "ok": ok,
+            "severity": status,
+            "annotations": annotations,
             "errors": list(snapshot.errors),
-            "conditions": list(snapshot.status_conditions),
+            "conditions": conditions,
         },
         "battery": _battery_api_payload(snapshot),
         "solar": _solar_api_payload(snapshot),
@@ -1724,6 +1777,7 @@ def snapshot_api_payload(
         "reader_error_rates": snapshot.reader_error_rates,
         "lan_reachable": snapshot.lan_reachable,
         "wan_reachable": snapshot.wan_reachable,
+        "telemetry": telemetry,
     }
 
 
@@ -2010,6 +2064,7 @@ def run_display_server(
     refresh_hook: Callable[[], None] | None = None,
     weather_refresh_hook: Callable[[], None] | None = None,
     allocation_provider: Callable[[], dict | None] | None = None,
+    telemetry_provider: Callable[[], dict | None] | None = None,
     charge_ceiling=None,
     allocation_override=None,
     relay_controller=None,
@@ -2095,6 +2150,7 @@ def run_display_server(
                 refresh_hook=refresh,
                 weather_refresh_hook=weather_refresh,
                 allocation=allocation,
+                telemetry=telemetry_provider() if telemetry_provider is not None else None,
             )
             self._send_display_response(response)
 

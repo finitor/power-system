@@ -47,16 +47,20 @@ The database is owned by the `offgrid` user. Add yourself to that group once so 
 sudo usermod -aG offgrid $USER   # then log out and back in
 ```
 
-After that:
-
-```
-sqlite3 /srv/telemetry/data/metrics.sqlite
-```
-
-Until then (or to avoid accidental writes regardless), use the read-only URI:
+Even after that, prefer the read-only URI for inspection:
 
 ```
 sqlite3 'file:/srv/telemetry/data/metrics.sqlite?mode=ro'
+```
+
+An ordinary writable open creates or replaces SQLite WAL/SHM sidecars. The
+telemetry directory now has setgid and a default group-writable ACL so those
+sidecars remain usable by the `offgrid` service, but read-only mode avoids the
+interaction entirely. Use a writable session only for an intentional database
+maintenance operation, and run it as the service account:
+
+```
+sudo -u offgrid sqlite3 /srv/telemetry/data/metrics.sqlite
 ```
 
 Do **not** use `immutable=1` on this database: it tells SQLite the file cannot

@@ -423,6 +423,7 @@ def main() -> int:
             args,
             supervisor,
             snapshot_cache,
+            metric_recorder,
             weather_service,
             charge_ceiling=charge_allocation_logger.ceiling if charge_allocation_logger is not None else None,
             allocation_override=allocation_override,
@@ -491,6 +492,13 @@ def main() -> int:
             # register in the store for diagnosis); the load summary already uses
             # the derived value.
             record_metrics(metric_recorder, snapshot, load_summary)
+            metrics_health = metric_recorder.health()
+            metrics_condition = metrics_health.get("condition")
+            if metrics_condition and metrics_condition not in display_snapshot.status_conditions:
+                display_snapshot = dataclasses.replace(
+                    display_snapshot,
+                    status_conditions=[*display_snapshot.status_conditions, metrics_condition],
+                )
             snapshot_cache.set(display_snapshot, load_summary, allocation=allocation_detail_payload)
             record_weather_metrics(metric_recorder, weather_service)
             record_inverter_event(metric_recorder, inverter_event_tracker, snapshot)
@@ -535,6 +543,7 @@ def start_web_display(
     args: argparse.Namespace,
     supervisor: Supervisor,
     snapshot_cache: SnapshotCache,
+    metric_recorder: MetricRecorder,
     weather_service: WeatherService | None = None,
     charge_ceiling: ChargeCeiling | None = None,
     allocation_override: AllocationOverride | None = None,
@@ -551,6 +560,7 @@ def start_web_display(
             "allocation_provider": snapshot_cache.get_allocation,
             "weather_provider": None if weather_service is None else weather_service.get_cached,
             "weather_refresh_hook": None if weather_service is None else weather_service.request_refresh_if_needed,
+            "telemetry_provider": metric_recorder.health,
             "charge_ceiling": charge_ceiling,
             "allocation_override": allocation_override,
             "relay_controller": relay_controller,

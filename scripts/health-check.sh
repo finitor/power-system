@@ -18,5 +18,6 @@ check "can0" ip -details link show can0
 check "serial devices" sh -c 'ls -l /dev/epever-rs485 /dev/cubix-rs485 /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || true'
 check "storage" sh -c 'df -h / /srv/telemetry 2>/dev/null || df -h /; ls -ld /srv/telemetry/data /srv/telemetry/logs /var/lib/offgrid'
 check "supervisor healthz" curl -fsS http://127.0.0.1:8081/healthz
+check "telemetry storage" sh -c "curl -fsS http://127.0.0.1:8081/api/v1/health | jq -e '.checks.telemetry.status == \"ok\"' >/dev/null"
 check "nginx kindle path" sh -c "curl -fsS -A 'Kindle/3.0' http://127.0.0.1:8080/ >/dev/null"
 check "api snapshot summary" sh -c "curl -fsS http://127.0.0.1:8081/api/v1/snapshot | '${PROJECT_DIR}/.venv/bin/python' '${PROJECT_DIR}/scripts/diag_api.py'"

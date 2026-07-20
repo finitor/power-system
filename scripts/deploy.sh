@@ -100,6 +100,13 @@ if [ -f /etc/offgrid-power.env ]; then
     sudo chown root:root /etc/offgrid-power.env
     sudo chmod 600 /etc/offgrid-power.env
 fi
+# Keep SQLite sidecars service-writable even when an operator creates them.
+# The recursive chown also repairs a pre-existing ownership incident; the
+# default ACL + setgid bit prevent the same failure from recurring.
+sudo mkdir -p /srv/telemetry/data /srv/telemetry/logs /var/lib/offgrid
+sudo chown -R "${SERVICE_USER}:${SERVICE_USER}" /srv/telemetry /var/lib/offgrid
+sudo chmod 2775 /srv/telemetry/data /srv/telemetry/logs
+sudo setfacl -m d:u::rwx,d:g::rwx,d:o::r-x,d:m::rwx /srv/telemetry/data /srv/telemetry/logs
 
 echo "== configs =="
 # Render @OFFGRID_USER@/@SERVICE_USER@/@PROJECT_DIR@ templates for this host.
@@ -176,6 +183,22 @@ sudo systemctl start offgrid-console
 systemctl is-active offgrid-supervisor offgrid-console nginx
 code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8081/healthz)"
 echo "supervisor /healthz: ${code}"
+if [ "${code}" != "200" ]; then
+    echo "ERROR: supervisor healthz not serving 200" >&2
+    exit 1
+fi
+telemetry_status="unavailable"
+for _attempt in $(seq 1 60); do
+    telemetry_status="$(curl -fsS http://127.0.0.1:8081/api/v1/health 2>/dev/null | jq -r '.checks.telemetry.status // "missing"' || echo unavailable)"
+    [ "${telemetry_status}" = "ok" ] && break
+    sleep 2
+done
+echo "telemetry storage: ${telemetry_status}"
+if [ "${telemetry_status}" != "ok" ]; then
+    curl -sS http://127.0.0.1:8081/api/v1/health | jq '.checks.telemetry' >&2 || true
+    echo "ERROR: primary telemetry store is not writable" >&2
+    exit 1
+fi
 kindle="$(curl -s -o /dev/null -w '%{http_code}' -A 'Kindle/3.0' http://127.0.0.1:8080/)"
 echo "kindle port via nginx: ${kindle}"
 if [ "${kindle}" != "200" ]; then

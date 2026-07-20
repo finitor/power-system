@@ -427,6 +427,57 @@ class MetricRecorderTest(unittest.TestCase):
             count = connection.execute("SELECT COUNT(*) FROM samples").fetchone()[0]
         self.assertGreater(count, 0)
 
+    def test_health_reports_fallback_and_clears_after_primary_recovers(self) -> None:
+        fallback = REPO_ROOT / ".tmp-test-metrics-fallback.sqlite"
+        self.addCleanup(lambda: [Path(f"{fallback}{s}").unlink(missing_ok=True) for s in ("", "-wal", "-shm")])
+        recorder = MetricRecorder(
+            str(self.path),
+            snapshot_interval_s=60,
+            fallback_path=str(fallback),
+        )
+        real_write_once = recorder._write_once
+        primary_available = False
+
+        def controlled_write(path, operation):
+            if path == self.path and not primary_available:
+                raise sqlite3.OperationalError("attempt to write a readonly database")
+            return real_write_once(path, operation)
+
+        recorder._write_once = controlled_write
+        first = datetime(2026, 5, 31, 12, 0, tzinfo=timezone.utc)
+        recorder.record_snapshot(full_snapshot(first))
+
+        degraded = recorder.health()
+        self.assertEqual(degraded["status"], "warning")
+        self.assertEqual(degraded["active_store"], "fallback")
+        self.assertEqual(degraded["reason"], "primary_write_failed")
+        self.assertIn("readonly database", degraded["detail"])
+        self.assertIn("buffering to SD fallback", degraded["condition"])
+        self.assertTrue(fallback.exists())
+
+        primary_available = True
+        recorder.record_snapshot(full_snapshot(first + timedelta(minutes=1)))
+
+        recovered = recorder.health()
+        self.assertEqual(recovered["status"], "ok")
+        self.assertEqual(recovered["active_store"], "primary")
+        self.assertIsNone(recovered["detail"])
+        self.assertIsNone(recovered["condition"])
+        self.assertFalse(fallback.exists())
+
+    def test_health_reports_when_primary_and_fallback_both_fail(self) -> None:
+        recorder = MetricRecorder(
+            "/dev/null/primary/metrics.sqlite",
+            fallback_path="/dev/null/fallback/metrics.sqlite",
+        )
+
+        recorder.record_snapshot(full_snapshot())
+
+        health = recorder.health()
+        self.assertEqual(health["status"], "error")
+        self.assertEqual(health["reason"], "all_writes_failed")
+        self.assertIn("primary and fallback writes failed", health["condition"])
+
     def test_merge_metric_stores_is_idempotent_union(self) -> None:
         other_path = REPO_ROOT / ".tmp-test-metrics-other.sqlite"
         try:

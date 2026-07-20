@@ -21,6 +21,7 @@ import os
 from pathlib import Path
 import sqlite3
 import sys
+from threading import Lock
 from typing import Callable, Iterable
 
 from .load import LoadSample, LoadSummary
@@ -45,6 +46,10 @@ def parse_timestamp(value: str) -> datetime:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         parsed = parsed.astimezone()
     return parsed.astimezone(timezone.utc)
+
+
+def _optional_timestamp(value: datetime | None) -> str | None:
+    return None if value is None else utc_timestamp_text(value)
 
 
 def _local_time_on_day(day: date) -> datetime:
@@ -142,6 +147,64 @@ class MetricRecorder:
         self.snapshot_interval = timedelta(seconds=snapshot_interval_s)
         self._last_snapshot_recorded_at: datetime | None = None
         self._last_weather_recorded_at: datetime | None = None
+        self._status_lock = Lock()
+        self._last_attempt_at: datetime | None = None
+        self._last_attempt_ok: bool | None = None
+        self._last_write_at: datetime | None = None
+        self._last_primary_write_at: datetime | None = None
+        self._active_store: str | None = None
+        self._fallback_since: datetime | None = None
+        self._primary_error: str | None = None
+        self._primary_error_at: datetime | None = None
+        self._fallback_error: str | None = None
+
+    def health(self) -> dict:
+        """Return cheap, thread-safe storage health for APIs and displays."""
+        with self._status_lock:
+            if self.path is None:
+                status = "disabled"
+                reason = "disabled"
+            elif self._last_attempt_ok is False:
+                status = "error"
+                reason = "all_writes_failed"
+            elif self._fallback_error is not None:
+                status = "warning"
+                reason = "fallback_merge_failed"
+            elif self._active_store == "fallback":
+                status = "warning"
+                reason = "primary_unavailable" if self._primary_error is None else "primary_write_failed"
+            elif self._active_store == "primary":
+                status = "ok"
+                reason = None
+            else:
+                status = "initializing"
+                reason = "no_write_attempt"
+            detail = self._fallback_error or self._primary_error
+            if status == "warning" and reason == "fallback_merge_failed":
+                condition = f"Telemetry storage: fallback merge failed; will retry ({detail})"
+            elif status == "warning":
+                condition = "Telemetry storage: primary unavailable; buffering to SD fallback"
+                if detail:
+                    condition += f" ({detail})"
+            elif status == "error":
+                condition = "Telemetry storage: primary and fallback writes failed"
+                if detail:
+                    condition += f" ({detail})"
+            else:
+                condition = None
+            return {
+                "status": status,
+                "reason": reason,
+                "detail": detail,
+                "condition": condition,
+                "active_store": self._active_store,
+                "primary_path": None if self.path is None else str(self.path),
+                "fallback_path": None if self.fallback_path is None else str(self.fallback_path),
+                "last_attempt_at": _optional_timestamp(self._last_attempt_at),
+                "last_write_at": _optional_timestamp(self._last_write_at),
+                "last_primary_write_at": _optional_timestamp(self._last_primary_write_at),
+                "fallback_since": _optional_timestamp(self._fallback_since),
+            }
 
     def record_snapshot(
         self,
@@ -322,34 +385,70 @@ class MetricRecorder:
         return self.fallback_path or self.path
 
     def _write(self, operation: Callable[[sqlite3.Connection], None]) -> bool:
+        succeeded = False
         if self._primary_mounted():
             if self._try_store(self.path, operation):
                 self._merge_fallback_if_present()
-                return True
-        if self.fallback_path is None:
-            return False
-        return self._try_store(self.fallback_path, operation)
+                succeeded = True
+        if not succeeded and self.fallback_path is not None:
+            succeeded = self._try_store(self.fallback_path, operation)
+        now = datetime.now(timezone.utc)
+        with self._status_lock:
+            self._last_attempt_at = now
+            self._last_attempt_ok = succeeded
+        return succeeded
 
     def _try_store(self, path: Path, operation: Callable[[sqlite3.Connection], None]) -> bool:
         try:
             self._write_once(path, operation)
+            self._note_store_success(path)
             return True
         except sqlite3.OperationalError as exc:
             # I/O errors and open failures (e.g. a yanked USB device) are
             # not corruption; recreating would not help, falling back might.
+            self._note_store_failure(path, exc)
             print(f"Telemetry store write failed ({path}): {exc}", file=sys.stderr)
             return False
         except sqlite3.DatabaseError as exc:
             self._discard_store(path, exc)
         except Exception as exc:  # noqa: BLE001 - logging must never disrupt supervision.
+            self._note_store_failure(path, exc)
             print(f"Telemetry store write failed ({path}): {exc}", file=sys.stderr)
             return False
         try:
             self._write_once(path, operation)
+            self._note_store_success(path)
             return True
         except Exception as exc:  # noqa: BLE001 - logging must never disrupt supervision.
+            self._note_store_failure(path, exc)
             print(f"Telemetry store write failed after recreate ({path}): {exc}", file=sys.stderr)
             return False
+
+    def _note_store_success(self, path: Path) -> None:
+        now = datetime.now(timezone.utc)
+        with self._status_lock:
+            self._last_write_at = now
+            if path == self.path:
+                self._active_store = "primary"
+                self._last_primary_write_at = now
+                self._fallback_since = None
+                self._primary_error = None
+                self._primary_error_at = None
+                self._fallback_error = None
+            else:
+                self._active_store = "fallback"
+                self._fallback_since = self._fallback_since or now
+                self._fallback_error = None
+
+    def _note_store_failure(self, path: Path, cause: Exception) -> None:
+        now = datetime.now(timezone.utc)
+        detail = str(cause)
+        with self._status_lock:
+            if path == self.path:
+                self._primary_error = detail
+                self._primary_error_at = now
+            else:
+                self._fallback_error = detail
 
     def _merge_fallback_if_present(self) -> None:
         """After a successful primary write, fold a fallback gap back in.
@@ -370,6 +469,8 @@ class MetricRecorder:
                 file=sys.stderr,
             )
         except Exception as exc:  # noqa: BLE001 - merge failures degrade logging only.
+            with self._status_lock:
+                self._fallback_error = str(exc)
             print(f"Telemetry fallback merge failed (will retry): {exc}", file=sys.stderr)
 
     def _write_once(self, path: Path, operation: Callable[[sqlite3.Connection], None]) -> None:

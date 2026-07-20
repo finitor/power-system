@@ -415,6 +415,12 @@ classified only from the observed signature, never an inferred root cause:
 - `unknown` — an error that doesn't match a known signature (`detail` carries it).
 - `null` — `ok`.
 
+`checks.telemetry` additionally reports recorder state. `warning` means samples
+are safely buffering in the SD fallback because the primary SSD store is
+unavailable; `error` means both primary and fallback writes failed. Either is
+surfaced as an overall `WARNING` with HTTP 200 so the transport-recovery
+watchdog does not reboot a functioning supervisor for a storage problem.
+
 Example (one controller offline — degraded, HTTP `200`):
 
 ```json

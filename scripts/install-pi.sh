@@ -66,5 +66,6 @@ echo "== deploy =="
 "${PROJECT_DIR}/scripts/deploy.sh"
 # offgrid group is created by deploy.sh (adduser --system --group); add operator now.
 sudo usermod -aG offgrid "$USER"
-# Allow the operator to create SQLite lock files without immutable=1 workaround.
-sudo chmod g+w /srv/telemetry/data
+# Allow operator-created SQLite sidecars while preserving service access.
+sudo chmod 2775 /srv/telemetry/data /srv/telemetry/logs
+sudo setfacl -m d:u::rwx,d:g::rwx,d:o::r-x,d:m::rwx /srv/telemetry/data /srv/telemetry/logs

@@ -1109,6 +1109,34 @@ class WebDisplayTest(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["conditions"], ["Battery cell overvoltage"])
 
+    def test_api_health_surfaces_telemetry_fallback_as_warning(self) -> None:
+        snapshot = make_snapshot()
+        telemetry = {
+            "status": "warning",
+            "reason": "primary_write_failed",
+            "detail": "attempt to write a readonly database",
+            "condition": "Telemetry storage: primary unavailable; buffering to SD fallback",
+            "active_store": "fallback",
+        }
+
+        response = route_display_request(
+            snapshot,
+            "/api/v1/health",
+            "curl/8.0",
+            telemetry=telemetry,
+        )
+        payload = json.loads(response.body)
+
+        self.assertEqual(response.status.value, 200)
+        self.assertEqual(payload["status"], "WARNING")
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["checks"]["telemetry"]["status"], "warning")
+        self.assertIn("Telemetry storage", payload["conditions"][-1])
+
+        snapshot_payload = snapshot_api_payload(snapshot, telemetry=telemetry)
+        self.assertEqual(snapshot_payload["status"]["severity"], "WARNING")
+        self.assertEqual(snapshot_payload["telemetry"]["active_store"], "fallback")
+
     def test_snapshot_api_payload_includes_status_conditions(self) -> None:
         snapshot = make_snapshot(
             status_conditions=["Charge controller 0 CVS exceeds battery CVL"],

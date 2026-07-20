@@ -36,6 +36,33 @@ One canonical flat model: scalar telemetry goes to `samples`, irregular events t
 
 Charge-controller settings are sampled continuously into `samples` (`classic.0.settings`, `epever.1.settings`) rather than kept in a separate change-tracked table; weather conditions land as `weather` source samples (`temperature`, `cloud_cover`, `shortwave_radiation`, `direct_radiation`, `diffuse_radiation`, `direct_normal_irradiance`, `aurora_probability`, …).
 
+## Primary-store failure and recovery
+
+If the SSD is absent or a primary write fails, the recorder immediately writes
+to `/var/lib/offgrid/metrics-fallback.sqlite` on the boot card. The next
+successful primary write merges the fallback into the primary with idempotent
+content hashes and removes the fallback files. A primary failure therefore
+creates a recoverable backlog rather than a telemetry gap.
+
+This state is deliberately visible:
+
+- the wall, browser, and Kindle displays show a `Telemetry storage` warning;
+- `/api/v1/health` reports `checks.telemetry.status=warning` with the SQLite
+  error and remains HTTP 200 (storage degradation must not trigger the I/O
+  reboot watchdog);
+- `/api/v1/snapshot` includes the full `telemetry` recorder state, including
+  active store and last-write timestamps;
+- `scripts/diag.sh` reports both the API state and fallback row range;
+- deploy and `scripts/health-check.sh` fail unless the primary store is
+  writable.
+
+Recovery is normally `sudo systemctl restart offgrid-supervisor`: the unit's
+privileged preflight repairs `/srv/telemetry` ownership, the first write proves
+the primary, and the fallback then merges automatically. The data directory is
+setgid with a default group-writable ACL so WAL/SHM files created during an
+operator SQLite session remain writable by the service. Prefer SQLite
+`mode=ro` for all ad-hoc queries regardless.
+
 `export_batches` keeps one row per object-storage batch attempt/result. The exporter builds/uploads a batch without holding a SQLite write transaction, then stamps the exported rows (`exported_at`, `export_batch_id`) and appends the batch row in a short transaction after object storage accepts the upload.
 
 Useful inspection queries:
