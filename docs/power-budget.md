@@ -48,8 +48,17 @@ the array 1 wiring that fell out of this analysis:
 | Array 1 (3.6 kW, flat on ground) | 0.57 (~16% of nameplate) | flat + tight tree horizon + vegetation; expected to recover substantially when mounted — re-measure |
 | Load, June occupancy | 5.15 kWh/day (214 W avg) | DC-bus basis |
 | Overnight load floor | ~95 W | Starlink gen 2 ~34 W DC-side + Magnum no-load ~44 W + Pi/comms ~15 W |
-| Refrigeration share | ~2.6 kWh/day | duty-cycled ~100–120 W average |
+| Refrigeration share | **~0.77 kWh/day (32 W average)** | dedicated combined-branch meter, 2026-07-10..20; two cube freezers, capacity-normalized compressor duty ~27% |
 | Bank usable | ~8.7 kWh | 2× Cubix 100 (10.24 kWh nominal) at 85% |
+
+The dedicated refrigeration measurement supersedes the original ~2.6 kWh/day
+allocation inferred before the S31 was installed. It does **not** change the
+5.15 kWh/day full-occupancy baseline, which was measured at the DC bus, but it
+does mean that the modeled “no refrigeration” cases below subtract too much
+load—about 1.8 kWh/day if the July utilization applies. Treat their favorable
+results as stale pending a scenario rerun. See
+[Individual Load Metering](subsystems/load-metering.md#measured-refrigeration-utilization-2026-07-10-through-2026-07-20)
+for the tier and duty-cycle analysis.
 
 **Array 0 wiring-fault correction (discovered 2026-07-18, ~13:45):** during
 the entire calibration window one array 0 panel was disconnected and the
@@ -107,7 +116,7 @@ With array 1 decommissioned, winter 2026–27 runs on array 0 alone
 | Mode | Worst 7-day (median winter) | Median winter deficit | Generator sessions/winter |
 |---|---|---|---|
 | Full occupancy | −32 kWh | ~550 kWh | ~46 — generator is a routine appliance |
-| No refrigeration | −12 kWh | ~116 kWh | ~10 — not bank-survivable unattended |
+| No refrigeration *(legacy 2.6 kWh/day subtraction; rerun required)* | −12 kWh | ~116 kWh | ~10 — not bank-survivable unattended |
 | Lean unattended caretaker | **+0.8 kWh** (−1.1 worst of 10) | ~5 kWh | 0 — survives every winter at nominal heater duty |
 
 The lean caretaker verdict carries the load: **unattended winter 2026–27 is
@@ -130,7 +139,7 @@ post-mount recalibration below replaces this bracket with a measurement.
 | Mode | Load | Darkest-week balance | Winter outcome (9 simulated winters) |
 |---|---|---|---|
 | Full occupancy | ~5.7 kWh/day incl. heater | −2.2 to −2.7 kWh/day | Structural deficit, ~165–215 kWh/winter; generator required (~13–17 bank-empty events/winter) |
-| No refrigeration | ~2.3 + heater | ≈ −0.3 kWh/day | Bank rides through in **all 9 winters at both bracket ends**: worst-winter minimum SOC 24% at PR 0.55, 43% at PR 0.70 |
+| No refrigeration *(legacy 2.6 kWh/day subtraction; rerun required)* | ~2.3 + heater | ≈ −0.3 kWh/day | Bank rides through in **all 9 winters at both bracket ends**: worst-winter minimum SOC 24% at PR 0.55, 43% at PR 0.70 |
 | Lean unattended caretaker | ~0.5 + heater | positive to neutral | Robust in every scenario tested, incl. zero December beam and 2× heater duty; min SOC ≥ 76% even with array 1 contributing nothing |
 
 Lean caretaker stack: Pi + comms ~15 W continuous; inverter hard-off except a
@@ -156,7 +165,7 @@ A battery bridges deficits; it cannot erase a structural one.
 | Scenario | 200 Ah | 400 Ah | Verdict |
 |---|---|---|---|
 | Full load, occupied | ~13–17 generator sessions/winter | ~7–9 | Halves generator *starts*; same total energy |
-| No-fridge, occupied | 0 bank-empty events in 9 winters, both PR bracket ends | 0 | Already solved at 200 Ah |
+| No-fridge, occupied *(legacy subtraction; rerun required)* | 0 bank-empty events in 9 winters, both PR bracket ends | 0 | Previous result; measured refrigeration share invalidates this load allocation |
 | Lean unattended, as-built | 0 failures (even 2× heater duty) | 0 | Already solved at 200 Ah |
 | Lean unattended + array 1 failed + 1.5× heater | 4 dead days in 9 winters | 0 | Was 37 vs 6 before the array 0 wiring-fault correction; the corrected array largely closes this corner on its own |
 | Same double fault at 2× heater | 98 dead days | 38 | Structural; neither bank size saves it |
@@ -247,11 +256,16 @@ In rough order of information value:
    the wiring fault, and the scenario numbers revert toward the
    pre-correction column. Array 1 is decommissioned, so its slope should
    read ~0/absent in this run.
-3. **AR solstice-path survey from the cabin rooftop mounting height**
+3. **Seasonal refrigeration utilization:** repeat the combined-tier analysis
+   in winter and after any thermostat-probe/thermal-mass change. This tests
+   whether the July ~0.77 kWh/day and short refrigerator cycles carry into
+   the conditions used by the annual model, then supports a corrected
+   no-refrigeration scenario.
+4. **AR solstice-path survey from the cabin rooftop mounting height**
    (whenever roof access exists, ideally near solstice-relevant sun angles):
    replaces the old +1.4/+2.1 m ladder follow-ups; quantifies how much of
    the December noon block the ~10 ft of extra height recovers.
-4. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
+5. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
    array 1 (`calibrate_pv.py <date>`): does per-kW effectiveness recover
    from the 16% flat floor toward the PR 0.55–0.70 band? Verify
    `epever.1 pv_voltage` ~108 V class (3s4p) on reconnect, and capture a
@@ -271,3 +285,7 @@ In rough order of information value:
   higher than the surveyed ground position, slightly reduced shading).
   Interim array-0-only scenario table added; unattended winter 2026–27
   remains viable on array 0 alone.
+- 2026-07-20 — dedicated refrigeration trace measured ~0.77 kWh/day and
+  27% capacity-normalized compressor duty; the earlier 2.6 kWh/day allocation
+  and derived no-refrigeration scenarios were marked stale
+  ([journal](journal/2026-07-20.md)).
