@@ -72,12 +72,17 @@ midway with spurious `database disk image is malformed` errors. Owner-matched
 
 For a long or repeated analysis, create one consistent snapshot as `offgrid`,
 then query the snapshot as your normal account. The command refuses to
-overwrite an existing file:
+overwrite an existing file. Keep full snapshots on the telemetry SSD; the Pi's
+`/tmp` is a small RAM-backed filesystem and may be smaller than the database:
 
 ```sh
+sudo install -d -o offgrid -g offgrid /srv/telemetry/snapshots
 sudo -u offgrid python3 scripts/query_metrics.py snapshot \
-  --output /tmp/metrics-snapshot.sqlite
+  --output /srv/telemetry/snapshots/metrics-snapshot.sqlite
 ```
+
+Each snapshot is a full database copy. Remove it after the analysis is complete
+instead of accumulating dated copies indefinitely.
 
 Useful dot-commands:
 

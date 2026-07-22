@@ -150,6 +150,17 @@ The feed-forward budget is:
 budget_a = max(0, allowance_a + max(load_a, 0) - reserve_a)
 ```
 
+`load_a` is a cross-device bus balance, so it is only accepted from a recent,
+time-aligned cohort of controller-output and BMS-current readings. Device
+readers stay on a fixed poll cadence and retain a short success history; if one
+reader is midway through its next poll, the newest complete cohort is used
+instead of mixing adjacent cycles. Cohort members may differ by at most 2.5 s
+and may be retained for at most two poll intervals (10 s at the normal 5 s
+cadence). If an enabled source remains missing beyond that grace, the load is
+unknown and contributes `0 A` to the budget. A communications failure does not
+prove that a controller stopped producing, so the allocator never treats a
+missing enabled charger as a measured zero-output source.
+
 Then close the loop with BMS current:
 
 ```text

@@ -86,6 +86,66 @@ class LoadEstimateTest(unittest.TestCase):
     def test_load_current_unavailable_without_battery_measurements(self) -> None:
         self.assertIsNone(estimate_load_current_a(make_snapshot()))
 
+    def test_load_current_uses_time_aligned_source_samples(self) -> None:
+        captured_at = datetime(2026, 7, 22, 16, 38, 22, tzinfo=timezone.utc)
+        snapshot = make_snapshot(
+            captured_at=captured_at,
+            classic=make_classic_telemetry(battery_current_a=35.0),
+            battery=make_battery_snapshot(current_a=31.0),
+            source_captured_at={
+                "classic": captured_at - timedelta(milliseconds=100),
+                "battery": captured_at - timedelta(milliseconds=50),
+            },
+            expected_load_sources=frozenset({"classic", "battery"}),
+            reader_poll_interval_s=5.0,
+        )
+
+        self.assertAlmostEqual(estimate_load_current_a(snapshot), 4.0)
+
+    def test_load_current_rejects_cross_cycle_source_samples(self) -> None:
+        captured_at = datetime(2026, 7, 22, 16, 38, 22, tzinfo=timezone.utc)
+        snapshot = make_snapshot(
+            captured_at=captured_at,
+            classic=make_classic_telemetry(battery_current_a=16.2),
+            battery=make_battery_snapshot(current_a=31.9),
+            source_captured_at={
+                "classic": captured_at - timedelta(seconds=4.25),
+                "battery": captured_at,
+            },
+            expected_load_sources=frozenset({"classic", "battery"}),
+            reader_poll_interval_s=5.0,
+        )
+
+        self.assertIsNone(estimate_load_current_a(snapshot))
+
+    def test_load_current_rejects_aligned_but_old_cached_samples(self) -> None:
+        captured_at = datetime(2026, 7, 22, 16, 38, 22, tzinfo=timezone.utc)
+        old = captured_at - timedelta(seconds=11)
+        snapshot = make_snapshot(
+            captured_at=captured_at,
+            classic=make_classic_telemetry(battery_current_a=35.0),
+            battery=make_battery_snapshot(current_a=31.0),
+            source_captured_at={"classic": old, "battery": old},
+            expected_load_sources=frozenset({"classic", "battery"}),
+            reader_poll_interval_s=5.0,
+        )
+
+        self.assertIsNone(estimate_load_current_a(snapshot))
+
+    def test_load_current_unavailable_when_expected_controller_is_offline(self) -> None:
+        captured_at = datetime(2026, 7, 22, 16, 38, 22, tzinfo=timezone.utc)
+        snapshot = make_snapshot(
+            captured_at=captured_at,
+            classic=None,
+            epever=make_epever_telemetry(battery_current_a=4.7),
+            battery=make_battery_snapshot(current_a=0.0),
+            source_captured_at={"epever": captured_at, "battery": captured_at},
+            expected_load_sources=frozenset({"classic", "epever", "battery"}),
+            reader_poll_interval_s=5.0,
+        )
+
+        self.assertIsNone(estimate_load_current_a(snapshot))
+
     def test_load_today_is_energy_balance_of_classic_production_and_soc_gain(self) -> None:
         # Classic 5.9 kWh in; SOC 90->92 over a 200 Ah bank at 51.2 V nominal =
         # 0.2048 kWh stored; consumed = 5.9 - 0.205 = 5.7 kWh. % of 10.24 kWh bank.

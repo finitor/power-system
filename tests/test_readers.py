@@ -197,12 +197,23 @@ class PollingReaderTest(unittest.TestCase):
 
 class FakeReader:
     def __init__(
-        self, name: str, value, captured_at, error=None, stale_after_s: float = 20.0, expire_after_s=None
+        self,
+        name: str,
+        value,
+        captured_at,
+        error=None,
+        stale_after_s: float = 20.0,
+        expire_after_s=None,
+        history: tuple[DeviceReading, ...] | None = None,
     ) -> None:
         self._reading = DeviceReading(name, value, captured_at, error, stale_after_s, expire_after_s)
+        self._history = history if history is not None else ((self._reading,) if value is not None else ())
 
     def reading(self) -> DeviceReading:
         return self._reading
+
+    def recent_readings(self) -> tuple[DeviceReading, ...]:
+        return self._history
 
     def error_rate_pct(self, window_s: float = 300.0) -> float | None:
         return None
@@ -241,6 +252,62 @@ class SupervisorReaderModeTest(unittest.TestCase):
         self.assertIs(snapshot.magnum, magnum_value)
         self.assertEqual(snapshot.errors, [])
         self.assertEqual(snapshot.status_conditions, [])
+
+    def test_snapshot_carries_source_times_and_expected_load_sources(self) -> None:
+        from snapshot_helpers import make_battery_snapshot, make_classic_telemetry
+
+        now = datetime.now(timezone.utc)
+        classic = make_classic_telemetry(captured_at=now - timedelta(milliseconds=50))
+        battery = make_battery_snapshot()
+        supervisor = Supervisor(classic=object(), battery=object())
+        supervisor._readers = {
+            "classic": FakeReader("classic", (classic, None), now),
+            "battery": FakeReader("battery", battery, now),
+        }
+        supervisor._reader_poll_interval_s = 5.0
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertEqual(snapshot.source_captured_at["classic"], classic.captured_at)
+        self.assertEqual(snapshot.source_captured_at["battery"], now)
+        self.assertEqual(snapshot.expected_load_sources, frozenset({"classic", "battery"}))
+        self.assertEqual(snapshot.reader_poll_interval_s, 5.0)
+
+    def test_snapshot_uses_previous_complete_load_cohort_while_can_poll_finishes(self) -> None:
+        from offgrid_power.load import estimate_load_current_a
+        from snapshot_helpers import make_battery_snapshot, make_classic_telemetry
+
+        now = datetime.now(timezone.utc)
+        previous = now - timedelta(seconds=5)
+        classic_previous = make_classic_telemetry(captured_at=previous, battery_current_a=10.0)
+        classic_latest = make_classic_telemetry(captured_at=now, battery_current_a=30.0)
+        battery = make_battery_snapshot(current_a=6.0)
+        classic_history = (
+            DeviceReading("classic", (classic_previous, None), previous, None, 20.0),
+            DeviceReading("classic", (classic_latest, None), now, None, 20.0),
+        )
+        battery_history = (
+            DeviceReading("battery", battery, previous, None, 20.0),
+        )
+        supervisor = Supervisor(classic=object(), battery=object())
+        supervisor._readers = {
+            "classic": FakeReader(
+                "classic", (classic_latest, None), now, history=classic_history
+            ),
+            "battery": FakeReader(
+                "battery", battery, previous, history=battery_history
+            ),
+        }
+        supervisor._reader_poll_interval_s = 5.0
+
+        snapshot = supervisor.read_snapshot()
+
+        self.assertIs(snapshot.classic, classic_latest)
+        self.assertEqual(snapshot.load_source_captured_at, {
+            "battery": previous,
+            "classic": previous,
+        })
+        self.assertAlmostEqual(estimate_load_current_a(snapshot), 4.0)
 
     def test_classic_arc_fault_surfaces_as_error_condition(self) -> None:
         # An arc/ground fault latches the Classic off; the supervisor must surface

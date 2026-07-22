@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -59,6 +60,29 @@ class QueryMetricsSafetyTest(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "Refusing to overwrite"):
             query_metrics.cmd_snapshot(argparse.Namespace(db=str(self.database), output=str(output)))
         self.assertEqual(output.read_text(encoding="utf-8"), "keep")
+
+    def test_snapshot_rejects_destination_without_room_before_backup(self) -> None:
+        connection = sqlite3.connect(":memory:")
+        connection.execute("CREATE TABLE sample (value TEXT)")
+        try:
+            with patch.object(
+                query_metrics.shutil,
+                "disk_usage",
+                return_value=SimpleNamespace(free=1),
+            ):
+                with self.assertRaisesRegex(
+                    SystemExit,
+                    r"Choose an output directory on a larger filesystem.*telemetry/snapshots",
+                ):
+                    query_metrics._require_snapshot_capacity(
+                        connection,
+                        Path("/tmp/metrics-snapshot.sqlite"),
+                    )
+        finally:
+            connection.close()
+
+    def test_human_size_uses_binary_units(self) -> None:
+        self.assertEqual(query_metrics._human_size(3 * 1024**3), "3.0 GiB")
 
 
 if __name__ == "__main__":

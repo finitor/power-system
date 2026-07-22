@@ -83,6 +83,8 @@ class PollingReader:
         stale_after_s: float | None = None,
         expire_after_s: float | None = None,
     ) -> None:
+        if interval_s <= 0:
+            raise ValueError("reader interval must be positive")
         self.name = name
         self.interval_s = interval_s
         self.stale_after_s = stale_after_s if stale_after_s is not None else interval_s * 4
@@ -100,11 +102,21 @@ class PollingReader:
         # Ring buffer of (monotonic_timestamp, was_success) for error rate calc.
         # 720 entries ≈ 1 hour at 5 s interval — enough for any display window.
         self._poll_history: deque[tuple[float, bool]] = deque(maxlen=720)
+        # A few successful values are retained so consumers which combine
+        # devices can select the newest complete time-aligned cohort while one
+        # reader is midway through its next acquisition.
+        self._value_history: deque[DeviceReading] = deque(maxlen=8)
 
     def read_now(self) -> None:
         """Perform one read attempt synchronously (also used by the thread loop)."""
         if not self._enabled.is_set():
             return
+        # Timestamp the beginning of the acquisition, not its completion.  Some
+        # readers (notably BatteryCanClient) intentionally collect for a window,
+        # while others return almost immediately.  Completion timestamps make
+        # simultaneous polls look several seconds apart and cannot be used to
+        # decide whether cross-device values describe the same instant.
+        captured_at = datetime.now(timezone.utc)
         try:
             value = self._read_fn()
         except Exception as exc:  # noqa: BLE001 - reader must survive any adapter failure.
@@ -131,9 +143,19 @@ class PollingReader:
             if not self._enabled.is_set():
                 return
             self._value = value
-            self._captured_at = datetime.now(timezone.utc)
+            self._captured_at = captured_at
             self._error = None
             self._poll_history.append((time.monotonic(), True))
+            self._value_history.append(
+                DeviceReading(
+                    name=self.name,
+                    value=value,
+                    captured_at=captured_at,
+                    error=None,
+                    stale_after_s=self.stale_after_s,
+                    expire_after_s=self.expire_after_s,
+                )
+            )
 
     def reading(self) -> DeviceReading:
         with self._lock:
@@ -145,6 +167,11 @@ class PollingReader:
                 stale_after_s=self.stale_after_s,
                 expire_after_s=self.expire_after_s,
             )
+
+    def recent_readings(self) -> tuple[DeviceReading, ...]:
+        """Successful cached values, oldest to newest."""
+        with self._lock:
+            return tuple(self._value_history)
 
     def error_rate_pct(self, window_s: float = 300.0) -> float | None:
         """Fraction of poll attempts that failed in the last window_s seconds, as a percentage.
@@ -231,14 +258,26 @@ class PollingReader:
             self._captured_at = None
             self._error = None
             self._poll_history.clear()
+            self._value_history.clear()
 
     def _run(self) -> None:
-        next_read_at = 0.0
+        # Keep readers on a common fixed cadence.  Scheduling the next poll from
+        # the previous poll's *completion* lets a 1.5 s CAN collection drift
+        # away from a fast Modbus read by 1.5 s every cycle, eventually mixing
+        # unrelated values in one supervisor snapshot.
+        next_read_at = time.monotonic()
         while not self._stop.is_set():
             now = time.monotonic()
             if self._enabled.is_set() and now >= next_read_at:
                 self.read_now()
-                next_read_at = time.monotonic() + self.interval_s
+                next_read_at += self.interval_s
+                after_read = time.monotonic()
+                if next_read_at <= after_read:
+                    # A slow read missed one or more slots.  Skip those slots
+                    # rather than polling back-to-back or shifting this reader's
+                    # phase away from the other device readers.
+                    missed = int((after_read - next_read_at) // self.interval_s) + 1
+                    next_read_at += missed * self.interval_s
 
             # Service commands until the next poll is due, in slices short
             # enough to notice stop().

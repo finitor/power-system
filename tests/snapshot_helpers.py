@@ -147,6 +147,7 @@ def make_epever_settings(captured_at: datetime | None = None, **overrides) -> Ep
 
 def make_battery_snapshot(
     soc_percent: int = 92,
+    current_a: float = -4.0,
     min_cell_temperature_c: float | None = None,
     max_cell_temperature_c: float | None = None,
     charge_enable: bool | None = True,
@@ -160,7 +161,12 @@ def make_battery_snapshot(
     """
     frames = [
         CanFrame(0x355, bytes([soc_percent, 0, 100, 0, 0, 0, 0, 0])),
-        CanFrame(0x356, bytes.fromhex("B814D8FFA4000000")),
+        CanFrame(
+            0x356,
+            bytes.fromhex("B814")
+            + round(current_a * 10).to_bytes(2, "little", signed=True)
+            + bytes.fromhex("A4000000"),
+        ),
         CanFrame(0x379, bytes.fromhex("C800000000000000")),
     ]
     if charge_enable is not None:

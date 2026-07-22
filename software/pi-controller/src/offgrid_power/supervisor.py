@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from itertools import product
 import time
 from threading import Lock
 from typing import Callable, TYPE_CHECKING
@@ -23,6 +24,9 @@ if TYPE_CHECKING:
 STATUS_OK = "OK"
 STATUS_WARNING = "WARNING"
 STATUS_ERROR = "ERROR"
+LOAD_SOURCE_MAX_SKEW_S = 2.5
+LOAD_SOURCE_DEFAULT_MAX_AGE_S = 10.0
+
 
 @dataclass(frozen=True)
 class SupervisorSnapshot:
@@ -53,6 +57,19 @@ class SupervisorSnapshot:
     charge_controller_enabled: dict[int, bool] = field(
         default_factory=lambda: {0: True, 1: True}
     )
+    # Acquisition-start timestamps for independently polled sources.  Derived
+    # cross-device values use these to reject temporally incoherent inputs.
+    source_captured_at: dict[str, datetime] = field(default_factory=dict)
+    # Sources which must be present to solve the live bus energy balance.  An
+    # enabled controller with missing telemetry cannot safely be assumed to
+    # contribute zero: its communications may be down while it keeps charging.
+    expected_load_sources: frozenset[str] = field(default_factory=frozenset)
+    reader_poll_interval_s: float | None = None
+    # Currents from the newest complete time-aligned reader cohort.  These may
+    # intentionally lag the per-device display values by one poll while a slow
+    # source completes, but never mix adjacent cycles.
+    load_source_currents: dict[str, float] = field(default_factory=dict)
+    load_source_captured_at: dict[str, datetime] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.status_conditions and self.status_severity == STATUS_OK:
@@ -90,6 +107,80 @@ class StatusConditionCandidate:
 AmbientClient = AmbientDhtClient | AmbientDs18b20Client
 
 
+def _device_capture_time(name: str, value: object, fallback: datetime) -> datetime:
+    """Best acquisition time available for a cached reader value."""
+    telemetry = value[0] if name in {"classic", "epever"} and isinstance(value, tuple) else value
+    captured_at = getattr(telemetry, "captured_at", None)
+    return captured_at if isinstance(captured_at, datetime) else fallback
+
+
+def _source_capture_time(name: str, reading: DeviceReading) -> datetime:
+    assert reading.captured_at is not None
+    return _device_capture_time(name, reading.value, reading.captured_at)
+
+
+def _load_current_value(name: str, value: object) -> float | None:
+    telemetry = value[0] if name in {"classic", "epever"} and isinstance(value, tuple) else value
+    if name in {"classic", "epever"}:
+        current = getattr(telemetry, "battery_current_a", None)
+    elif name == "battery":
+        measurements = getattr(telemetry, "measurements", None)
+        current = getattr(measurements, "current_a", None)
+    else:
+        return None
+    return float(current) if isinstance(current, (int, float)) else None
+
+
+def _newest_aligned_load_inputs(
+    readings: dict[str, tuple[DeviceReading, ...]],
+    *,
+    now: datetime,
+    poll_interval_s: float | None,
+) -> tuple[dict[str, float], dict[str, datetime]]:
+    """Newest recent cohort whose source acquisition times describe one cycle."""
+    if not readings or any(not history for history in readings.values()):
+        return {}, {}
+    sources = tuple(sorted(readings))
+    max_age_s = (
+        LOAD_SOURCE_DEFAULT_MAX_AGE_S
+        if poll_interval_s is None
+        else max(poll_interval_s * 2.0, LOAD_SOURCE_MAX_SKEW_S)
+    )
+    best: tuple[tuple[datetime, datetime, float], dict[str, float], dict[str, datetime]] | None = None
+    for cohort in product(*(readings[source] for source in sources)):
+        times: dict[str, datetime] = {}
+        currents: dict[str, float] = {}
+        valid = True
+        for source, reading in zip(sources, cohort, strict=True):
+            if reading.captured_at is None:
+                valid = False
+                break
+            captured_at = _source_capture_time(source, reading)
+            current = _load_current_value(source, reading.value)
+            age_s = (now - captured_at).total_seconds()
+            if current is None or age_s < -LOAD_SOURCE_MAX_SKEW_S or age_s > max_age_s:
+                valid = False
+                break
+            times[source] = captured_at
+            currents[source] = current
+        if not valid:
+            continue
+        newest = max(times.values())
+        oldest = min(times.values())
+        skew_s = (newest - oldest).total_seconds()
+        if skew_s > LOAD_SOURCE_MAX_SKEW_S:
+            continue
+        # Prefer the cohort whose *oldest* member is newest; this avoids pairing
+        # one new reading with an older-but-barely-within-tolerance neighbor when
+        # a tighter cohort is also available.
+        score = (oldest, newest, -skew_s)
+        if best is None or score > best[0]:
+            best = score, currents, times
+    if best is None:
+        return {}, {}
+    return best[1], best[2]
+
+
 class Supervisor:
     def __init__(
         self,
@@ -118,6 +209,7 @@ class Supervisor:
         self._on_charge_controller_enabled_change = on_charge_controller_enabled_change
         self._status_condition_counts: dict[str, int] = {}
         self._readers: dict[str, PollingReader] | None = None
+        self._reader_poll_interval_s: float | None = None
         self._network_monitor: NetworkMonitor | None = None
 
     def start_readers(
@@ -173,6 +265,7 @@ class Supervisor:
         for reader in readers.values():
             reader.start()
         self._readers = readers
+        self._reader_poll_interval_s = interval_s
 
     def stop_readers(self) -> None:
         if self._readers is None:
@@ -180,6 +273,7 @@ class Supervisor:
         for reader in self._readers.values():
             reader.stop()
         self._readers = None
+        self._reader_poll_interval_s = None
 
     def start_network_monitor(self, gateway: str = "192.168.0.1", interval_s: float = 30.0) -> None:
         if self._network_monitor is not None:
@@ -375,9 +469,13 @@ class Supervisor:
 
     def read_snapshot(self) -> SupervisorSnapshot:
         if self._readers is not None:
-            devices, errors, stale_candidates = self._collect_from_readers()
+            devices, errors, stale_candidates, source_captured_at = self._collect_from_readers()
+            load_source_currents, load_source_captured_at = self._aligned_load_reader_inputs()
         else:
-            devices, errors, stale_candidates = self._collect_direct()
+            devices, errors, stale_candidates, source_captured_at = self._collect_direct()
+            load_source_currents, load_source_captured_at = self._direct_load_inputs(
+                devices, source_captured_at
+            )
 
         battery_can_health: CanBusHealth | None = None
         if self.battery_can_interface is not None:
@@ -418,6 +516,57 @@ class Supervisor:
             lan_reachable=self._network_monitor.lan_reachable if self._network_monitor else None,
             wan_reachable=self._network_monitor.wan_reachable if self._network_monitor else None,
             charge_controller_enabled=self.charge_controller_enabled(),
+            source_captured_at=source_captured_at,
+            expected_load_sources=self._expected_load_sources(),
+            reader_poll_interval_s=self._reader_poll_interval_s,
+            load_source_currents=load_source_currents,
+            load_source_captured_at=load_source_captured_at,
+        )
+
+    def _expected_load_sources(self) -> frozenset[str]:
+        sources: set[str] = set()
+        if self.battery is not None:
+            sources.add("battery")
+        if self.classic is not None and self.charge_controller_is_enabled(0):
+            sources.add("classic")
+        if self.epever is not None and self.charge_controller_is_enabled(1):
+            sources.add("epever")
+        return frozenset(sources)
+
+    def _aligned_load_reader_inputs(self) -> tuple[dict[str, float], dict[str, datetime]]:
+        assert self._readers is not None
+        readings: dict[str, tuple[DeviceReading, ...]] = {}
+        for source in self._expected_load_sources():
+            reader = self._readers.get(source)
+            if reader is None:
+                return {}, {}
+            recent = getattr(reader, "recent_readings", None)
+            history = tuple(recent()) if recent is not None else (reader.reading(),)
+            readings[source] = tuple(item for item in history if item.value is not None)
+        return _newest_aligned_load_inputs(
+            readings,
+            now=datetime.now(timezone.utc),
+            poll_interval_s=self._reader_poll_interval_s,
+        )
+
+    def _direct_load_inputs(
+        self,
+        devices: dict,
+        source_captured_at: dict[str, datetime],
+    ) -> tuple[dict[str, float], dict[str, datetime]]:
+        readings: dict[str, tuple[DeviceReading, ...]] = {}
+        for source in self._expected_load_sources():
+            value = devices.get(source)
+            captured_at = source_captured_at.get(source)
+            if value is None or captured_at is None:
+                return {}, {}
+            readings[source] = (
+                DeviceReading(source, value, captured_at, None, stale_after_s=10.0),
+            )
+        return _newest_aligned_load_inputs(
+            readings,
+            now=datetime.now(timezone.utc),
+            poll_interval_s=None,
         )
 
     def _reader_error_rates(self, window_s: float = 300.0) -> dict[str, float | None]:
@@ -448,8 +597,11 @@ class Supervisor:
             disabled.add("epever")
         return frozenset(disabled)
 
-    def _collect_direct(self) -> tuple[dict, list[str], list[StatusConditionCandidate]]:
+    def _collect_direct(
+        self,
+    ) -> tuple[dict, list[str], list[StatusConditionCandidate], dict[str, datetime]]:
         errors: list[str] = []
+        source_captured_at: dict[str, datetime] = {}
         devices: dict = {
             "classic": None,
             "classic_settings": None,
@@ -462,14 +614,22 @@ class Supervisor:
         }
 
         if self.classic is not None and self.charge_controller_is_enabled(0):
+            started_at = datetime.now(timezone.utc)
             try:
                 devices["classic"], devices["classic_settings"] = self.classic.read()
+                source_captured_at["classic"] = _device_capture_time(
+                    "classic", devices["classic"], started_at
+                )
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Classic read failed: {exc}")
 
         if self.epever is not None and self.charge_controller_is_enabled(1):
+            started_at = datetime.now(timezone.utc)
             try:
                 devices["epever"], devices["epever_settings"] = self.epever.read()
+                source_captured_at["epever"] = _device_capture_time(
+                    "epever", devices["epever"], started_at
+                )
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"EPEver read failed: {exc}")
 
@@ -482,8 +642,10 @@ class Supervisor:
                 pass
 
         if self.battery is not None:
+            battery_captured_at = datetime.now(timezone.utc)
             try:
                 devices["battery"] = self.battery.read()
+                source_captured_at["battery"] = battery_captured_at
             except Exception as exc:  # noqa: BLE001 - supervisor should show adapter errors.
                 errors.append(f"Battery CAN read failed: {exc}")
 
@@ -499,7 +661,7 @@ class Supervisor:
             except Exception as exc:  # noqa: BLE001 - device failure degrades the snapshot.
                 errors.append(f"Tasmota {name} read failed: {exc}")
 
-        return devices, errors, []
+        return devices, errors, [], source_captured_at
 
     # Error message prefixes match the direct-read path so displays and
     # alerting behave identically in both modes.
@@ -516,11 +678,14 @@ class Supervisor:
         "magnum": "Magnum inverter",
     }
 
-    def _collect_from_readers(self) -> tuple[dict, list[str], list[StatusConditionCandidate]]:
+    def _collect_from_readers(
+        self,
+    ) -> tuple[dict, list[str], list[StatusConditionCandidate], dict[str, datetime]]:
         assert self._readers is not None
         now = datetime.now(timezone.utc)
         errors: list[str] = []
         stale_candidates: list[StatusConditionCandidate] = []
+        source_captured_at: dict[str, datetime] = {}
         devices: dict = {
             "classic": None,
             "classic_settings": None,
@@ -538,6 +703,9 @@ class Supervisor:
             if name == "epever" and not self.charge_controller_is_enabled(1):
                 continue
             reading = reader.reading()
+
+            if reading.value is not None and reading.captured_at is not None:
+                source_captured_at[name] = _source_capture_time(name, reading)
 
             if name.startswith("tasmota."):
                 load_name = name.removeprefix("tasmota.")
@@ -626,7 +794,7 @@ class Supervisor:
                     )
                 )
 
-        return devices, errors, stale_candidates
+        return devices, errors, stale_candidates, source_captured_at
 
     def _stable_status_condition_candidates(self, candidates: list[StatusConditionCandidate]) -> list[StatusConditionCandidate]:
         active_keys = {candidate.key for candidate in candidates}

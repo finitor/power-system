@@ -10,7 +10,11 @@ from typing import Callable
 
 from .classic import ClassicTelemetry
 from .canbus import PylonCanSnapshot
-from .supervisor import SupervisorSnapshot
+from .supervisor import (
+    LOAD_SOURCE_DEFAULT_MAX_AGE_S,
+    LOAD_SOURCE_MAX_SKEW_S,
+    SupervisorSnapshot,
+)
 
 
 MIDNIGHT_SOC_UNAVAILABLE = "unavailable, midnight SOC was not logged"
@@ -229,12 +233,50 @@ def estimate_load_current_a(snapshot: SupervisorSnapshot) -> float | None:
     # the load reads low or negative whenever the EPEver array is also
     # contributing (its output is omitted from charge-in while its share of
     # the battery gain still lands in the BMS net).
+    expected = snapshot.expected_load_sources
+    if snapshot.load_source_currents:
+        load_sources = set(expected or snapshot.load_source_currents)
+        if any(source not in snapshot.load_source_currents for source in load_sources):
+            return None
+        charge_in_a = sum(
+            snapshot.load_source_currents[source]
+            for source in ("classic", "epever")
+            if source in load_sources
+        )
+        if not load_sources.intersection({"classic", "epever"}):
+            return None
+        battery_current_a = snapshot.load_source_currents.get("battery")
+        if battery_current_a is None:
+            return None
+        return charge_in_a - battery_current_a
+
+    available = {
+        "battery": snapshot.battery,
+        "classic": snapshot.classic,
+        "epever": snapshot.epever,
+    }
+    if expected:
+        # Communications loss does not prove that a controller stopped
+        # charging.  If an enabled/configured source is missing, the balance is
+        # unknowable; treating it as zero would merely turn one bad estimate
+        # into another.
+        if any(available.get(source) is None for source in expected):
+            return None
+        load_sources = set(expected)
+    else:
+        # Compatibility for constructed/offline snapshots which predate source
+        # metadata: use the telemetry explicitly present on the snapshot.
+        load_sources = {source for source, value in available.items() if value is not None}
+
+    if not _load_sources_are_time_aligned(snapshot, load_sources):
+        return None
+
     charge_in_a = 0.0
     charge_source_count = 0
-    if snapshot.classic is not None:
+    if "classic" in load_sources and snapshot.classic is not None:
         charge_in_a += snapshot.classic.battery_current_a
         charge_source_count += 1
-    if snapshot.epever is not None:
+    if "epever" in load_sources and snapshot.epever is not None:
         charge_in_a += snapshot.epever.battery_current_a
         charge_source_count += 1
     if charge_source_count == 0:
@@ -248,6 +290,36 @@ def estimate_load_current_a(snapshot: SupervisorSnapshot) -> float | None:
     # so the generator-charge source term is intentionally deferred until that
     # sign is confirmed on a running generator.
     return charge_in_a - snapshot.battery.measurements.current_a
+
+
+def _load_sources_are_time_aligned(
+    snapshot: SupervisorSnapshot,
+    sources: set[str],
+) -> bool:
+    """Reject stale or cross-cycle inputs to the instantaneous bus balance."""
+    if not snapshot.source_captured_at:
+        return True
+    if any(source not in snapshot.source_captured_at for source in sources):
+        return False
+
+    captured = [snapshot.source_captured_at[source] for source in sources]
+    if not captured:
+        return False
+    skew_s = (max(captured) - min(captured)).total_seconds()
+    if skew_s > LOAD_SOURCE_MAX_SKEW_S:
+        return False
+
+    interval_s = snapshot.reader_poll_interval_s
+    max_age_s = (
+        LOAD_SOURCE_DEFAULT_MAX_AGE_S
+        if interval_s is None
+        else max(interval_s * 2.0, LOAD_SOURCE_MAX_SKEW_S)
+    )
+    for captured_at in captured:
+        age_s = (snapshot.captured_at - captured_at).total_seconds()
+        if age_s < -LOAD_SOURCE_MAX_SKEW_S or age_s > max_age_s:
+            return False
+    return True
 
 
 def load_voltage_v(snapshot: SupervisorSnapshot) -> float:

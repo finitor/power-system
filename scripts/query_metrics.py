@@ -9,12 +9,15 @@ Run on the Pi as the database owner (or against a user-owned snapshot):
     sudo -u offgrid python3 scripts/query_metrics.py now
     sudo -u offgrid python3 scripts/query_metrics.py charge-history
     sudo -u offgrid python3 scripts/query_metrics.py charge-history --date 2026-06-14
-    sudo -u offgrid python3 scripts/query_metrics.py snapshot --output /tmp/metrics-snapshot.sqlite
+    sudo install -d -o offgrid -g offgrid /srv/telemetry/snapshots
+    sudo -u offgrid python3 scripts/query_metrics.py snapshot \
+      --output /srv/telemetry/snapshots/metrics-snapshot.sqlite
 """
 
 from __future__ import annotations
 
 import argparse
+import shutil
 import sqlite3
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -22,6 +25,7 @@ from pathlib import Path
 from sqlite_readonly import open_readonly_database
 
 DB_PATH = "/srv/telemetry/data/metrics.sqlite"
+SNAPSHOT_MIN_HEADROOM_BYTES = 64 * 1024 * 1024
 
 
 def open_db(path: str = DB_PATH) -> sqlite3.Connection:
@@ -207,6 +211,7 @@ def cmd_snapshot(args: argparse.Namespace) -> None:
 
     source = open_db(args.db)
     try:
+        _require_snapshot_capacity(source, output)
         destination = sqlite3.connect(output)
         try:
             source.backup(destination)
@@ -219,6 +224,33 @@ def cmd_snapshot(args: argparse.Namespace) -> None:
     finally:
         source.close()
     print(f"Created consistent telemetry snapshot: {output}")
+
+
+def _require_snapshot_capacity(source: sqlite3.Connection, output: Path) -> None:
+    """Fail clearly before SQLite turns a small destination into ENOSPC."""
+    page_count = int(source.execute("PRAGMA page_count").fetchone()[0])
+    page_size = int(source.execute("PRAGMA page_size").fetchone()[0])
+    database_bytes = page_count * page_size
+    headroom = max(SNAPSHOT_MIN_HEADROOM_BYTES, database_bytes // 20)
+    required_bytes = database_bytes + headroom
+    free_bytes = shutil.disk_usage(output.parent).free
+    if free_bytes >= required_bytes:
+        return
+    raise SystemExit(
+        f"Snapshot needs about {_human_size(required_bytes)} including write headroom, "
+        f"but {output.parent} has only {_human_size(free_bytes)} free. "
+        "Choose an output directory on a larger filesystem "
+        "(normally /srv/telemetry/snapshots on the Pi)."
+    )
+
+
+def _human_size(value: int) -> str:
+    size = float(value)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if size < 1024.0 or unit == "TiB":
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    raise AssertionError("unreachable")
 
 
 # ---------------------------------------------------------------------------
