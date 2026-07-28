@@ -1,52 +1,70 @@
-# System Power Procedure
+# System Power Procedures
 
-Manual procedure for a full system power-down and power-up. Follow steps in order.
+Manual procedures for shutting down and starting the whole power system, and
+for disabling only the cabin AC supply. Follow each procedure in order.
 
----
+[Print-ready operator quick reference](../../output/pdf/system-power-quick-reference.pdf)
 
-## A. Power Down
+> [!CAUTION]
+> These are normal operating procedures, not an electrical-service lockout
+> procedure. Use appropriately rated test equipment and verify isolation before
+> working on wiring.
 
-**a1.** Disconnect PV array 0 from charge controller 0 (MidNite Solar Classic) using the
-20A DC breaker in the MidNite Solar breaker enclosure.
+## Powering Down the Whole System
 
-**a2.** Disconnect the battery from charge controller 0 using the 100A DC breaker in the
-MidNite Solar breaker enclosure.
+0. Have a flashlight ready.
+1. Move the charge controller 0 (**CC0, MidNite Classic**) PV breaker to
+   **OFF**.
+2. Move the CC0 battery breaker to **OFF**.
+3. **If PV array 1 is installed:** move the charge controller 1
+   (**CC1, Epever**) PV breaker to **OFF**.
+4. **If PV array 1 is installed:** move the CC1 battery breaker to **OFF**.
+5. Switch both battery power pushbuttons to **OFF**. Confirm that all battery
+   panel lights are off.
+6. Move the main AC lever switch below the AC distribution box to **OFF**
+   (center position).
 
-**a3.** Disconnect PV array 1 from charge controller 1 (EPEver) using the 20A DC breaker
-on the left mounting board.
+## Powering Up the Whole System
 
-**a4.** Disconnect the battery from charge controller 1 using the rotary disconnect switch
-on the left mounting board.
+Use this procedure only when the system is in the fully shut-down state
+described above.
 
-**a5.** Power off both batteries using their pushbuttons. Confirm no LEDs are lit on the
-battery control panels.
+1. Switch both battery power pushbuttons to **ON**. Confirm that the battery
+   panel status lights are on.
+2. **If PV array 1 is installed:** move the CC1 battery breaker to **ON**.
+3. **If PV array 1 is installed:** move the CC1 PV breaker to **ON**.
+4. Move the CC0 battery breaker to **ON**.
+5. Move the CC0 PV breaker to **ON**.
+6. Move the main AC lever switch below the AC distribution box to **ON**
+   (top position).
+7. Press and release the **Inverter** button as needed until the display panel
+   shows **Inverting**. The Magnum remote may require one press to wake the
+   display and another to enable the inverter.
+8. Power on the **LCD monitor** temporarily and confirm the supervisor program
+   is running and not showing error conditions.
 
----
+> [!NOTE]
+> The Magnum inverter does not save its ON/OFF state across a loss of DC power.
+> It starts in the OFF state, so the final button operation is always required.
 
-## B. Power Up
+## Turning Off AC Only
 
-**b1.** Confirm the PV array breakers and battery disconnects for both charge controllers
-are OFF (steps a1–a4 above) before energising the batteries.
+Use this procedure to leave the battery bank and charge controllers operating
+while disabling AC power, typically when the system will be left unattended.
 
-**b2.** Power on both batteries using their pushbuttons. Confirm status LEDs are lit.
+0. Have a flashlight ready.
+1. Press and release the **Inverter** button as needed until the display panel
+   shows **Off**.
+2. Move the main AC lever switch below the AC distribution box to **OFF**
+   (center position).
+3. If the house is being left unattended for any length of time, turn off the
+   water pump.
 
-**b3.** Connect the battery to charge controller 1 using the rotary disconnect switch on
-the left mounting board (position ON).
+The battery power pushbuttons and charge-controller breakers remain **ON**.
 
-**b4.** Connect PV array 1 to charge controller 1 using the 20A DC breaker on the left
-mounting board (position ON).
+## Restoring AC After an AC-Only Shutdown
 
-**b5.** Connect the battery to charge controller 0 using the 100A DC breaker in the
-MidNite Solar breaker enclosure (position ON).
-
-**b6.** Connect PV array 0 to charge controller 0 using the 20A DC breaker in the
-MidNite Solar breaker enclosure (position ON).
-
-**b7.** On the Magnum ME-RC50 remote, press the Inverter button once to wake the remote,
-then press it once more to turn the inverter ON. The remote should indicate
-**Inverting**. With load present the inverter can be heard humming.
-
-> **Note:** The Magnum inverter does not save its ON/OFF state across power cycles —
-> it always resets to OFF when DC is removed, regardless of prior state. The manual
-> button press in b7 is always required. See the inverter-charger subsystem doc for
-> discussion of a supervisor-driven workaround.
+1. Move the main AC lever switch below the AC distribution box to **ON**
+   (top position).
+2. Press and release the **Inverter** button as needed until the display panel
+   shows **Inverting**.

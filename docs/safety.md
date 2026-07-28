@@ -23,11 +23,11 @@ This repository is an engineering aid, not a substitute for electrical code, man
 | Maximum discharge current | TBD | Datasheet / system design |  |
 | Inverter continuous power | TBD | Datasheet |  |
 
-## Emergency Shutdown
+## Manual Shutdown
 
-Document the exact manual shutdown sequence here once the hardware layout is known.
+For the ordered normal-operation shutdown and startup sequences, see
+[System Power Procedures](runbooks/system-power-procedure.md).
 
-1. TBD
-2. TBD
-3. TBD
-
+An emergency-specific shutdown procedure has not yet been documented. Do not
+assume that the normal staged shutdown is appropriate for every electrical,
+battery, or fire emergency.
