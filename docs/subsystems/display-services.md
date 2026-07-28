@@ -10,7 +10,7 @@ Magnum inverter device and are guarded now.
 ```text
 offgrid-supervisor.service  (python, web/API server on 127.0.0.1:8081)
   ├── nginx  (ports 80 and 8080 → proxy to 8081, retry page on 502/503/504)
-  │     └── Kindle wall display  (bookmarked to :8080, 60s meta refresh)
+  │     └── Kindle wall display  (KUAL WebLaunch to 192.168.0.203:8080)
   ├── offgrid-console.service  (BindsTo=offgrid-supervisor)
   │     └── tmux session "offgrid-console"
   │           └── api_terminal_display  (polls 127.0.0.1:8081 directly)
@@ -25,6 +25,32 @@ Port assignments:
 | 80 | nginx | Canonical display/API entry point |
 | 8080 | nginx | Legacy Kindle bookmark; identical proxy behavior to port 80 |
 | 8081 | supervisor | Raw web/API server, loopback consumers only |
+
+## Kindle KUAL Launcher and Addressing
+
+The jailbroken Kindle Touch launches the wall display from KUAL using the
+WebLaunch extension. Its active configuration is stored on the Kindle, outside
+this repository:
+
+```text
+/mnt/us/extensions/WebLaunch/settings.js
+```
+
+The configured URL is `http://192.168.0.203:8080/`. Nginx selects the Kindle
+renderer from WebLaunch's Kindle user agent, so `/kindle` is not required.
+Keep `.203` assigned to the Pi's wired interface with a router DHCP
+reservation.
+
+Do not replace the address with `blueberry.local` for this device. Although
+the Pi advertises that name through Avahi, the Kindle Touch's 2011 Mesquite
+environment did not resolve it: WebLaunch stayed white and nginx received no
+request. Ordinary local DNS supplied by the router would be another option,
+but the current router does not publish a record for `blueberry`.
+
+When the KUAL window is white, first compare the URL in `settings.js` with the
+Pi's current address and inspect nginx access logs. A healthy endpoint with no
+corresponding Kindle request means the failure is on the Kindle side, before
+HTTP reaches the Pi.
 
 ## Operator Controls (terminal display)
 

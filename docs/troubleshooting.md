@@ -7,7 +7,7 @@
 | Implausible voltage/current | Sensor calibration, wrong scaling, loose connection | Compare with handheld meter | Fix calibration or wiring |
 | Relay output does not change | GPIO mapping, driver power, failed relay | Check GPIO state and relay input | Disable automation until verified |
 | Pi reboots unexpectedly | Power supply sag, SD card issue, overheating | Check 5 V rail and logs | Improve power supply or storage |
-| Kindle wall display blank/error page | Kindle refresh hit a supervisor restart while bypassing nginx, or Wi-Fi drop | `curl -A 'Kindle/3.0' http://<pi>:8080/` should return 200 even with supervisor stopped | Reload page on Kindle once; verify nginx owns ports 80 and 8080 (see `docs/subsystems/display-services.md`) |
+| Kindle wall display blank/error page | Stale KUAL WebLaunch address, Kindle name-resolution/Wi-Fi failure, or a refresh during a supervisor restart | `curl -A 'Kindle/3.0' http://<pi>:8080/` should return 200; check whether nginx logs a Kindle request when KUAL launches | If no request arrives, verify `/mnt/us/extensions/WebLaunch/settings.js` points to `http://192.168.0.203:8080/`; otherwise reload once and verify nginx owns ports 80 and 8080 (see `docs/subsystems/display-services.md`) |
 | Desktop console window missing | tmux session recreated while window script could not re-attach; or used `systemctl start` after a manual stop (BindsTo does not propagate starts) | `systemctl is-active offgrid-console`, `tmux list-clients -t offgrid-console` | `sudo systemctl restart offgrid-console`; window re-attaches via `~/.local/bin/open-offgrid-console` loop |
 | Console shows stale/missing fields after deploy | Console process running old code against new API | Compare console output to `/api/v1/snapshot` | `sudo systemctl restart offgrid-supervisor` restarts both via BindsTo |
 | Magnum values garbled (impossible volts/temps) | magnum-pi CycleTracker joined bus mid-cycle and swapped inverter/remote packets | `magnum-pi sniff`; inverter packet has model byte 0x73 at position 14 | Use `MagnumClient` (identifies by model byte); do not trust raw magnum-pi monitor output |
@@ -25,4 +25,3 @@ Expected behavior:
 Photos or logs:
 Follow-up:
 ```
-
