@@ -21,16 +21,20 @@ the array 1 wiring that fell out of this analysis:
    counters are useless for potential — the bank hits 100% SOC almost every
    summer day and the allocator throttles the arrays (measured June
    curtailment: ~5.5 kWh/day delivered out of ~14 kWh/day potential).
-2. Delivered charge power in those bins is regressed against irradiance from
-   the supervisor's Open-Meteo weather feed, giving **W of DC per W/m²** per
-   array. This coefficient absorbs orientation, shading, soiling, wiring, and
-   conversion losses as-built.
+2. Delivered charge power in those bins is regressed against **plane-of-array
+   (POA) irradiance**, reconstructed from the weather feed's direct-normal and
+   diffuse components using each array's actual tilt and azimuth, and
+   normalized to a 25 °C cell temperature. The resulting coefficient (**W of
+   DC per W/m² of POA at 25 °C**) absorbs shading, soiling, wiring, and
+   conversion losses, but *not* geometry — which is now modeled explicitly.
+   Regressing against horizontal irradiance (GHI) instead is a serious error
+   for a tilted array; see [Why GHI-proportional was
+   wrong](#why-ghi-proportional-modeling-was-wrong-corrected-2026-07-27).
 3. The coefficient is scaled across the year by a 10-year (2016–2025)
-   Open-Meteo/ERA5 daily irradiance series for the site grid cell
-   (47.952, −84.841) — GHI for the as-is geometry, 45°-south plane-of-array
-   (split into beam + diffuse components) for mounted-array scenarios — with
-   a cell-temperature correction (~+13% in deep winter vs the June
-   calibration).
+   Open-Meteo/ERA5 series for the site grid cell (47.952, −84.841): daily
+   45°-south plane-of-array irradiance (beam + diffuse), with a per-day
+   cell-temperature correction from irradiance-weighted mean POA and daily
+   mean ambient temperature.
 4. Load comes from the supervisor's `load` source (DC-bus balance: controller
    output minus battery net; includes inverter losses), plus a 200 W battery
    heater modeled at a temperature-scaled duty (≈0 above +2 °C, ~4 h/day at
@@ -39,37 +43,122 @@ the array 1 wiring that fell out of this analysis:
    worst-of-record), and a daily battery SOC simulation through each of the
    nine complete winters (Oct 1 – Apr 30, bank starting full).
 
-## Calibration baseline (2026-06-20 .. 2026-07-02)
+## Calibration baseline (2026-06-20 .. 2026-07-02; array 0 refit 2026-07-19 .. 07-27)
 
 | Quantity | Value | Notes |
 |---|---|---|
-| System PV effectiveness | 1.84 W per W/m² GHI | 261 uncurtailed bins; BMS charge limit (~10.6 kW) never binding |
-| Array 0 (2.4 kW rooftop) | 1.27 measured; **~1.45 expected going forward** | measured with a wiring fault (below); corrected 2026-07-18 |
-| Array 1 (3.6 kW, flat on ground) | 0.57 (~16% of nameplate) | flat + tight tree horizon + vegetation; expected to recover substantially when mounted — re-measure |
-| Load, June occupancy | 5.15 kWh/day (214 W avg) | DC-bus basis |
-| Overnight load floor | ~95 W | Starlink gen 2 ~34 W DC-side + Magnum no-load ~44 W + Pi/comms ~15 W |
+| Array 0 geometry | **45° tilt, 180° azimuth (due south), 30 ft above grade** | rooftop; recorded 2026-07-27. Same geometry as planned array 1 |
+| Array 0 (2.4 kW) effectiveness | **1.60–2.01 W per W/m² POA at 25 °C** (67–84% of nameplate) | bracket, not a point estimate — see [calibration limits](#why-the-coefficient-is-not-locked-in) |
+| Array 1 (3.6 kW, flat on ground) | 0.57 W per W/m² GHI (~16% of nameplate) | superseded: array 1 decommissioned 2026-07-18, and this figure predates the POA reformulation. Re-measure after remount |
+| Load, June occupancy | 5.15 kWh/day (214 W avg) | DC-bus basis; July 10–28 mean 217 W |
+| Overnight load (01:00–04:00) | **~184 W mean** (105 W instantaneous minimum) | of which refrigeration ~32 W. Identified always-on gear — Starlink ~34 W DC-side, Magnum no-load ~44 W, Pi/comms ~15 W — accounts for only ~93 W, leaving **~59 W unidentified** |
 | Refrigeration share | **~0.77 kWh/day (32 W average)** | dedicated combined-branch meter, 2026-07-10..20; two cube freezers, capacity-normalized compressor duty ~27% |
 | Bank usable | ~8.7 kWh | 2× Cubix 100 (10.24 kWh nominal) at 85% |
 
 The dedicated refrigeration measurement supersedes the original ~2.6 kWh/day
 allocation inferred before the S31 was installed. It does **not** change the
-5.15 kWh/day full-occupancy baseline, which was measured at the DC bus, but it
-does mean that the modeled “no refrigeration” cases below subtract too much
-load—about 1.8 kWh/day if the July utilization applies. Treat their favorable
-results as stale pending a scenario rerun. See
+5.15 kWh/day full-occupancy baseline, which was measured at the DC bus. The
+"no refrigeration" scenarios have been rerun at the corrected **4.38 kWh/day**
+(5.15 − 0.77). See
 [Individual Load Metering](subsystems/load-metering.md#measured-refrigeration-utilization-2026-07-10-through-2026-07-20)
 for the tier and duty-cycle analysis.
+
+**Why the original 2.6 kWh/day estimate was ~4× too high** (worth recording so
+the mistake is not repeated for the next unmetered load): it was inferred by
+subtracting an assumed baseline from the daily mean, and both halves were
+wrong. First, the baseline used the overnight *minimum* (~95–105 W) — the
+instantaneous trough when the compressor is off and nothing else happens to be
+drawing — rather than the overnight *mean* of ~184 W. Second, the entire
+remaining gap was attributed to refrigeration, when most of it is ordinary
+daytime activity. The metered reality: refrigeration is nearly **flat at
+29–35 W in every hour of the day**, while total load swings from 183 W
+overnight to 274 W at midday. The diurnal shape that was assumed to be
+compressor duty cycling is human activity; the freezers contribute almost none
+of it. Refrigeration is 14.7% of total load, not the ~50% assumed.
+
+Because 0.77 kWh/day is a July figure, winter refrigeration in a cool space
+should be *lower* still — making load-shedding the freezers an even weaker
+winter strategy than the scenario tables show.
 
 **Array 0 wiring-fault correction (discovered 2026-07-18, ~13:45):** during
 the entire calibration window one array 0 panel was disconnected and the
 remaining seven were wired 4s ∥ 3s instead of the intended 4s2p. With a 3s
 string (Voc ~135 V) paralleled onto a 4s string (Vmp ~144 V), the Classic's
 global MPP sits near ~108 V where both strings conduct — delivering
-essentially 7 panels' worth, i.e. ~7/8 of intended output. The measured 1.27
-therefore characterizes the *faulted* array; with the wiring corrected,
-array 0 should run ≈ 1.27 × 8/7 ≈ **1.45 W per W/m²** (~60% of nameplate).
-Scenario numbers below use the corrected value; the post-fix recalibration
-(open measurements) confirms it.
+essentially 7 panels' worth, i.e. ~7/8 of intended output. The pre-fix
+measurement therefore characterizes the *faulted* array.
+
+The post-fix recalibration (2026-07-27, nine days of corrected wiring) did
+**not** cleanly confirm the projected 8/7 recovery: measured output rose ~40%
+rather than the predicted 14%. Part of that is likely real — a real MPPT
+facing two local maxima can hunt and settle on the wrong one, so the true
+fault cost was probably worse than the idealized 7/8 — but the windows also
+disagree by more than the fault explains, which is what
+[calibration limits](#why-the-coefficient-is-not-locked-in) is about. The
+model now carries a bracket rather than a corrected point estimate.
+
+## Why GHI-proportional modeling was wrong (corrected 2026-07-27)
+
+Until 2026-07-27 array 0 was modeled as producing in proportion to
+**horizontal** irradiance (GHI). Its actual geometry — 45° tilt, due
+south — was undocumented. That is a large, seasonal, one-directional error,
+because the ratio of 45°-south plane-of-array irradiance to horizontal
+irradiance varies by 2× across the year:
+
+| | Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| POA(45°S)/GHI | 1.80 | 1.50 | 1.30 | 1.08 | 0.95 | 0.90 | 0.93 | 1.03 | 1.23 | 1.44 | 1.65 | **1.86** |
+
+A coefficient fitted in July (ratio 0.93) and applied to December (ratio 1.86)
+**understates December output by ~2×**. This is geometry, not a fitted
+parameter, so the correction holds regardless of the coefficient's exact
+value. It is also why the 45° tilt is the right choice at this latitude: the
+panel normal sits 45° above the horizon, which is within ~26° of the solstice
+noon sun (18.7°) and within ~20° of the summer noon sun — nearly balanced.
+
+All scenarios below are now computed on the POA basis for array 0. The same
+treatment already applied to array 1's mounted scenarios, so the two arrays
+are finally modeled consistently.
+
+**Caveat:** POA modeling assumes an unobstructed southern horizon. Array 1's
+site was surveyed in detail; **array 0's has never been surveyed.** At 30 ft
+on a rooftop it is likely well clear, but this is now the largest unverified
+assumption behind the interim winter numbers — see open measurements.
+
+## Why the coefficient is not locked in
+
+Nine days of post-fix telemetry produced 314 usable uncurtailed bins — more
+than the 261 that built the original model — so **sample size is not the
+constraint**. The constraint is that the estimate is not reproducible:
+
+| Basis | June window (×8/7 for the fault) | July window (corrected) |
+|---|---|---|
+| POA, temperature-normalized | 1.60 (67% of nameplate) | 2.01 (84% of nameplate) |
+| Clear-sky bins only, GHI | 1.33 | 1.86 |
+| Sun ≤20° elevation, GHI | 1.18 (R² 0.00) | 0.90 (R² 0.40) |
+| Sun >40° elevation, GHI | 1.38 | 1.91 |
+
+Best-case fit quality is R² 0.56. The 84%-of-nameplate figure is above what
+this class of hardware plausibly delivers, so the July end of the bracket is
+likely biased high — probably by selection, since uncurtailed bins skew toward
+cool-panel morning conditions.
+
+Root cause: the regression uses **modeled** irradiance as its independent
+variable. Open-Meteo GHI is an hourly value on a ~1 km grid, polled every
+30 minutes; it cannot track real cloud transients at a site with lake-effect
+variability. That is irreducible error in *x*, which both caps the fit and
+makes the slope depend on which conditions happen to land in the sample. More
+summer telemetry will not fix it.
+
+Ruled out as explanations: weather-feed gaps (48 samples/day at 30-minute
+cadence, one 103-minute gap in nine days); charge-allocator throttling of the
+Classic (0.9% of June bins near its limit, 0% in July); and array-geometry
+misfit (POA reconstruction improves R² only from 0.44 to 0.56).
+
+There is also no summer analogue for December's geometry. December sun is
+≤18.7° elevation and due south, striking a 45° panel near-normal; summer's
+low-elevation bins are morning and evening sun in the east and west, striking
+the same panel at ~80° incidence. They share an elevation and nothing else.
 
 ## Array 1 status (updated 2026-07-18)
 
@@ -110,20 +199,30 @@ through February, bottoming in the Dec 20 – Jan 1 weeks.
 
 ### Interim: array 0 only (until array 1 remount, ~Sep 2027)
 
-With array 1 decommissioned, winter 2026–27 runs on array 0 alone
-(corrected coefficient 1.45; darkest-week potential ~1.5 kWh/day):
+With array 1 decommissioned, winter 2026–27 runs on array 0 alone. On the POA
+basis with the 1.60–2.01 coefficient bracket, darkest-week potential is
+**2.8–3.5 kWh/day** — the previous figure of 1.5 kWh/day was the ~2× geometry
+error described above:
 
-| Mode | Worst 7-day (median winter) | Median winter deficit | Generator sessions/winter |
-|---|---|---|---|
-| Full occupancy | −32 kWh | ~550 kWh | ~46 — generator is a routine appliance |
-| No refrigeration *(legacy 2.6 kWh/day subtraction; rerun required)* | −12 kWh | ~116 kWh | ~10 — not bank-survivable unattended |
-| Lean unattended caretaker | **+0.8 kWh** (−1.1 worst of 10) | ~5 kWh | 0 — survives every winter at nominal heater duty |
+| Mode | Load | Worst 7-day (median winter) | Median winter deficit | Generator sessions/winter |
+|---|---|---|---|---|
+| Full occupancy | 5.15 + heater | −25 to −28 kWh | 300–390 kWh | 18–27 |
+| No refrigeration | 4.38 + heater | −20 to −22 kWh | 220–280 kWh | 12–18 |
+| Lean unattended caretaker | ~0.5 + heater | **+4.6 to +7.2 kWh** | ~2–5 kWh | 0 — min SOC 80–86%, no empty days in 9 winters |
 
-The lean caretaker verdict carries the load: **unattended winter 2026–27 is
-viable on array 0 alone**, with min SOC ≥ 76% at nominal heater duty — but
-the margin is thin against heater-duty error (1.5× duty produces a handful of
-dead days; 2× is structural). This winter *is* the heater-duty measurement
-winter; instrument it before leaving the site unattended.
+Two conclusions changed with these corrections:
+
+- **Unattended winter 2026–27 on array 0 alone is comfortable, not marginal.**
+  The lean stack runs a real surplus through the darkest weeks with an 80%+
+  SOC floor across all nine simulated winters. Heater-duty error is no longer
+  near the edge — though logging it remains the top open measurement, being
+  the largest modeled-but-unmeasured term left.
+- **Shedding refrigeration is no longer a strategy.** At a measured
+  0.77 kWh/day it removes ~5 kWh from a 220–280 kWh winter deficit. Occupied
+  winter needs the generator whether the freezers run or not, so the
+  operational lever is generator scheduling, not fridge discipline. The
+  ~59 W of unidentified always-on overnight load is a larger target than the
+  freezers.
 
 ### Post-mount scenarios (array 1 on the cabin roof, ~Sep 2027+)
 
@@ -246,26 +345,34 @@ leg. December beam passage is the number that decides whether a leg delivers
 In rough order of information value:
 
 1. **Battery heater duty vs temperature** (winter 2026–27; heater is
-   Pi-permissive, so log it). With the interim system on array 0 alone, the
-   lean-caretaker margin is thin against heater-duty error — this
-   measurement is now urgent, not just informative, and it retires the
-   model's biggest unknown.
-2. **Post-fix recalibration of array 0** (`calibrate_pv.py 2026-07-19` after
-   a week of corrected 4s2p wiring; scheduled 2026-07-26): expect the slope
-   near 1.45; a materially lower result means the array has losses beyond
-   the wiring fault, and the scenario numbers revert toward the
-   pre-correction column. Array 1 is decommissioned, so its slope should
-   read ~0/absent in this run.
-3. **Seasonal refrigeration utilization:** repeat the combined-tier analysis
+   Pi-permissive, so log it). Now the largest modeled-but-unmeasured term in
+   the whole model, and the only remaining input to the unattended-winter
+   verdict that has never been observed.
+2. **A measured irradiance reference on site** — a small pyranometer, or one
+   of the decommissioned array 1 panels wired as a reference cell reading
+   short-circuit current. This replaces modeled GHI as the regression's
+   independent variable and is the only way to move the coefficient bracket
+   before winter; see [calibration limits](#why-the-coefficient-is-not-locked-in).
+3. **AR solstice-path survey of array 0's southern horizon** from the
+   rooftop. Array 0 now carries the entire system, and the POA reformulation
+   assumes an unobstructed southern sightline that has never been checked.
+   At 30 ft it is probably clear — but "probably" is doing real work in the
+   interim winter numbers.
+4. **Identify the ~59 W of unexplained always-on overnight load** (184 W
+   measured overnight, ~93 W of identified always-on gear, ~32 W
+   refrigeration). A second Sonoff S31 on a suspected circuit would settle
+   it. This is nearly twice the refrigeration load and runs 24/7, making it
+   the largest available load reduction.
+5. **Seasonal refrigeration utilization:** repeat the combined-tier analysis
    in winter and after any thermostat-probe/thermal-mass change. This tests
    whether the July ~0.77 kWh/day and short refrigerator cycles carry into
    the conditions used by the annual model, then supports a corrected
    no-refrigeration scenario.
-4. **AR solstice-path survey from the cabin rooftop mounting height**
+6. **AR solstice-path survey from the cabin rooftop mounting height**
    (whenever roof access exists, ideally near solstice-relevant sun angles):
    replaces the old +1.4/+2.1 m ladder follow-ups; quantifies how much of
    the December noon block the ~10 ft of extra height recovers.
-5. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
+7. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
    array 1 (`calibrate_pv.py <date>`): does per-kW effectiveness recover
    from the 16% flat floor toward the PR 0.55–0.70 band? Verify
    `epever.1 pv_voltage` ~108 V class (3s4p) on reconnect, and capture a
@@ -285,6 +392,15 @@ In rough order of information value:
   higher than the surveyed ground position, slightly reduced shading).
   Interim array-0-only scenario table added; unattended winter 2026–27
   remains viable on array 0 alone.
+- 2026-07-27 — **model reformulated onto a plane-of-array basis.** Array 0's
+  geometry (45° tilt, due south, 30 ft) was recorded for the first time;
+  modeling it as GHI-proportional had understated its December output by ~2×.
+  Array 0's coefficient replaced with a 1.60–2.01 W per W/m² POA bracket
+  after nine days of post-wiring-fix telemetry failed to reproduce a stable
+  point estimate. "No refrigeration" scenarios rerun at the metered
+  4.38 kWh/day. Net effect: unattended winter on array 0 alone is comfortable
+  rather than marginal, and fridge-shedding is no longer a useful winter
+  lever ([journal](journal/2026-07-27.md)).
 - 2026-07-20 — dedicated refrigeration trace measured ~0.77 kWh/day and
   27% capacity-normalized compressor duty; the earlier 2.6 kWh/day allocation
   and derived no-refrigeration scenarios were marked stale
