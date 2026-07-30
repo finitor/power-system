@@ -8,8 +8,8 @@ calibration and scenario numbers as real data replaces estimates (see
 
 Model scripts: [`scripts/calibrate_pv.py`](../scripts/calibrate_pv.py) (runs
 on the Pi against the metrics DB) and
-[`scripts/annual_model.py`](../scripts/annual_model.py) (runs anywhere against
-downloaded irradiance; fetch commands in its docstring). Decision context for
+[`scripts/annual_model.py`](../scripts/annual_model.py) (runs anywhere; fetches
+and caches its own irradiance data). Decision context for
 the array 1 wiring that fell out of this analysis:
 [charge-controller doc](subsystems/charge-controller.md#array-1-string-topology-3s4p-decided-2026-07-02).
 
@@ -43,12 +43,12 @@ the array 1 wiring that fell out of this analysis:
    worst-of-record), and a daily battery SOC simulation through each of the
    nine complete winters (Oct 1 – Apr 30, bank starting full).
 
-## Calibration baseline (2026-06-20 .. 2026-07-02; array 0 refit 2026-07-19 .. 07-27)
+## Calibration baseline (2026-06-20 .. 2026-07-02; array 0 refit 2026-07-19 .. 07-30)
 
 | Quantity | Value | Notes |
 |---|---|---|
 | Array 0 geometry | **45° tilt, 180° azimuth (due south), 30 ft above grade** | rooftop; recorded 2026-07-27. Same geometry as planned array 1 |
-| Array 0 (2.4 kW) effectiveness | **1.60–2.01 W per W/m² POA at 25 °C** (67–84% of nameplate) | bracket, not a point estimate — see [calibration limits](#why-the-coefficient-is-not-locked-in) |
+| Array 0 (2.4 kW) effectiveness | **1.60–2.01 W per W/m² POA at 25 °C** (67–84% of nameplate); 12-day fit **1.90** | bracket, not a point estimate — see [calibration limits](#why-the-coefficient-is-not-locked-in) |
 | Array 1 (3.6 kW, flat on ground) | 0.57 W per W/m² GHI (~16% of nameplate) | superseded: array 1 decommissioned 2026-07-18, and this figure predates the POA reformulation. Re-measure after remount |
 | Load, June occupancy | 5.15 kWh/day (214 W avg) | DC-bus basis; July 10–28 mean 217 W |
 | Overnight load (01:00–04:00) | **~184 W mean** (105 W instantaneous minimum) | of which refrigeration ~32 W. Identified always-on gear — Starlink ~34 W DC-side, Magnum no-load ~44 W, Pi/comms ~15 W — accounts for only ~93 W, leaving **~59 W unidentified** |
@@ -168,6 +168,22 @@ this class of hardware plausibly delivers, so the July end of the bracket is
 likely biased high — probably by selection, since uncurtailed bins skew toward
 cool-panel morning conditions.
 
+**Confirmed by continued drift (2026-07-30 rerun).** Three additional days
+moved the fitted coefficient down and did not converge it:
+
+| Window | Bins | Coefficient | % of nameplate |
+|---|---|---|---|
+| 2026-07-19 .. 07-27 | 308 | 2.01 | 84% |
+| 2026-07-19 .. 07-30 | 373 | **1.90** | 79% |
+| 2026-07-28 .. 07-30 (marginal) | 65 | 1.56 | 65% |
+
+The marginal three days alone read 1.56, close to the June figure of 1.60, so
+the running estimate is drifting toward the low end of the bracket as sample
+composition broadens. This is what a sample-composition-dependent estimator
+looks like from the inside: each window is internally consistent and they
+disagree with each other. Scenario tables therefore quote the bracket, and
+1.90 is used only as the current midpoint — not as a settled value.
+
 Root cause: the regression uses **modeled** irradiance as its independent
 variable. Open-Meteo GHI is an hourly value on a ~1 km grid, polled every
 30 minutes; it cannot track real cloud transients at a site with lake-effect
@@ -233,7 +249,11 @@ error described above:
 |---|---|---|---|---|
 | Full occupancy | 5.15 + heater | −25 to −28 kWh | 300–390 kWh | 18–27 |
 | No refrigeration | 4.38 + heater | −20 to −22 kWh | 220–280 kWh | 12–18 |
-| Lean unattended caretaker | ~0.5 + heater | **+4.6 to +7.2 kWh** | ~2–5 kWh | 0 — min SOC 80–86%, no empty days in 9 winters |
+| Lean unattended caretaker | ~0.5 + heater | **+4.6 to +7.2 kWh** | ~2–5 kWh | 0 — min SOC 79–84%, no empty days in 9 winters |
+
+At the 1.90 midpoint the same three rows read −26.0, −20.6 and +6.4 kWh, with
+a lean-caretaker SOC floor of 83%. Regenerate any of this with
+`python3 scripts/annual_model.py` (add `--array1` for the post-remount system).
 
 Two conclusions changed with these corrections:
 
@@ -425,6 +445,13 @@ In rough order of information value:
   roof) and found effectively clear: ~96% of solstice beam energy falls in
   the unobstructed 09:00–15:45 window, so the POA reformulation's key
   assumption is confirmed and the interim winter numbers stand.
+- 2026-07-30 — recalibrated on 12 days of post-fix telemetry: array 0 fits
+  1.90 (down from 2.01 on 9 days; the marginal 3 days alone read 1.56),
+  confirming the coefficient is sample-composition dependent rather than
+  converging. `annual_model.py` rewritten onto the POA basis to match the
+  documented method — it had still been GHI-proportional — and now fetches
+  and caches its own irradiance data, brackets the coefficient, and models
+  the post-remount system behind `--array1`.
 - 2026-07-20 — dedicated refrigeration trace measured ~0.77 kWh/day and
   27% capacity-normalized compressor duty; the earlier 2.6 kWh/day allocation
   and derived no-refrigeration scenarios were marked stale
