@@ -451,7 +451,8 @@ In rough order of information value:
   converging. `annual_model.py` rewritten onto the POA basis to match the
   documented method — it had still been GHI-proportional — and now fetches
   and caches its own irradiance data, brackets the coefficient, and models
-  the post-remount system behind `--array1`.
+  the post-remount system behind `--array1`
+  ([journal](journal/2026-07-30.md)).
 - 2026-07-20 — dedicated refrigeration trace measured ~0.77 kWh/day and
   27% capacity-normalized compressor duty; the earlier 2.6 kWh/day allocation
   and derived no-refrigeration scenarios were marked stale
