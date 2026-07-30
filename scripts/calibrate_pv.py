@@ -36,13 +36,17 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import sqlite3
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from site_location import site_coordinates  # noqa: E402
+
 DB = "file:/srv/telemetry/data/metrics.sqlite?mode=ro"
-LAT, LON = 47.952, -84.841
+LAT, LON, _COORD_SOURCE = site_coordinates()
 GAMMA_P = -0.0041  # module power temperature coefficient, per degC
 # `bulk_stages` is per-array because the controllers do not share a stage
 # vocabulary. The Classic reports Bulk/BulkMppt. The EPEver folds bulk into

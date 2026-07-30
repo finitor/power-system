@@ -30,11 +30,16 @@ import argparse
 import json
 import os
 import statistics as st
+import sys
 import urllib.parse
 import urllib.request
 from collections import defaultdict
 
-LAT, LON = 47.952, -84.841
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from site_location import site_coordinates
+
+LAT, LON, _COORD_SOURCE = site_coordinates()
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
 YEARS = ("2016-01-01", "2025-12-31")
 SEASONS = range(2016, 2025)  # complete winters, Oct-Apr
@@ -56,7 +61,10 @@ LOADS = {                          # kWh/day, excluding the battery heater
 
 
 def _fetch(cache_dir, name, params):
-    path = os.path.join(cache_dir, name)
+    # Key the cache on coordinates: the same filename fetched at a different
+    # location must not silently reuse the previous site's data.
+    tag = f"{params['latitude']:.3f}_{params['longitude']:.3f}"
+    path = os.path.join(cache_dir, f"{tag}-{name}")
     if os.path.exists(path):
         return json.load(open(path))
     os.makedirs(cache_dir, exist_ok=True)

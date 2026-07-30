@@ -31,7 +31,7 @@ the array 1 wiring that fell out of this analysis:
    for a tilted array; see [Why GHI-proportional was
    wrong](#why-ghi-proportional-modeling-was-wrong-corrected-2026-07-27).
 3. The coefficient is scaled across the year by a 10-year (2016–2025)
-   Open-Meteo/ERA5 series for the site grid cell (47.952, −84.841): daily
+   Open-Meteo/ERA5 series for the site grid cell: daily
    45°-south plane-of-array irradiance (beam + diffuse), with a per-day
    cell-temperature correction from irradiance-weighted mean POA and daily
    mean ambient temperature.
