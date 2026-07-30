@@ -120,10 +120,35 @@ All scenarios below are now computed on the POA basis for array 0. The same
 treatment already applied to array 1's mounted scenarios, so the two arrays
 are finally modeled consistently.
 
-**Caveat:** POA modeling assumes an unobstructed southern horizon. Array 1's
-site was surveyed in detail; **array 0's has never been surveyed.** At 30 ft
-on a rooftop it is likely well clear, but this is now the largest unverified
-assumption behind the interim winter numbers — see open measurements.
+### Array 0 southern horizon (surveyed 2026-07-27)
+
+POA modeling assumes an unobstructed southern horizon, so array 0's rooftop
+sightline was surveyed with the same AR solstice-path method used at the
+array 1 site. **Result: effectively clear.** The winter-solstice path runs
+through open sky from roughly 09:00 to 15:45 EST; obstruction is limited to
+tree foliage at the very start of the day (before ~08:45) and the treeline at
+the very end (after ~15:45). The sun clears the distant hills and treeline
+throughout the productive middle of the day.
+
+Solstice geometry at this site: sun above horizon 08:33–16:42 EST, peak
+elevation 18.6° at 12:37. Beam energy is heavily concentrated around solar
+noon, so the surveyed clear window captures:
+
+| Window | Share of solstice beam energy |
+|---|---|
+| 09:00–15:45 (as surveyed) | **96.3%** |
+| 09:00–15:30 (conservative reading) | 94.3% |
+| 08:45–16:00 (optimistic reading) | 98.2% |
+
+Since beam is ~68% of December POA at 45° south, a 4–6% beam loss is a **2–4%
+haircut on total winter POA** — within the noise of the coefficient bracket,
+so the interim scenario numbers stand as computed.
+
+For contrast, the 12:30–14:30 band that the building blocks at the array 1
+site is alone worth **35.7%** of solstice beam energy. Array 0's rooftop
+position is a fundamentally better winter site than array 1's ground
+platform ever was, which is worth remembering when the array 1 remount is
+planned — the cabin roof should be checked against this standard.
 
 ## Why the coefficient is not locked in
 
@@ -353,26 +378,21 @@ In rough order of information value:
    short-circuit current. This replaces modeled GHI as the regression's
    independent variable and is the only way to move the coefficient bracket
    before winter; see [calibration limits](#why-the-coefficient-is-not-locked-in).
-3. **AR solstice-path survey of array 0's southern horizon** from the
-   rooftop. Array 0 now carries the entire system, and the POA reformulation
-   assumes an unobstructed southern sightline that has never been checked.
-   At 30 ft it is probably clear — but "probably" is doing real work in the
-   interim winter numbers.
-4. **Identify the ~59 W of unexplained always-on overnight load** (184 W
+3. **Identify the ~59 W of unexplained always-on overnight load** (184 W
    measured overnight, ~93 W of identified always-on gear, ~32 W
    refrigeration). A second Sonoff S31 on a suspected circuit would settle
    it. This is nearly twice the refrigeration load and runs 24/7, making it
    the largest available load reduction.
-5. **Seasonal refrigeration utilization:** repeat the combined-tier analysis
+4. **Seasonal refrigeration utilization:** repeat the combined-tier analysis
    in winter and after any thermostat-probe/thermal-mass change. This tests
    whether the July ~0.77 kWh/day and short refrigerator cycles carry into
    the conditions used by the annual model, then supports a corrected
    no-refrigeration scenario.
-6. **AR solstice-path survey from the cabin rooftop mounting height**
+5. **AR solstice-path survey from the cabin rooftop mounting height**
    (whenever roof access exists, ideally near solstice-relevant sun angles):
    replaces the old +1.4/+2.1 m ladder follow-ups; quantifies how much of
    the December noon block the ~10 ft of extra height recovers.
-7. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
+6. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
    array 1 (`calibrate_pv.py <date>`): does per-kW effectiveness recover
    from the 16% flat floor toward the PR 0.55–0.70 band? Verify
    `epever.1 pv_voltage` ~108 V class (3s4p) on reconnect, and capture a
@@ -401,6 +421,10 @@ In rough order of information value:
   4.38 kWh/day. Net effect: unattended winter on array 0 alone is comfortable
   rather than marginal, and fridge-shedding is no longer a useful winter
   lever ([journal](journal/2026-07-27.md)).
+- 2026-07-27 — array 0's southern horizon surveyed (AR solstice path from the
+  roof) and found effectively clear: ~96% of solstice beam energy falls in
+  the unobstructed 09:00–15:45 window, so the POA reformulation's key
+  assumption is confirmed and the interim winter numbers stand.
 - 2026-07-20 — dedicated refrigeration trace measured ~0.77 kWh/day and
   27% capacity-normalized compressor duty; the earlier 2.6 kWh/day allocation
   and derived no-refrigeration scenarios were marked stale
