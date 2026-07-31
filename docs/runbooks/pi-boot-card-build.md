@@ -149,6 +149,8 @@ and a supervisor deploy.
 - Same primary user as the old install if practical.
 - Git checkout at the normal project path, preferably `~/power-system`.
 - Python virtual environment at `${PROJECT_DIR}/.venv`.
+- Bubblewrap sandbox binary at `/usr/bin/bwrap`.
+- Official Codex CLI at `~/.local/bin/codex`.
 - Supervisor web/API on `127.0.0.1:8081`.
 - nginx on ports `80` and `8080`.
 - SocketCAN `can0` listen-only at 500 kbit/s.
@@ -229,6 +231,19 @@ and a supervisor deploy.
 9. Bootstrap packages, venv, config rendering, tests, and deploy:
    `scripts/install-pi.sh`
 
+9a. Reinstall the Codex CLI and its Bubblewrap sandbox dependency. These are
+    binaries, not configuration to copy from the old card: install Bubblewrap
+    from Debian and use OpenAI's [standalone installer](https://learn.chatgpt.com/docs/codex/cli)
+    so it selects the current Linux ARM64 Codex build:
+    ```sh
+    sudo apt-get install -y bubblewrap
+    curl -fsSL https://chatgpt.com/codex/install.sh | sh
+    ```
+    The installer puts Codex under `~/.codex/packages/standalone/` and exposes
+    it as `~/.local/bin/codex`. Authentication is separate; if the rebuilt Pi
+    is signed out, run `codex login --device-auth` and complete the browser
+    flow. Do not copy Codex credentials from another machine.
+
 10. Start a new SSH session — `install-pi.sh` adds `$USER` to the `offgrid`
     group, which only takes effect after re-login.
 
@@ -244,6 +259,9 @@ Minimum checks:
 uname -m
 getconf LONG_BIT
 hostname
+command -v bwrap && bwrap --version
+bwrap --ro-bind / / --proc /proc --dev /dev /bin/true
+bash -lc 'command -v codex && codex --version && codex login status'
 systemctl is-active offgrid-supervisor offgrid-console nginx
 systemctl is-active offgrid-can-watchdog.timer offgrid-supervisor-watchdog.timer offgrid-metrics-export.timer
 # Hardware watchdog armed (RuntimeWatchdogUSec non-zero) and journald persistent
@@ -405,7 +423,12 @@ Once `uname -m` reports `aarch64` and telemetry is healthy:
 - **DuckDB on-Pi becomes possible** (aarch64 wheel exists) for local rollups
   or serving history charts without the workstation; set `memory_limit` on a
   1 GB host.
-- Codex CLI experiment, per the secondary goal.
+- ~~**Codex CLI experiment**~~ **DONE 2026-07-31:** the official standalone
+  installer selected the Linux ARM64 build and installed it under
+  `~/.codex/packages/standalone/`, with `~/.local/bin/codex` as the command.
+  Debian's `bubblewrap` package supplies `/usr/bin/bwrap`, which Codex needs
+  for its Linux sandbox. Both binaries are recreated by step 9a rather than
+  archived from the old card; Codex authentication is handled separately.
 - ~~**Claude CLI setup**~~ **DONE 2026-06-22:** `nodejs` and `npm` added to
   the `install-pi.sh` apt package list; `@anthropic-ai/claude-code` installed
   globally via `sudo npm install -g` after deploy. Auth state lives in
