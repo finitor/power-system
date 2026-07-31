@@ -1,7 +1,7 @@
 # Magpie Camp Power System
 
 In June 2026 I upgraded my off-grid cabin's energy storage to LiFePO4,
-triggering a cascade of desired improvements in capacity, instrumentation,
+triggering a cascade of long-desired improvements in capacity, instrumentation,
 and control. Planning and implementing all that here with Codex & Claude.
 
 I expect this will be interesting to outsiders mainly for the mechanics of
