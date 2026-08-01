@@ -13,12 +13,12 @@ Resolution order:
    without the caller having to source it;
 3. the published approximate values from docs/site.md.
 
-The fallback costs the model nothing: ERA5 is an ~11 km grid, so the
-approximate and exact coordinates resolve to the same cell. Verified 2026-07-30
--- every scenario figure is identical either way, and the solstice beam-window
-fraction moves 96.3% -> 96.2%. Precision matters for solar-geometry timing
-(solar noon shifts ~4 minutes per degree of longitude), not for irradiance
-lookup.
+The fallback costs the model nothing at the selected historical-weather grid:
+the approximate and exact coordinates resolve to the same cell. Verified
+2026-07-30 -- every scenario figure is identical either way, and the solstice
+beam-window fraction moves 96.3% -> 96.2%. Precision matters for solar-geometry
+timing (solar noon shifts ~4 minutes per degree of longitude), not for this
+irradiance lookup.
 
 Note that `/etc/offgrid-power.env` is root-only (0600, it holds secrets), so
 step 2 does not apply when running as the telemetry owner:
@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import os
 
-# docs/site.md publishes these; ~10 km resolution, same ERA5 cell as exact.
+# docs/site.md publishes these; same selected historical-weather cell as exact.
 APPROXIMATE_LAT, APPROXIMATE_LON = 47.9, -84.8
 DEFAULT_ENV_FILE = "/etc/offgrid-power.env"
 

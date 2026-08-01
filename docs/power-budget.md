@@ -31,24 +31,32 @@ the array 1 wiring that fell out of this analysis:
    for a tilted array; see [Why GHI-proportional was
    wrong](#why-ghi-proportional-modeling-was-wrong-corrected-2026-07-27).
 3. The coefficient is scaled across the year by a 10-year (2016–2025)
-   Open-Meteo/ERA5 series for the site grid cell: daily
-   45°-south plane-of-array irradiance (beam + diffuse), with a per-day
-   cell-temperature correction from irradiance-weighted mean POA and daily
-   mean ambient temperature.
+   **explicitly pinned ERA5** series for the site grid cell: hourly 45°-south
+   plane-of-array irradiance (beam + diffuse) and ambient temperature. Pinning
+   `models=era5` avoids Open-Meteo's default best-match series, which mixes
+   weather products across years and is unsuitable for worst-winter ranking.
 4. Load comes from the supervisor's `load` source (DC-bus balance: controller
    output minus battery net; includes inverter losses), plus a 200 W battery
    heater modeled at a temperature-scaled duty (≈0 above +2 °C, ~4 h/day at
    −10 °C, ~8 h/day at −20 °C — **estimate, not yet measured**).
-5. Scenarios are evaluated two ways: weekly net balance (10-year mean and
-   worst-of-record), and a daily battery SOC simulation through each of the
-   nine complete winters (Oct 1 – Apr 30, bank starting full).
+5. Scenarios are evaluated two ways: daily/weekly energy balance, and an
+   **hourly** battery SOC simulation through each of the nine complete winters
+   (Oct 1 – Apr 30, bank starting full). Hourly resolution preserves midday
+   battery saturation and overnight draw instead of allowing discarded noon
+   surplus to pay an evening load.
+6. Attended scenarios model the **manual 3.2 kW generator** starting at 20% SOC
+   (an explicit, configurable planning assumption) and running until the
+   operator-observed SOC reaches **90%**. The 3.2 kW is currently treated as
+   DC-bus-equivalent output because generator-to-battery conversion loss has
+   not been measured; modeled runtime is therefore optimistic by that unknown
+   loss. Unattended scenarios never start the generator.
 
 ## Calibration baseline (2026-06-20 .. 2026-07-02; array 0 refit 2026-07-19 .. 07-30)
 
 | Quantity | Value | Notes |
 |---|---|---|
 | Array 0 geometry | **45° tilt, 180° azimuth (due south), 30 ft above grade** | rooftop; recorded 2026-07-27. Same geometry as planned array 1 |
-| Array 0 (2.4 kW) effectiveness | **1.60–2.01 W per W/m² POA at 25 °C** (67–84% of nameplate); 12-day fit **1.90** | bracket, not a point estimate — see [calibration limits](#why-the-coefficient-is-not-locked-in) |
+| Array 0 (2.4 kW) effectiveness | **1.60–2.01 W per W/m² POA at 25 °C** (67–84% of nameplate); 14-day fit through 2026-08-01 **1.70** | bracket, not a point estimate — see [calibration limits](#why-the-coefficient-is-not-locked-in) |
 | Array 1 (3.6 kW, flat on ground) | 0.57 W per W/m² GHI (~16% of nameplate) | superseded: array 1 decommissioned 2026-07-18, and this figure predates the POA reformulation. Re-measure after remount |
 | Load, June occupancy | 5.15 kWh/day (214 W avg) | DC-bus basis; July 10–28 mean 217 W |
 | Overnight load (01:00–04:00) | **~184 W mean** (105 W instantaneous minimum) | of which refrigeration ~32 W. Identified always-on gear — Starlink ~34 W DC-side, Magnum no-load ~44 W, Pi/comms ~15 W — accounts for only ~93 W, leaving **~59 W unidentified** |
@@ -168,21 +176,21 @@ this class of hardware plausibly delivers, so the July end of the bracket is
 likely biased high — probably by selection, since uncurtailed bins skew toward
 cool-panel morning conditions.
 
-**Confirmed by continued drift (2026-07-30 rerun).** Three additional days
-moved the fitted coefficient down and did not converge it:
+**Confirmed by continued drift (2026-08-01 rerun).** Additional days moved the
+fitted coefficient down and reduced fit quality rather than converging it:
 
 | Window | Bins | Coefficient | % of nameplate |
 |---|---|---|---|
 | 2026-07-19 .. 07-27 | 308 | 2.01 | 84% |
 | 2026-07-19 .. 07-30 | 373 | **1.90** | 79% |
 | 2026-07-28 .. 07-30 (marginal) | 65 | 1.56 | 65% |
+| 2026-07-19 .. 08-01 | 469 | **1.70** | 71% |
 
-The marginal three days alone read 1.56, close to the June figure of 1.60, so
-the running estimate is drifting toward the low end of the bracket as sample
-composition broadens. This is what a sample-composition-dependent estimator
-looks like from the inside: each window is internally consistent and they
-disagree with each other. Scenario tables therefore quote the bracket, and
-1.90 is used only as the current midpoint — not as a settled value.
+The marginal three July days alone read 1.56, close to the June figure of 1.60,
+and the extended fit has now moved to 1.70 with R² only 0.44. This is what a
+sample-composition-dependent estimator looks like from the inside: each window
+is internally consistent and the windows disagree. Scenario tables therefore
+quote the bracket. No running slope is treated as a midpoint or best estimate.
 
 Root cause: the regression uses **modeled** irradiance as its independent
 variable. Open-Meteo GHI is an hourly value on a ~1 km grid, polled every
@@ -240,51 +248,55 @@ through February, bottoming in the Dec 20 – Jan 1 weeks.
 
 ### Interim: array 0 only (until array 1 remount, ~Sep 2027)
 
-With array 1 decommissioned, winter 2026–27 runs on array 0 alone. On the POA
-basis with the 1.60–2.01 coefficient bracket, darkest-week potential is
-**2.8–3.5 kWh/day** — the previous figure of 1.5 kWh/day was the ~2× geometry
-error described above:
+With array 1 decommissioned, winter 2026–27 runs on array 0 alone. The pinned
+ERA5 run and the 1.60–2.01 coefficient bracket give mean Dec 15–31 production
+of **3.0–3.8 kWh/day**:
 
-| Mode | Load | Worst 7-day (median winter) | Median winter deficit | Generator sessions/winter |
-|---|---|---|---|---|
-| Full occupancy | 5.15 + heater | −25 to −28 kWh | 300–390 kWh | 18–27 |
-| No refrigeration | 4.38 + heater | −20 to −22 kWh | 220–280 kWh | 12–18 |
-| Lean unattended caretaker | ~0.5 + heater | **+4.6 to +7.2 kWh** | ~2–5 kWh | 0 — min SOC 79–84%, no empty days in 9 winters |
+| Mode | Load | Worst 7-day, median winter | Median Oct–Apr net | Gross negative-day energy | Manual generator |
+|---|---|---:|---:|---:|---:|
+| Full occupancy | 5.15 + heater | −27.1 to −24.5 kWh | −18 to +281 kWh | 311–246 kWh | 47–37 starts, 306–238 kWh, 96–74 h |
+| No refrigeration | 4.38 + heater | −21.7 to −19.1 kWh | +145 to +444 kWh | 230–179 kWh | 33–22 starts, 210–139 kWh, 66–44 h |
+| Lean unattended caretaker | ~0.5 + heater | **+5.3 to +8.0 kWh** | +963 to +1262 kWh | 2–1 kWh | no generator; min SOC 75–77%, no empty hours |
 
-At the 1.90 midpoint the same three rows read −26.0, −20.6 and +6.4 kWh, with
-a lean-caretaker SOC floor of 83%. Regenerate any of this with
-`python3 scripts/annual_model.py` (add `--array1` for the post-remount system).
+Generator figures use 3.2 kW DC-bus-equivalent output, a planning start at 20%
+SOC, and the operator's 90% stop target. They supersede the former
+"bank-empty event" count, which instantaneously refilled an empty bank and was
+not an operational generator policy. `Gross negative-day energy` is storage-
+shifting pressure, **not** seasonal deficit or generator fuel energy; the
+separate Oct–Apr net column makes that distinction explicit. Regenerate the
+table with `python3 scripts/annual_model.py`.
 
 Two conclusions changed with these corrections:
 
-- **Unattended winter 2026–27 on array 0 alone is comfortable, not marginal.**
-  The lean stack runs a real surplus through the darkest weeks with an 80%+
-  SOC floor across all nine simulated winters. Heater-duty error is no longer
-  near the edge — though logging it remains the top open measurement, being
-  the largest modeled-but-unmeasured term left.
+- **Unattended winter 2026–27 on array 0 alone has modeled margin, but the SOC
+  floor is not an empirical guarantee.** The baseline hourly run bottoms at
+  75% SOC. At the low coefficient, 2× heater duty bottoms at 35%, a 25% winter
+  PV haircut bottoms at 69%, and the combined 2×-heater/25%-PV-loss case bottoms
+  at 16%; none empties the bank in the nine ERA5 winters. Snow cover, heater
+  duty and winter array response remain unmeasured, so this supports a
+  conditional planning conclusion rather than a reliability claim.
 - **Shedding refrigeration is no longer a strategy.** At a measured
-  0.77 kWh/day it removes ~5 kWh from a 220–280 kWh winter deficit. Occupied
-  winter needs the generator whether the freezers run or not, so the
+  0.77 kWh/day reduces modeled generator use but does not eliminate it. Occupied
+  winter still uses the generator under the stated SOC policy, so the
   operational lever is generator scheduling, not fridge discipline. The
   ~59 W of unidentified always-on overnight load is a larger target than the
   freezers.
 
 ### Post-mount scenarios (array 1 on the cabin roof, ~Sep 2027+)
 
-Scenario results with array 1 mounted (45°, December beam 15% — conservative
-now that the roof adds ~10 ft). Because mounted array 1's
-real-world health is unknown until it is on the platform, its **performance
-ratio (PR)** — delivered output as a fraction of nameplate under the same
-irradiance, absorbing wiring, mismatch, soiling, and conversion losses — is
-bracketed: PR 0.55 pessimistic (performs like aging array 0 does today) to
-PR 0.70 optimistic (mounting recovers most of the flat-layout losses). The
-post-mount recalibration below replaces this bracket with a measurement.
+`--array1` remains a **design-sensitivity mode, not a forecast**. It evaluates
+both PR 0.55 and 0.70 rather than hiding their midpoint, prints a prominent
+commissioning warning, and uses the same operational generator policy as the
+Array 0 table. The old survey was taken below the planned rooftop height, the
+performance ratio is assumed, and neither summer output nor winter shading is
+known for the final installation. Publishing another precise outcome table
+would imply evidence that does not exist.
 
-| Mode | Load | Darkest-week balance | Winter outcome (9 simulated winters) |
-|---|---|---|---|
-| Full occupancy | ~5.7 kWh/day incl. heater | −2.2 to −2.7 kWh/day | Structural deficit, ~165–215 kWh/winter; generator required (~13–17 bank-empty events/winter) |
-| No refrigeration *(legacy 2.6 kWh/day subtraction; rerun required)* | ~2.3 + heater | ≈ −0.3 kWh/day | Bank rides through in **all 9 winters at both bracket ends**: worst-winter minimum SOC 24% at PR 0.55, 43% at PR 0.70 |
-| Lean unattended caretaker | ~0.5 + heater | positive to neutral | Robust in every scenario tested, incl. zero December beam and 2× heater duty; min SOC ≥ 76% even with array 1 contributing nothing |
+The first defensible full-system run is deliberately gated on Array 1
+commissioning in summer 2027: verify topology and controller telemetry, collect
+uncurtailed output, replace the PR bracket, then carry the measured coefficient
+through the following winter as observations accumulate. Until that gate,
+`python3 scripts/annual_model.py --array1` is for comparing designs only.
 
 Lean caretaker stack: Pi + comms ~15 W continuous; inverter hard-off except a
 daily ~60-minute window (supervisor toggles the Magnum — the one Magnum write
@@ -300,27 +312,24 @@ more when snow-melting) — roughly a third of the darkest-week PV harvest —
 which is why lean mode reduces it to the daily window (~1/8 the cost) rather
 than carrying it continuously.
 
-## Battery capacity: 200 Ah vs 400 Ah (evaluated 2026-07-02)
+## Battery capacity: 200 Ah vs 400 Ah
 
-Question: is doubling the bank (~8.7 → ~17.4 kWh usable) game-changing in any
-off-season scenario? **No — winter is energy-limited, not storage-limited.**
-A battery bridges deficits; it cannot erase a structural one.
+The hourly model corrects the old blanket statement that winter is purely
+energy-limited. Storage cannot fix a sustained deficit, but it can capture
+sunny-period surplus that the 8.7 kWh bank discards and carry it across a dark
+spell. At the conservative `k=1.60`, doubling usable energy to 17.4 kWh changes
+the manual-generator result as follows:
 
-| Scenario | 200 Ah | 400 Ah | Verdict |
-|---|---|---|---|
-| Full load, occupied | ~13–17 generator sessions/winter | ~7–9 | Halves generator *starts*; same total energy |
-| No-fridge, occupied *(legacy subtraction; rerun required)* | 0 bank-empty events in 9 winters, both PR bracket ends | 0 | Previous result; measured refrigeration share invalidates this load allocation |
-| Lean unattended, as-built | 0 failures (even 2× heater duty) | 0 | Already solved at 200 Ah |
-| Lean unattended + array 1 failed + 1.5× heater | 4 dead days in 9 winters | 0 | Was 37 vs 6 before the array 0 wiring-fault correction; the corrected array largely closes this corner on its own |
-| Same double fault at 2× heater | 98 dead days | 38 | Structural; neither bank size saves it |
+| Scenario | 8.7 kWh usable | 17.4 kWh usable |
+|---|---:|---:|
+| Full occupancy | 47 starts, 306 kWh / 96 h | 18 starts, 238 kWh / 74 h |
+| No refrigeration | 33 starts, 210 kWh / 66 h | 12 starts, 156 kWh / 49 h |
+| Lean unattended minimum SOC | 75% | 87% |
 
-The marginal value of doubling is (a) fewer, longer generator sessions when
-occupied at full load, and (b) residual insurance depth in the *double-fault*
-unattended winter (an array failure combined with underestimated heater duty)
-— a corner the array 0 wiring-fault correction already shrank from 37 dead
-days to 4. The same budget pointed at winter *supply* — unshaded winter panel
-capacity, or platform height that clears the roofline — attacks the deficit
-directly and is worth more per dollar in every non-fault scenario.
+So added storage reduces both starts **and** generator energy in this finite-
+storage system, although winter supply remains the more direct cure for dark-
+week deficits. Reproduce other sizes with `--bank-usable-kwh`; these are model
+sensitivities, not a battery-purchase recommendation.
 
 **Decision (2026-07-02): collect a full season of data first** (heater duty,
 post-mount calibration), then choose between insurance (battery), supply
@@ -389,15 +398,14 @@ leg. December beam passage is the number that decides whether a leg delivers
 
 In rough order of information value:
 
-1. **Battery heater duty vs temperature** (winter 2026–27; heater is
-   Pi-permissive, so log it). Now the largest modeled-but-unmeasured term in
-   the whole model, and the only remaining input to the unattended-winter
-   verdict that has never been observed.
-2. **A measured irradiance reference on site** — a small pyranometer, or one
-   of the decommissioned array 1 panels wired as a reference cell reading
-   short-circuit current. This replaces modeled GHI as the regression's
-   independent variable and is the only way to move the coefficient bracket
-   before winter; see [calibration limits](#why-the-coefficient-is-not-locked-in).
+1. **Battery heater duty vs temperature — hardware-deferred until summer
+   2027 or later.** Until instrumentation changes are practical, carry the
+   explicit 1×/2× stress cases rather than narrowing this assumption.
+2. **A measured plane-of-array irradiance reference — hardware-deferred until
+   summer 2027 or later.** Until then the Array 0 coefficient remains the
+   1.60–2.01 bracket; more summer samples against modeled weather must not be
+   presented as convergence. See
+   [calibration limits](#why-the-coefficient-is-not-locked-in).
 3. **Identify the ~59 W of unexplained always-on overnight load** (184 W
    measured overnight, ~93 W of identified always-on gear, ~32 W
    refrigeration). A second Sonoff S31 on a suspected circuit would settle
@@ -412,15 +420,22 @@ In rough order of information value:
    (whenever roof access exists, ideally near solstice-relevant sun angles):
    replaces the old +1.4/+2.1 m ladder follow-ups; quantifies how much of
    the December noon block the ~10 ft of extra height recovers.
-6. *(Deferred to ~Sep 2027, after remount)* Post-mount recalibration of
-   array 1 (`calibrate_pv.py <date>`): does per-kW effectiveness recover
+6. **Commissioning gate, summer 2027:** post-mount recalibration of Array 1
+   (`calibrate_pv.py <date>`): does per-kW effectiveness recover
    from the 16% flat floor toward the PR 0.55–0.70 band? Verify
    `epever.1 pv_voltage` ~108 V class (3s4p) on reconnect, and capture a
-   clear-day December `pv_power` trace — a midday notch vs a clean bell is
-   the measured occlusion profile.
+   clear-day trace when seasonally available. The first full empirical model
+   run waits for this commissioning dataset; winter validation follows as the
+   first mounted winter accumulates.
 
 ## History
 
+- 2026-08-01 — model audit: historical weather pinned to ERA5; SOC simulation
+  moved to hourly resolution; manual 3.2 kW generator modeled from configurable
+  start SOC to the operator's 90% stop target; seasonal net, negative-day
+  pressure and generator energy separated; stress scenarios and tests added.
+  Array 1 results explicitly gated on summer 2027 commissioning
+  ([journal](journal/2026-08-01.md)).
 - 2026-07-02 — initial model, AR shading survey, 3s4p decision, battery
   200-vs-400 Ah analysis ([journal](journal/2026-07-02.md)).
 - 2026-07-18 — array 0 wiring fault discovered and corrected (one panel

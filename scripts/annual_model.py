@@ -1,36 +1,26 @@
-"""Annual power-balance model for the Wawa off-grid system.
+"""Historical power-balance model for the Wawa off-grid system.
 
     python3 scripts/annual_model.py [--k K] [--array1] [--cache DIR]
 
-Models delivered DC energy as
+The model uses hourly, consistently sourced ERA5 weather. Array 0 production is
+``k * POA(45 deg south) * temperature_factor``. The calibrated ``k`` remains a
+bracket because summer telemetry is not a reliable point calibration for
+winter. Array 1 results are provisional until its 2027 commissioning data exist.
 
-    PV = k * POA(45 deg S) * temperature_factor
-
-where POA is plane-of-array irradiance for the site (10-year Open-Meteo/ERA5
-series, fetched and cached on first run) and `k` is the per-array coefficient
-in W per W/m2 of POA at 25 C, calibrated by scripts/calibrate_pv.py.
-
-Modeling a tilted array against *horizontal* irradiance -- as this script did
-before 2026-07-27 -- understates December output by ~2x, because POA/GHI at
-45 deg south runs 0.93 in July and 1.86 in December here. See
-docs/power-budget.md.
-
-`k` is deliberately a bracket, not a point estimate: successive calibration
-windows do not agree (1.60 in June scaled for the wiring fault, 2.01 over
-2026-07-19..27, 1.90 over 07-19..30), because the regression's independent
-variable is modeled irradiance that cannot track site cloud. Runs print both
-ends so the spread stays visible in the output rather than hiding in a mean.
-
-Array 1 is decommissioned until ~Sep 2027; pass --array1 to model the
-post-remount system.
+Attended scenarios model the manual generator at 3.2 kW: start at a configurable
+SOC threshold (20% default) and run to 90%. Generator power is treated as DC-bus
+energy; conversion losses are not yet measured, so runtime is optimistic by the
+unknown generator-to-DC loss. Unattended scenarios never use the generator.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import statistics as st
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import defaultdict
@@ -41,41 +31,55 @@ from site_location import site_coordinates
 
 LAT, LON, _COORD_SOURCE = site_coordinates()
 ARCHIVE = "https://archive-api.open-meteo.com/v1/archive"
+WEATHER_MODEL = "era5"
 YEARS = ("2016-01-01", "2025-12-31")
 SEASONS = range(2016, 2025)  # complete winters, Oct-Apr
 
 ARRAY0_KW, ARRAY1_KW = 2.4, 3.6
-K_BRACKET = (1.60, 2.01)          # W per W/m2 POA at 25 C, array 0
-ARRAY1_PR_BRACKET = (0.55, 0.70)  # fraction of nameplate, post-remount estimate
-ARRAY1_DEC_BEAM = 0.15            # surveyed beam passage at the array 1 site
+K_BRACKET = (1.60, 2.01)
+ARRAY1_PR_BRACKET = (0.55, 0.70)
+ARRAY1_DEC_BEAM = 0.15
 
-GAMMA_P = -0.0041                 # module power temp coefficient, per degC
+GAMMA_P = -0.0041
 BANK_USABLE_KWH = 10.24 * 0.85
 HEATER_W = 200.0
+GENERATOR_KW = 3.2
+GENERATOR_START_SOC = 0.20
+GENERATOR_STOP_SOC = 0.90
 
-LOADS = {                          # kWh/day, excluding the battery heater
+LOADS = {
     "full occupancy": 5.15,
-    "no refrigeration": 4.38,      # 5.15 - metered 0.77
-    "lean caretaker": 0.52,        # Pi/comms + one 60-min inverter+Starlink window
+    "no refrigeration": 4.38,
+    "lean caretaker": 0.52,
 }
 
 
 def _fetch(cache_dir, name, params):
-    # Key the cache on coordinates: the same filename fetched at a different
-    # location must not silently reuse the previous site's data.
-    tag = f"{params['latitude']:.3f}_{params['longitude']:.3f}"
-    path = os.path.join(cache_dir, f"{tag}-{name}")
+    """Fetch and cache one Open-Meteo response, keyed by all model inputs."""
+    identity = {
+        "latitude": round(params["latitude"], 3),
+        "longitude": round(params["longitude"], 3),
+        "model": params.get("models"),
+        "start": params.get("start_date"),
+        "end": params.get("end_date"),
+        "hourly": params.get("hourly"),
+        "tilt": params.get("tilt"),
+        "azimuth": params.get("azimuth"),
+    }
+    tag = urllib.parse.quote(json.dumps(identity, sort_keys=True), safe="")
+    # Keep filenames manageable while retaining the human-readable model name.
+    digest = hashlib.sha256(tag.encode()).hexdigest()[:16]
+    path = os.path.join(cache_dir, f"{WEATHER_MODEL}-{digest}-{name}")
     if os.path.exists(path):
-        return json.load(open(path))
+        with open(path) as handle:
+            return json.load(handle)
     os.makedirs(cache_dir, exist_ok=True)
     url = f"{ARCHIVE}?{urllib.parse.urlencode(params)}"
-    print(f"fetching {name} ...")
+    print(f"fetching {name} ({WEATHER_MODEL}) ...")
     try:
         with urllib.request.urlopen(url, timeout=120) as response:
             data = json.load(response)
     except urllib.error.URLError:
-        # Some Python builds (notably python.org macOS) ship without a usable
-        # CA bundle. curl is present on both the Mac and the Pi.
         import subprocess
         result = subprocess.run(["curl", "-sS", "--fail", url],
                                 capture_output=True, text=True, timeout=180)
@@ -84,157 +88,297 @@ def _fetch(cache_dir, name, params):
         data = json.loads(result.stdout)
     if "error" in data:
         raise SystemExit(f"Open-Meteo error for {name}: {data.get('reason')}")
-    json.dump(data, open(path, "w"))
+    data["_offgrid_request"] = identity
+    with open(path, "w") as handle:
+        json.dump(data, handle)
     return data
 
 
-def load_days(cache_dir):
-    """Per-day POA (kWh/m2), irradiance-weighted mean POA (W/m2), and ambient temp."""
-    daily = _fetch(cache_dir, "daily.json", {
-        "latitude": LAT, "longitude": LON, "start_date": YEARS[0], "end_date": YEARS[1],
-        "daily": "temperature_2m_mean", "timezone": "America/Toronto"})
-    temps = dict(zip(daily["daily"]["time"], daily["daily"]["temperature_2m_mean"]))
-
-    poa_sum, poa_sqsum = defaultdict(float), defaultdict(float)
-    for half, (start, end) in enumerate((("2016-01-01", "2020-12-31"), ("2021-01-01", "2025-12-31"))):
-        block = _fetch(cache_dir, f"tilted{half}.json", {
-            "latitude": LAT, "longitude": LON, "start_date": start, "end_date": end,
-            "hourly": "global_tilted_irradiance", "tilt": 45, "azimuth": 0,
-            "timezone": "America/Toronto"})
-        hourly = block["hourly"]
-        for stamp, value in zip(hourly["time"], hourly["global_tilted_irradiance"]):
-            if value:
-                poa_sum[stamp[:10]] += value
-                poa_sqsum[stamp[:10]] += value * value
-
-    days = []
-    for date in sorted(poa_sum):
-        temp = temps.get(date)
-        if temp is None:
-            continue
-        weighted_poa = poa_sqsum[date] / poa_sum[date] if poa_sum[date] else 0.0
-        cell_temp = temp + 0.03 * weighted_poa
-        days.append({
-            "date": date,
-            "month": int(date[5:7]),
-            "temp": temp,
-            "poa_kwh": poa_sum[date] / 1000.0,
-            "factor": 1 + GAMMA_P * (cell_temp - 25),
+def load_hours(cache_dir):
+    """Return hourly local-time POA and ambient temperature from pinned ERA5."""
+    hours = []
+    ranges = (("2016-01-01", "2020-12-31"), ("2021-01-01", "2025-12-31"))
+    for half, (start, end) in enumerate(ranges):
+        block = _fetch(cache_dir, f"hourly{half}.json", {
+            "latitude": LAT,
+            "longitude": LON,
+            "start_date": start,
+            "end_date": end,
+            "hourly": "global_tilted_irradiance,temperature_2m",
+            "tilt": 45,
+            "azimuth": 0,
+            "timezone": "America/Toronto",
+            "models": WEATHER_MODEL,
         })
-    return days
+        hourly = block["hourly"]
+        for stamp, poa, temp in zip(hourly["time"],
+                                    hourly["global_tilted_irradiance"],
+                                    hourly["temperature_2m"]):
+            if poa is None or temp is None:
+                continue
+            poa = max(0.0, float(poa))
+            cell_temp = float(temp) + 0.03 * poa
+            hours.append({
+                "stamp": stamp,
+                "date": stamp[:10],
+                "month": int(stamp[5:7]),
+                "temp": float(temp),
+                "poa_w": poa,
+                "factor": max(0.0, 1 + GAMMA_P * (cell_temp - 25)),
+            })
+    return hours
 
 
 def heater_kwh(temp):
-    """200 W on a temperature-scaled duty: ~0 above +2 C, ~4 h/day at -10 C."""
+    """Estimated daily heater energy from daily mean ambient temperature."""
     return HEATER_W / 1000 * min(12.0, max(0.0, (2.0 - temp) * 0.35))
 
 
-def production(day, k, with_array1):
-    total = k * day["poa_kwh"] * day["factor"]
-    if with_array1:
-        # array 1's surveyed site loses most December beam; scale its POA
-        # accordingly (beam is ~68% of December POA at this tilt).
-        beam_pass = ARRAY1_DEC_BEAM if day["month"] in (11, 12, 1, 2) else 1.0
+def _daily_temperatures(hours):
+    values = defaultdict(list)
+    for hour in hours:
+        values[hour["date"]].append(hour["temp"])
+    return {date: st.mean(temps) for date, temps in values.items()}
+
+
+def production(hour, k, array1_pr=None, winter_pv_factor=1.0):
+    """Delivered DC energy during one hourly weather interval, in kWh."""
+    total = k * hour["poa_w"] / 1000.0 * hour["factor"]
+    if array1_pr is not None:
+        beam_pass = ARRAY1_DEC_BEAM if hour["month"] in (11, 12, 1, 2) else 1.0
         derate = 0.32 + 0.68 * beam_pass
-        pr = sum(ARRAY1_PR_BRACKET) / 2
-        total += ARRAY1_KW * pr * day["poa_kwh"] * day["factor"] * derate
+        total += (ARRAY1_KW * array1_pr * hour["poa_w"] / 1000.0
+                  * hour["factor"] * derate)
+    if hour["month"] in (10, 11, 12, 1, 2, 3, 4):
+        total *= winter_pv_factor
     return total
 
 
-def scenario(days, k, load, with_array1):
-    nets = [production(d, k, with_array1) - (load + heater_kwh(d["temp"])) for d in days]
-    dark = st.mean([production(d, k, with_array1) for d in days
-                    if d["month"] == 12 and int(d["date"][8:10]) >= 15])
+def _winter_season(date):
+    year, month = int(date[:4]), int(date[5:7])
+    if month >= 10:
+        return year
+    if month <= 4:
+        return year - 1
+    return None
 
-    worst7, deficit = {}, defaultdict(float)
-    for i in range(len(days) - 6):
-        season = _season(days[i]["date"])
-        total = sum(nets[i:i + 7])
-        if season in SEASONS and (season not in worst7 or total < worst7[season]):
-            worst7[season] = total
-    for day, net in zip(days, nets):
-        season = _season(day["date"])
-        if net < 0 and season in SEASONS:
-            deficit[season] += -net
 
-    soc, sessions = BANK_USABLE_KWH, defaultdict(int)
-    for day, net in zip(days, nets):
-        soc = min(BANK_USABLE_KWH, soc + net)
-        if soc <= 0:
-            sessions[_season(day["date"])] += 1
-            soc = BANK_USABLE_KWH
+def _hourly_records(hours, k, load, array1_pr=None, heater_multiplier=1.0,
+                    winter_pv_factor=1.0):
+    daily_temp = _daily_temperatures(hours)
+    for hour in hours:
+        heater = heater_multiplier * heater_kwh(daily_temp[hour["date"]]) / 24.0
+        pv = production(hour, k, array1_pr, winter_pv_factor)
+        demand = load / 24.0 + heater
+        yield hour, pv, demand, pv - demand
 
-    ordered = sorted(worst7.values())
+
+def _run_generator_hour(soc, natural_net, generator_on, start_kwh, stop_kwh,
+                        generator_kw):
+    """Advance one hour, including fractional start/stop within the interval."""
+    sessions = runtime = generator_energy = unserved = 0.0
+    remaining = 1.0
+
+    if not generator_on and natural_net < 0 and soc + natural_net <= start_kwh:
+        to_start = max(0.0, min(1.0, (soc - start_kwh) / -natural_net))
+        soc += natural_net * to_start
+        remaining -= to_start
+        generator_on = True
+        sessions = 1.0
+
+    if generator_on:
+        rate = natural_net + generator_kw
+        if rate <= 0:
+            runtime = remaining
+            generator_energy = generator_kw * remaining
+            soc += rate * remaining
+        else:
+            time_to_stop = max(0.0, (stop_kwh - soc) / rate)
+            run_for = min(remaining, time_to_stop)
+            runtime = run_for
+            generator_energy = generator_kw * run_for
+            soc += rate * run_for
+            remaining -= run_for
+            if time_to_stop <= run_for + 1e-12:
+                soc = stop_kwh
+                generator_on = False
+                soc += natural_net * remaining
+    else:
+        soc += natural_net * remaining
+
+    if soc < 0:
+        unserved = -soc
+        soc = 0.0
+    soc = min(BANK_USABLE_KWH, soc)
+    return soc, generator_on, sessions, runtime, generator_energy, unserved
+
+
+def scenario(hours, k, load, array1_pr=None, generator_kw=GENERATOR_KW,
+             generator_start_soc=GENERATOR_START_SOC,
+             generator_stop_soc=GENERATOR_STOP_SOC,
+             heater_multiplier=1.0, winter_pv_factor=1.0):
+    """Run attended Oct-Apr winters with the manual-generator policy."""
+    records = list(_hourly_records(hours, k, load, array1_pr,
+                                   heater_multiplier, winter_pv_factor))
+    daily_net, daily_pv = defaultdict(float), defaultdict(float)
+    for hour, pv, _demand, net in records:
+        daily_net[hour["date"]] += net
+        daily_pv[hour["date"]] += pv
+
+    dark_values = [pv for date, pv in daily_pv.items()
+                   if date[5:7] == "12" and int(date[8:10]) >= 15]
+    winter_dates = defaultdict(list)
+    for date in sorted(daily_net):
+        season = _winter_season(date)
+        if season in SEASONS:
+            winter_dates[season].append(date)
+
+    worst7, net_energy, gross_negative = {}, {}, {}
+    for season, dates in winter_dates.items():
+        values = [daily_net[date] for date in dates]
+        worst7[season] = min(sum(values[i:i + 7])
+                             for i in range(max(1, len(values) - 6)))
+        net_energy[season] = sum(values)
+        gross_negative[season] = sum(-value for value in values if value < 0)
+
+    sessions = defaultdict(int)
+    runtime = defaultdict(float)
+    generator_energy = defaultdict(float)
+    unserved = defaultdict(float)
+    min_soc = defaultdict(lambda: BANK_USABLE_KWH)
+    state = {}
+    start_kwh = BANK_USABLE_KWH * generator_start_soc
+    stop_kwh = BANK_USABLE_KWH * generator_stop_soc
+    for hour, _pv, _demand, net in records:
+        season = _winter_season(hour["date"])
+        if season not in SEASONS:
+            continue
+        soc, generator_on = state.get(season, (BANK_USABLE_KWH, False))
+        result = _run_generator_hour(soc, net, generator_on, start_kwh,
+                                     stop_kwh, generator_kw)
+        soc, generator_on, starts, run, energy, lost = result
+        state[season] = soc, generator_on
+        sessions[season] += int(starts)
+        runtime[season] += run
+        generator_energy[season] += energy
+        unserved[season] += lost
+        min_soc[season] = min(min_soc[season], soc)
+
+    ordered_worst7 = sorted(worst7.values())
     return {
-        "dark_kwh_day": dark,
-        "worst7_median": ordered[len(ordered) // 2],
-        "worst7_min": ordered[0],
-        "deficit_median": st.median(list(deficit.values()) or [0.0]),
-        "generator_sessions": st.mean([sessions[s] for s in SEASONS]),
+        "dark_kwh_day": st.mean(dark_values),
+        "worst7_median": st.median(ordered_worst7),
+        "worst7_min": min(ordered_worst7),
+        "winter_net_median": st.median(net_energy.values()),
+        "gross_negative_median": st.median(gross_negative.values()),
+        "generator_sessions": st.mean(sessions[s] for s in SEASONS),
+        "generator_kwh": st.mean(generator_energy[s] for s in SEASONS),
+        "generator_hours": st.mean(runtime[s] for s in SEASONS),
+        "min_soc": min(min_soc.values()) / BANK_USABLE_KWH,
+        "unserved_kwh": sum(unserved.values()),
     }
 
 
-def winter_soc(days, k, load, with_array1):
-    """Unattended: no generator refill, so the bank can sit empty."""
-    winters = defaultdict(list)
-    for day in days:
-        month = day["month"]
-        if month >= 10:
-            winters[int(day["date"][:4])].append(day)
-        elif month <= 4:
-            winters[int(day["date"][:4]) - 1].append(day)
-
-    worst, empty = BANK_USABLE_KWH, 0
-    for season in SEASONS:
-        soc = BANK_USABLE_KWH
-        for day in winters.get(season, []):
-            soc = min(BANK_USABLE_KWH, soc + production(day, k, with_array1)
-                      - (load + heater_kwh(day["temp"])))
-            if soc <= 0:
-                empty += 1
-                soc = 0.0
-            worst = min(worst, soc)
-    return worst, empty
+def winter_soc(hours, k, load, array1_pr=None, heater_multiplier=1.0,
+               winter_pv_factor=1.0):
+    """Simulate unattended Oct-Apr winters with no generator."""
+    states = {season: BANK_USABLE_KWH for season in SEASONS}
+    worst, empty_hours = BANK_USABLE_KWH, 0
+    for hour, _pv, _demand, net in _hourly_records(
+            hours, k, load, array1_pr, heater_multiplier, winter_pv_factor):
+        season = _winter_season(hour["date"])
+        if season not in SEASONS:
+            continue
+        soc = min(BANK_USABLE_KWH, states[season] + net)
+        if soc <= 0:
+            empty_hours += 1
+            soc = 0.0
+        states[season] = soc
+        worst = min(worst, soc)
+    return worst, empty_hours
 
 
-def _season(date):
-    year, month = int(date[:4]), int(date[5:7])
-    return year if month >= 7 else year - 1
+def _print_scenario_table(hours, k, array1_pr, args):
+    label = f"; array 1 PR={array1_pr:.2f} PROVISIONAL" if array1_pr is not None else ""
+    print(f"k={k:.2f} ({100*k/ARRAY0_KW:.0f}% Array 0 nameplate){label}")
+    print(f"  {'mode':>18} {'darkPV':>7} {'w7med':>7} {'net/wtr':>8} "
+          f"{'negdays':>8} {'gen#':>6} {'genkWh':>7} {'genh':>6} {'minSOC':>7}")
+    for name, load in LOADS.items():
+        result = scenario(hours, k, load, array1_pr,
+                          generator_kw=args.generator_kw,
+                          generator_start_soc=args.generator_start_soc,
+                          generator_stop_soc=args.generator_stop_soc)
+        print(f"  {name:>18} {result['dark_kwh_day']:7.2f} {result['worst7_median']:7.1f} "
+              f"{result['winter_net_median']:8.0f} {result['gross_negative_median']:8.0f} "
+              f"{result['generator_sessions']:6.1f} {result['generator_kwh']:7.0f} "
+              f"{result['generator_hours']:6.1f} {100*result['min_soc']:6.0f}%")
+    worst, empty = winter_soc(hours, k, LOADS["lean caretaker"], array1_pr)
+    print(f"  unattended lean: worst SOC {100*worst/BANK_USABLE_KWH:.0f}%, "
+          f"{empty} empty hours across {len(SEASONS)} winters\n")
+
+
+def _print_stress_cases(hours):
+    print("Lean unattended stress cases (Array 0 only, low calibration k=1.60):")
+    print(f"  {'case':>26} {'minSOC':>7} {'empty hours':>11}")
+    cases = (
+        ("baseline", 1.0, 1.0),
+        ("heater 2x", 2.0, 1.0),
+        ("winter PV 75%", 1.0, 0.75),
+        ("heater 2x + PV 75%", 2.0, 0.75),
+    )
+    for name, heater_factor, pv_factor in cases:
+        worst, empty = winter_soc(hours, K_BRACKET[0], LOADS["lean caretaker"],
+                                  heater_multiplier=heater_factor,
+                                  winter_pv_factor=pv_factor)
+        print(f"  {name:>26} {100*worst/BANK_USABLE_KWH:6.0f}% {empty:11d}")
 
 
 def main():
+    global BANK_USABLE_KWH
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--k", type=float, action="append",
-                        help="array 0 coefficient (W per W/m2 POA at 25 C); repeatable. "
-                             f"Default: the calibrated bracket {K_BRACKET}")
+                        help=f"Array 0 coefficient; repeatable. Default: {K_BRACKET}")
     parser.add_argument("--array1", action="store_true",
-                        help="include array 1 (post-remount, ~Sep 2027)")
-    parser.add_argument("--cache", default=os.path.expanduser("~/.cache/offgrid-irradiance"),
-                        help="directory for cached Open-Meteo data")
+                        help="include provisional 2027 Array 1 bracket")
+    parser.add_argument("--cache", default=os.path.expanduser("~/.cache/offgrid-irradiance"))
+    parser.add_argument("--generator-kw", type=float, default=GENERATOR_KW,
+                        help=f"generator output delivered to DC bus (default {GENERATOR_KW})")
+    parser.add_argument("--generator-start-soc", type=float, default=GENERATOR_START_SOC)
+    parser.add_argument("--generator-stop-soc", type=float, default=GENERATOR_STOP_SOC)
+    parser.add_argument("--bank-usable-kwh", type=float, default=BANK_USABLE_KWH,
+                        help=f"usable battery energy (default {BANK_USABLE_KWH:.3f} kWh)")
+    parser.add_argument("--no-stress", action="store_true",
+                        help="omit unattended uncertainty table")
     args = parser.parse_args()
+    if not 0 <= args.generator_start_soc < args.generator_stop_soc <= 1:
+        parser.error("generator SOC thresholds must satisfy 0 <= start < stop <= 1")
+    if args.generator_kw <= 0:
+        parser.error("--generator-kw must be positive")
+    if args.bank_usable_kwh <= 0:
+        parser.error("--bank-usable-kwh must be positive")
+    BANK_USABLE_KWH = args.bank_usable_kwh
 
-    days = load_days(args.cache)
+    hours = load_hours(args.cache)
     ks = args.k or list(K_BRACKET)
-    label = "array 0 + array 1" if args.array1 else "array 0 only (array 1 decommissioned)"
-    print(f"\n{label}; {len(days)} days, winters {min(SEASONS)}-{max(SEASONS) + 1}")
-    print("Loads exclude the battery heater, which is added per-day from temperature.\n")
-
-    for k in ks:
-        print(f"k = {k:.2f} W per W/m2 POA at 25 C  ({100 * k / ARRAY0_KW:.0f}% of array 0 nameplate)")
-        header = f"  {'mode':>18} {'darkPV':>7} {'w7 med':>8} {'w7 min':>8} {'deficit':>8} {'gen/wtr':>8}"
-        print(header)
-        for name, load in LOADS.items():
-            r = scenario(days, k, load, args.array1)
-            print(f"  {name:>18} {r['dark_kwh_day']:7.2f} {r['worst7_median']:8.1f} "
-                  f"{r['worst7_min']:8.1f} {r['deficit_median']:8.0f} {r['generator_sessions']:8.1f}")
-        worst, empty = winter_soc(days, k, LOADS["lean caretaker"], args.array1)
-        print(f"  unattended lean caretaker: worst min SOC {100 * worst / BANK_USABLE_KWH:.0f}%, "
-              f"{empty} empty days across {len(list(SEASONS))} winters\n")
-
-    print("darkPV = mean Dec 15-31 production, kWh/day.  w7 = worst 7-day net, kWh "
-          "(median / worst of 9 winters).\ndeficit = median winter sum of negative days, kWh.  "
-          "gen/wtr = bank-empty events per winter when attended.")
+    array1_prs = list(ARRAY1_PR_BRACKET) if args.array1 else [None]
+    print(f"\nPinned weather={WEATHER_MODEL}; {len(hours)} hourly intervals; "
+          f"winters {min(SEASONS)}-{max(SEASONS)+1}")
+    print(f"Generator={args.generator_kw:.1f} kW DC-bus equivalent, manual start at "
+          f"{100*args.generator_start_soc:.0f}% SOC, stop at {100*args.generator_stop_soc:.0f}%.")
+    print(f"Usable battery={BANK_USABLE_KWH:.2f} kWh.")
+    print("Loads and heater are spread evenly within each day; generator conversion losses "
+          "are not yet measured.\n")
+    if args.array1:
+        print("WARNING: Array 1 outputs are design scenarios only; recalibrate after summer 2027 commissioning.\n")
+    for array1_pr in array1_prs:
+        for k in ks:
+            _print_scenario_table(hours, k, array1_pr, args)
+    if not args.no_stress and not args.array1:
+        _print_stress_cases(hours)
+    print("\nnet/wtr = median Oct-Apr net energy. negdays = median sum of negative daily "
+          "balances (storage-shifting pressure, not generator energy). Generator columns are "
+          "from the stated SOC policy; minSOC is the minimum attended end-of-hour SOC.")
 
 
 if __name__ == "__main__":
