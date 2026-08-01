@@ -317,19 +317,35 @@ than carrying it continuously.
 The hourly model corrects the old blanket statement that winter is purely
 energy-limited. Storage cannot fix a sustained deficit, but it can capture
 sunny-period surplus that the 8.7 kWh bank discards and carry it across a dark
-spell. At the conservative `k=1.60`, doubling usable energy to 17.4 kWh changes
-the manual-generator result as follows:
+spell. The installed 200 Ah bank is modeled at **8.704 kWh usable** (10.24 kWh
+nominal × 85%); the exact doubled case is **17.408 kWh usable**. The audited
+status quo and doubled-capacity results are below. Values are averages per
+winter across the nine ERA5 winters; ranges span the Array 0 coefficient
+bracket (`k=1.60–2.01`) and, where present, the provisional Array 1 performance
+bracket (PR 0.55–0.70).
 
-| Scenario | 8.7 kWh usable | 17.4 kWh usable |
-|---|---:|---:|
-| Full occupancy | 47 starts, 306 kWh / 96 h | 18 starts, 238 kWh / 74 h |
-| No refrigeration | 33 starts, 210 kWh / 66 h | 12 starts, 156 kWh / 49 h |
-| Lean unattended minimum SOC | 75% | 87% |
+| Array configuration | Load scenario | Status quo: 8.704 kWh usable | Double: 17.408 kWh usable |
+|---|---|---:|---:|
+| Array 0 only | Full occupancy | 37–47 starts; 238–306 kWh / 74–96 h | **12–18 starts; 155–238 kWh / 49–74 h** |
+| Array 0 only | No refrigeration | 22–33 starts; 139–210 kWh / 44–66 h | **7–12 starts; 90–156 kWh / 28–49 h** |
+| Array 0 only | Lean unattended | no starts; minimum SOC 75–77% | **no starts; minimum SOC 87–88%** |
+| Array 0 + Array 1 *(provisional)* | Full occupancy | 18–27 starts; 115–175 kWh / 36–55 h | **3–8 starts; 44–102 kWh / 14–32 h** |
+| Array 0 + Array 1 *(provisional)* | No refrigeration | 10–16 starts; 67–101 kWh / 21–32 h | **1–4 starts; 15–47 kWh / 5–15 h** |
+| Array 0 + Array 1 *(provisional)* | Lean unattended | no starts; minimum SOC 79–80% | **no starts; minimum SOC 89–90%** |
 
-So added storage reduces both starts **and** generator energy in this finite-
-storage system, although winter supply remains the more direct cure for dark-
-week deficits. Reproduce other sizes with `--bank-usable-kwh`; these are model
-sensitivities, not a battery-purchase recommendation.
+With Array 0 alone, doubling storage cuts starts by roughly two-thirds but does
+not change the operational conclusion: occupied winter still requires routine
+generator use. With Array 1, the doubled bank makes generator use occasional
+rather than routine in the model, but does not eliminate it: full occupancy
+still averages 3–8 starts per winter, and no-refrigeration 1–4.
+
+Starts fall more than generator energy because the fixed 20%-to-90% SOC policy
+puts roughly twice as much energy into each doubled-bank session. Added storage
+has its greatest value when it can retain sunny-period PV that the status-quo
+bank would discard; it cannot erase a sustained dark-week deficit. Array 1
+figures remain design sensitivities until summer 2027 commissioning and
+calibration. Reproduce other sizes with `--bank-usable-kwh`; none of these
+figures is a battery-purchase recommendation.
 
 **Decision (2026-07-02): collect a full season of data first** (heater duty,
 post-mount calibration), then choose between insurance (battery), supply
