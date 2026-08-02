@@ -151,6 +151,7 @@ and a supervisor deploy.
 - Python virtual environment at `${PROJECT_DIR}/.venv`.
 - Bubblewrap sandbox binary at `/usr/bin/bwrap`.
 - Official Codex CLI at `~/.local/bin/codex`.
+- GitHub CLI (`gh`) authenticated for pull requests and GitHub Actions.
 - Supervisor web/API on `127.0.0.1:8081`.
 - nginx on ports `80` and `8080`.
 - SocketCAN `can0` listen-only at 500 kbit/s.
@@ -244,6 +245,42 @@ and a supervisor deploy.
     is signed out, run `codex login --device-auth` and complete the browser
     flow. Do not copy Codex credentials from another machine.
 
+9b. Configure the full GitHub publish and Actions workflow. `install-pi.sh`
+    installs Debian's ARM64 `gh` package. Authenticate it separately from the
+    repository-scoped deploy keys:
+    ```sh
+    gh auth login --hostname github.com --git-protocol ssh --web \
+      --scopes workflow
+    ```
+    On the headless Pi, open the printed device URL on another computer and
+    enter the one-time code. When `gh` asks whether to upload an SSH key,
+    choose **Skip**: `blueberry_deploy` and `power_system_memory_deploy` are
+    repository-scoped deploy keys and must not be attached to the personal
+    GitHub account. The additional `workflow` scope permits publishing changes
+    to Actions workflow files; the normal login scopes cover repositories,
+    pull requests, checks and run logs.
+
+    Keep git pushes on the public repository's dedicated deploy key even if
+    the host SSH configuration is unavailable or rejects the restored system
+    config's ownership:
+    ```sh
+    git -C ~/power-system config core.sshCommand \
+      'ssh -F /dev/null -i /home/<user>/.ssh/blueberry_deploy -o IdentitiesOnly=yes'
+    ```
+    The private memory clone has the equivalent repository-local setting for
+    `power_system_memory_deploy`; restore it with:
+    ```sh
+    git -C ~/power-system/.ai/memory config core.sshCommand \
+      'ssh -F /dev/null -i /home/<user>/.ssh/power_system_memory_deploy -o IdentitiesOnly=yes'
+    ```
+    Replace `<user>` with the operator account. GitHub CLI authentication is
+    intentionally not copied from another machine or placed in the backup
+    archive; repeat the device login after a clean rebuild or image restore.
+    On this headless Pi, `gh` may store its OAuth token in
+    `~/.config/gh/hosts.yml` instead of a desktop keychain. Confirm it remains
+    operator-only with `chmod 600 ~/.config/gh/hosts.yml`; never print
+    `gh auth token` into logs or the backup bundle.
+
 10. Start a new SSH session — `install-pi.sh` adds `$USER` to the `offgrid`
     group, which only takes effect after re-login.
 
@@ -262,6 +299,12 @@ hostname
 command -v bwrap && bwrap --version
 bwrap --ro-bind / / --proc /proc --dev /dev /bin/true
 bash -lc 'command -v codex && codex --version && codex login status'
+gh --version
+gh auth status
+gh repo view finitor/power-system --json nameWithOwner,defaultBranchRef
+gh pr list --repo finitor/power-system --limit 1
+gh workflow list --repo finitor/power-system
+gh run list --repo finitor/power-system --limit 1
 systemctl is-active offgrid-supervisor offgrid-console nginx
 systemctl is-active offgrid-can-watchdog.timer offgrid-supervisor-watchdog.timer offgrid-metrics-export.timer
 # Hardware watchdog armed (RuntimeWatchdogUSec non-zero) and journald persistent
@@ -444,6 +487,23 @@ The simplest rollback is physical:
 2. Reinsert the old SD card or restored image.
 3. Boot and confirm `blueberry.local` returns.
 4. Run the normal health checks.
+5. Bring the restored image's Codex CLI back to the current standalone build.
+   A boot image may contain an old Codex binary, or may predate its installation
+   entirely. Reinstalling is safe and does not replace project data:
+   ```sh
+   sudo apt-get update
+   sudo apt-get install -y bubblewrap
+   curl -fsSL https://chatgpt.com/codex/install.sh \
+     | CODEX_NON_INTERACTIVE=1 sh
+   ~/.local/bin/codex --version
+   ~/.local/bin/codex login status \
+     || ~/.local/bin/codex login --device-auth
+   ```
+   Complete the device-code flow in a browser if requested. Authentication is
+   not part of the git checkout; do not copy Codex credentials from another
+   machine. Open a new shell afterward if `codex` is not yet found on `PATH`.
+6. Reinstall and authenticate GitHub CLI using step 9b. Then verify repository,
+   PR, workflow and run access using the `gh` commands in the validation block.
 
 Do not erase the old SD card or backup image until the new card has survived
 at least one deploy, one reboot, and a representative telemetry run.

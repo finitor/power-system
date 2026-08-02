@@ -14,10 +14,12 @@ echo "== os packages =="
 sudo apt-get update
 sudo apt-get install -y \
     acl \
+    bubblewrap \
     build-essential \
     can-utils \
     curl \
     git \
+    gh \
     iproute2 \
     jq \
     nginx \
