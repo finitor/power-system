@@ -119,8 +119,8 @@ Hysteresis control on pack temperature and temperature-normalized Classic VOC
 
 | Condition | Action |
 |---|---|
-| Pack temp < 2 °C **and** normalized Classic VOC ≥ 162 V continuously for 60 s | Activate relay (heater + fan on) |
-| Pack temp > 5 °C **or** normalized Classic VOC < 158 V | Deactivate relay (heater + fan off) |
+| Pack temp < 2 °C **and** normalized Classic VOC ≥ 158 V continuously for 60 s | Activate relay (heater + fan on) |
+| Pack temp > 5 °C **or** normalized Classic VOC < 154 V | Deactivate relay (heater + fan off) |
 | Battery, Classic, or local ambient-temperature telemetry unavailable | Reactive heat fails off |
 
 Normalize measured VOC to a 25 °C reference using the modules'
@@ -132,19 +132,19 @@ normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − local_ambient_temperature
 
 The correction matters because cold modules raise VOC even in weak winter
 light. Without it, a fixed threshold calibrated in summer can falsely indicate
-strong solar input. The 162/158 V normalized hysteresis and 60-second
+strong solar input. The 158/154 V normalized hysteresis and 60-second
 qualification period prevent chatter. At 19.3 °C ambient the equivalent raw
-thresholds are about 165.1/161.1 V; at 0 °C they are about 175.8/171.4 V; at
-−20 °C they are about 186.8/182.2 V.
+thresholds are about 161.1/157.0 V; at 0 °C they are about 171.4/167.1 V; at
+−20 °C they are about 182.2/177.6 V.
 
 The cut-in was derived from post-2026-07-18 telemetry after array 0 was
 corrected from the faulted 4s∥3s wiring to 4s2p. Using the local ambient probe
-for normalization, ≥ 162 V coincided with at least 200 W of Classic output in
-96.6% of Bulk samples and at least 400 W in 72.5%; average output was 791 W.
-The 2026-08-10 live condition (166.8 V VOC, 19.3 °C ambient, about 1.6 kW
-output) normalizes to 163.6 V and therefore qualifies. The older 132/130 V gate
-was established while the array was miswired and is not valid for the corrected
-topology.
+for normalization, ≥ 158 V coincided with at least 200 W of Classic output in
+79.1% of Bulk samples and at least 400 W in 56.4%; average output was 639 W.
+Two 2026-08-10 live checks qualify: 166.8 V VOC / 19.3 °C ambient normalized
+to 163.6 V at about 1.6 kW, and 161.8 V / 19.4 °C normalized to 158.8 V at
+862 W. The older 132/130 V gate was established while the array was miswired
+and is not valid for the corrected topology.
 
 Cut-in at 2 °C rather than 0 °C provides headroom above the BMS
 low-temperature charge cutout. Compensation uses the existing local ambient

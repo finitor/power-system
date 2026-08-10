@@ -48,8 +48,8 @@ _HEAT_OFF_TEMP_C = 5.0     # deactivate above this minimum cell temperature
 # recovery independent of both charger output (which is 0 A by design) and the
 # external weather service.
 _PV_VOC_TEMP_COEFF_PER_C = 0.0034
-_HEAT_ON_NORMALIZED_VOC_V = 162.0
-_HEAT_OFF_NORMALIZED_VOC_V = 158.0
+_HEAT_ON_NORMALIZED_VOC_V = 158.0
+_HEAT_OFF_NORMALIZED_VOC_V = 154.0
 _HEAT_SOLAR_QUALIFY = timedelta(seconds=60)
 
 # Relay 1 (heat_fan) — preventive pre-warm mode thresholds
@@ -68,8 +68,8 @@ class RelaySupervisor:
 
       Reactive mode — protects pack from charge-inhibit due to cold:
         On  when min cell temp < 2 °C AND Classic VOC, normalized using the
-            local ambient probe, is at least 162 V continuously for 60 seconds
-        Off when min cell temp > 5 °C OR normalized VOC < 158 V, or when
+            local ambient probe, is at least 158 V continuously for 60 seconds
+        Off when min cell temp > 5 °C OR normalized VOC < 154 V, or when
             Classic/local-ambient telemetry is unavailable
 
       Preventive mode — pre-warms pack using surplus solar energy:

@@ -249,24 +249,25 @@ normalizes VOC to 25 °C using the existing local ambient-temperature probe:
 normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − local_ambient_temperature_C))
 ```
 
-Normalized VOC ≥ 162 V corresponded to ≥ 200 W in 96.6% and ≥ 400 W in
-72.5% of post-correction Bulk samples, with 791 W average output. This lower
-threshold also admits the verified 2026-08-10 condition: 166.8 V VOC at 19.3 °C
-ambient normalized to 163.6 V while the array produced about 1.6 kW. Reactive
-heating turns on after the condition holds continuously for 60 seconds and
-turns off below 158 V normalized VOC.
+Normalized VOC ≥ 158 V corresponded to ≥ 200 W in 79.1% and ≥ 400 W in
+56.4% of post-correction Bulk samples, with 639 W average output. The threshold
+admits both verified 2026-08-10 conditions: 166.8 V VOC at 19.3 °C normalized
+to 163.6 V while the array produced about 1.6 kW, and 161.8 V at 19.4 °C
+normalized to 158.8 V while it produced 862 W. Reactive heating turns on after
+the condition holds continuously for 60 seconds and turns off below 154 V
+normalized VOC.
 
 ### Implemented heater heuristic
 
 Run the 200 W ceramic heater when **all** of the following hold:
 
 1. Minimum pack temperature is below 2 °C.
-2. Locally temperature-normalized Classic `last_voc` is at least 162 V continuously
+2. Locally temperature-normalized Classic `last_voc` is at least 158 V continuously
    for 60 seconds.
 3. The local ambient-temperature probe is available.
 
 The relay remains on until minimum pack temperature exceeds 5 °C or normalized
-VOC falls below 158 V. Missing battery, Classic, or local ambient-temperature
+VOC falls below 154 V. Missing battery, Classic, or local ambient-temperature
 telemetry fails reactive heating off. There is no internet/weather-service
 dependency. The EPEver cannot serve as a corroborating signal because it is
 disabled during the sub-zero charge-inhibit state.

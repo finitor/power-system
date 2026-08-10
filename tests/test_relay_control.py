@@ -96,8 +96,8 @@ class TestProductionThresholds(unittest.TestCase):
     def test_temperature_band_is_production_band(self):
         self.assertEqual(_HEAT_ON_TEMP_C, 2.0)
         self.assertEqual(_HEAT_OFF_TEMP_C, 5.0)
-        self.assertEqual(_HEAT_ON_NORMALIZED_VOC_V, 162.0)
-        self.assertEqual(_HEAT_OFF_NORMALIZED_VOC_V, 158.0)
+        self.assertEqual(_HEAT_ON_NORMALIZED_VOC_V, 158.0)
+        self.assertEqual(_HEAT_OFF_NORMALIZED_VOC_V, 154.0)
 
     def test_voc_normalization_matches_module_temperature_coefficient(self):
         measured_at_zero_c = _HEAT_ON_NORMALIZED_VOC_V * (1.0 + 0.0034 * 25.0)
@@ -107,8 +107,9 @@ class TestProductionThresholds(unittest.TestCase):
         self.assertIsNone(normalize_pv_voc(180.0, None))
 
     def test_live_high_output_condition_clears_solar_gate(self):
-        # 2026-08-10 live readback: ~1.6 kW at 166.8 V VOC and 19.3 °C local ambient.
+        # 2026-08-10 readbacks: both high-output conditions clear the gate.
         self.assertGreaterEqual(normalize_pv_voc(166.8, 19.3), _HEAT_ON_NORMALIZED_VOC_V)
+        self.assertGreaterEqual(normalize_pv_voc(161.8, 19.437), _HEAT_ON_NORMALIZED_VOC_V)
 
 
 class TestHeatFanHysteresis(unittest.TestCase):
