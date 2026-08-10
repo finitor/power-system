@@ -417,7 +417,14 @@ def main() -> int:
         heat_fan_gpio=relay_cfg.heat_fan_gpio,
         charge_disable_gpio=relay_cfg.charge_disable_gpio,
     )
-    relay_supervisor = RelaySupervisor(relay_controller)
+    relay_supervisor = RelaySupervisor(
+        relay_controller,
+        outdoor_temp_fn=(
+            (lambda snapshot: weather_service.current_temperature_for_control(snapshot.captured_at))
+            if weather_service is not None
+            else None
+        ),
+    )
     if args.web_display:
         start_web_display(
             args,
@@ -479,6 +486,8 @@ def main() -> int:
                 if temp_c is not None and voc_v is not None:
                     metric_recorder.record_event(heat_fan_transition_event(
                         active=heat_fan_after, temp_c=temp_c, max_temp_c=max_temp_c, voc_v=voc_v,
+                        outdoor_temp_c=relay_supervisor.outdoor_temp_c,
+                        normalized_voc_v=relay_supervisor.normalized_voc_v,
                         captured_at=snapshot.captured_at,
                     ))
             # Derive the EPEver "today" from its monotonic lifetime total (its own

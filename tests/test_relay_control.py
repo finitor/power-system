@@ -9,15 +9,19 @@ PACKAGE_SRC = REPO_ROOT / "software" / "pi-controller" / "src"
 sys.path.insert(0, str(PACKAGE_SRC))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from datetime import datetime, timezone
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
 from offgrid_power.ambient import AmbientTelemetry
 from offgrid_power.charge_allocator import AllocationOverride, ChargeAllocationDecision, ChargerAllocationTarget
 from offgrid_power.relay_control import (
     RelaySupervisor,
-    _HEAT_ON_TEMP_C, _HEAT_OFF_TEMP_C, _HEAT_ON_VOC_V, _HEAT_OFF_VOC_V,
+    _HEAT_ON_TEMP_C, _HEAT_OFF_TEMP_C,
+    _HEAT_ON_NORMALIZED_VOC_V, _HEAT_OFF_NORMALIZED_VOC_V,
+    _HEAT_SOLAR_QUALIFY, _PV_VOC_TEMP_COEFF_PER_C,
     _HEAT_MAX_CELL_CUTOUT_C,
     _PREVENT_AMBIENT_ON_C, _PREVENT_PACK_OFF_C, _PREVENT_SOC_ON_PCT,
+    normalize_pv_voc,
 )
 from snapshot_helpers import make_battery_snapshot, make_classic_telemetry, make_snapshot
 
@@ -63,18 +67,65 @@ def _decision(classic_disable: bool, classic_reason: str = "test") -> ChargeAllo
 _COLD = _HEAT_ON_TEMP_C - 2.0       # clearly below cut-in
 _WARM = _HEAT_OFF_TEMP_C + 1.0      # clearly above cut-out
 _MID = (_HEAT_ON_TEMP_C + _HEAT_OFF_TEMP_C) / 2  # inside hysteresis band
-_VOC_HI = _HEAT_ON_VOC_V + 1.0     # above VOC cut-in
-_VOC_MID = (_HEAT_ON_VOC_V + _HEAT_OFF_VOC_V) / 2  # inside VOC hysteresis
-_VOC_LO = _HEAT_OFF_VOC_V - 1.0    # below VOC cut-out
+_OUTDOOR_C = 18.0
+_VOC_FACTOR = 1.0 + _PV_VOC_TEMP_COEFF_PER_C * (25.0 - _OUTDOOR_C)
+_VOC_HI = (_HEAT_ON_NORMALIZED_VOC_V + 1.0) * _VOC_FACTOR
+_VOC_MID = ((_HEAT_ON_NORMALIZED_VOC_V + _HEAT_OFF_NORMALIZED_VOC_V) / 2) * _VOC_FACTOR
+_VOC_LO = (_HEAT_OFF_NORMALIZED_VOC_V - 1.0) * _VOC_FACTOR
+
+
+def _outdoor_fn(temp_c: float | None = _OUTDOOR_C):
+    return lambda _snapshot: temp_c
+
+
+def _later(snapshot, delta: timedelta):
+    return replace(snapshot, captured_at=snapshot.captured_at + delta)
+
+
+def _activate_reactive(rs: RelaySupervisor, snapshot) -> None:
+    rs.update(snapshot, None)
+    rs.update(_later(snapshot, _HEAT_SOLAR_QUALIFY), None)
+
+
+class TestProductionThresholds(unittest.TestCase):
+    def test_temperature_band_is_production_band(self):
+        self.assertEqual(_HEAT_ON_TEMP_C, 2.0)
+        self.assertEqual(_HEAT_OFF_TEMP_C, 5.0)
+
+    def test_voc_normalization_matches_module_temperature_coefficient(self):
+        measured_at_zero_c = _HEAT_ON_NORMALIZED_VOC_V * (1.0 + 0.0034 * 25.0)
+        self.assertAlmostEqual(normalize_pv_voc(measured_at_zero_c, 0.0), 164.0)
+
+    def test_missing_temperature_cannot_normalize_voc(self):
+        self.assertIsNone(normalize_pv_voc(180.0, None))
 
 
 class TestHeatFanHysteresis(unittest.TestCase):
     def setUp(self):
         self.relay = StubRelay()
-        self.rs = RelaySupervisor(self.relay)
+        self.rs = RelaySupervisor(self.relay, outdoor_temp_fn=_outdoor_fn())
 
     def test_activates_when_cold_and_sunny(self):
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        _activate_reactive(self.rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI))
+        self.assertTrue(self.relay.state()["heat_fan"])
+
+    def test_requires_sustained_solar_before_activation(self):
+        snapshot = _snapshot(temp_c=_COLD, voc_v=_VOC_HI)
+        self.rs.update(snapshot, None)
+        self.assertFalse(self.relay.state()["heat_fan"])
+        self.rs.update(_later(snapshot, _HEAT_SOLAR_QUALIFY - timedelta(seconds=1)), None)
+        self.assertFalse(self.relay.state()["heat_fan"])
+        self.rs.update(_later(snapshot, _HEAT_SOLAR_QUALIFY), None)
+        self.assertTrue(self.relay.state()["heat_fan"])
+
+    def test_cold_weather_requires_temperature_compensated_voltage(self):
+        rs = RelaySupervisor(self.relay, outdoor_temp_fn=_outdoor_fn(0.0))
+        summer_voltage = (_HEAT_ON_NORMALIZED_VOC_V + 1.0) * _VOC_FACTOR
+        _activate_reactive(rs, _snapshot(temp_c=_COLD, voc_v=summer_voltage))
+        self.assertFalse(self.relay.state()["heat_fan"])
+
+        winter_voltage = (_HEAT_ON_NORMALIZED_VOC_V + 1.0) * (1.0 + 0.0034 * 25.0)
+        _activate_reactive(rs, _snapshot(temp_c=_COLD, voc_v=winter_voltage))
         self.assertTrue(self.relay.state()["heat_fan"])
 
     def test_no_activation_warm(self):
@@ -86,24 +137,24 @@ class TestHeatFanHysteresis(unittest.TestCase):
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_stays_on_within_hysteresis(self):
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        _activate_reactive(self.rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI))
         # VOC drops into hysteresis band — should stay on
         self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_MID), None)
         self.assertTrue(self.relay.state()["heat_fan"])
 
     def test_cuts_out_below_voc_floor(self):
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        _activate_reactive(self.rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI))
         self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_LO), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_cuts_out_when_warm(self):
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        _activate_reactive(self.rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI))
         self.rs.update(_snapshot(temp_c=_WARM, voc_v=_VOC_HI), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_does_not_reactivate_within_hysteresis(self):
         # Turn on, warm past cut-out, cool back into band — stays off
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        _activate_reactive(self.rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI))
         self.rs.update(_snapshot(temp_c=_WARM, voc_v=_VOC_HI), None)
         self.rs.update(_snapshot(temp_c=_MID, voc_v=_VOC_HI), None)
         self.assertFalse(self.relay.state()["heat_fan"])
@@ -113,23 +164,35 @@ class TestHeatFanHysteresis(unittest.TestCase):
         self.rs.update(snapshot, None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
+    def test_missing_outdoor_temperature_turns_off_running_heater(self):
+        outdoor = [_OUTDOOR_C]
+        rs = RelaySupervisor(self.relay, outdoor_temp_fn=lambda _snapshot: outdoor[0])
+        _activate_reactive(rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI))
+        self.assertTrue(self.relay.state()["heat_fan"])
+        outdoor[0] = None
+        rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        self.assertFalse(self.relay.state()["heat_fan"])
+
     def test_max_cell_cutout_prevents_activation(self):
         # 25°C cutout applies to both reactive and preventive modes
         self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_max_cell_cutout_turns_off_running_heater(self):
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI), None)
+        _activate_reactive(self.rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI))
         self.assertTrue(self.relay.state()["heat_fan"])
         self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C), None)
         self.assertFalse(self.relay.state()["heat_fan"])
 
     def test_max_cell_below_cutout_does_not_block_activation(self):
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C - 1.0), None)
+        _activate_reactive(
+            self.rs,
+            _snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=_HEAT_MAX_CELL_CUTOUT_C - 1.0),
+        )
         self.assertTrue(self.relay.state()["heat_fan"])
 
     def test_max_cell_none_does_not_block_activation(self):
-        self.rs.update(_snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=None), None)
+        _activate_reactive(self.rs, _snapshot(temp_c=_COLD, voc_v=_VOC_HI, max_temp_c=None))
         self.assertTrue(self.relay.state()["heat_fan"])
 
 
@@ -278,7 +341,11 @@ class TestPreventiveHeatFan(unittest.TestCase):
         # Reactive mode is ON (cold + high VOC). Preventive is also on.
         # SOC drops — preventive turns off, but reactive keeps the relay energised.
         relay = StubRelay()
-        rs = RelaySupervisor(relay, ambient_temp_fn=_ambient_fn(_COLD_AMBIENT))
+        rs = RelaySupervisor(
+            relay,
+            ambient_temp_fn=_ambient_fn(_COLD_AMBIENT),
+            outdoor_temp_fn=_outdoor_fn(),
+        )
         snap_both = make_snapshot(
             battery=make_battery_snapshot(
                 min_cell_temperature_c=_HEAT_ON_TEMP_C - 2.0,
@@ -288,6 +355,7 @@ class TestPreventiveHeatFan(unittest.TestCase):
         )
         rs.update(snap_both, None)
         self.assertTrue(relay.state()["heat_fan"])
+        rs.update(_later(snap_both, _HEAT_SOLAR_QUALIFY), None)
 
         snap_soc_drop = make_snapshot(
             battery=make_battery_snapshot(

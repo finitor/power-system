@@ -223,40 +223,51 @@ Additionally, `pv_voltage` (register 4116) — the real-time PV bus voltage — 
 toward VOC whenever the Classic is at or near 0 A output, making it a second
 real-time proxy for the same quantity during charge-disabled periods.
 
-### VOC–irradiance relationship
+### VOC–irradiance relationship after the array wiring correction
 
-VOC follows a logarithmic relationship with irradiance. The useful empirical
-threshold from historical data (Bulk stage, allocator target ≥ 25 A to exclude
-severely-limited periods):
+VOC follows a logarithmic relationship with irradiance and also rises as module
+temperature falls. The original 130–134 V experiment was performed while array
+0 was unknowingly wired as mismatched 4s∥3s strings. It must not be used with
+the corrected 4s2p topology.
 
-| `last_voc` | Reliability of ≥ 200 W Classic output |
-|---|---|
-| < 130 V | Low / unlikely |
-| 130–132 V | 50–83% of samples show ≥ 200 W |
-| 134 V+ | 100% of samples show ≥ 200 W |
+Post-correction Bulk telemetry from 2026-07-19 onward produced these raw summer
+results:
 
-The 132 V threshold is a reasonable conservative trigger: most days that clear
-to 132 V VOC will produce net positive energy even accounting for a 200 W heater
-draw. Clear mornings reach 132 V within 15–30 minutes of the Classic entering
-Bulk from the dawn HyperVoc sweep (~80% of the measured morning VOC).
+| `last_voc` threshold | Samples ≥ 200 W | Samples ≥ 400 W |
+|---:|---:|---:|
+| 164 V | 91.3% | 66.9% |
+| 166 V | 97.6% | 76.1% |
+| 168 V | 99.5% | 86.6% |
+| 170 V | 99.8% | 95.8% |
 
-### Proposed heater heuristic
+A fixed threshold is still unsafe as a year-round irradiance proxy because the
+modules' −0.34%/°C VOC coefficient lets weak cold-weather light reach voltages
+that would imply much stronger light in summer. The production loop therefore
+normalizes VOC to 25 °C using fresh outdoor temperature:
+
+```text
+normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − outdoor_temperature_C))
+```
+
+Normalized VOC ≥ 164 V corresponded to ≥ 200 W in 99.7% and ≥ 400 W in
+95.3% of the post-correction Bulk samples. Reactive heating turns on after this
+condition holds continuously for 60 seconds and turns off below 160 V
+normalized VOC.
+
+### Implemented heater heuristic
 
 Run the 200 W ceramic heater when **all** of the following hold:
 
-1. Pack temperature ≤ 0 °C (charging is disabled — there is a reason to run the heater)
-2. Current time is between sunrise and sunset (from the weather data already polled)
-3. `pv_voltage` (Classic, register 4116) > 132 V, or `last_voc` > 132 V
+1. Minimum pack temperature is below 2 °C.
+2. Temperature-normalized Classic `last_voc` is at least 164 V continuously
+   for 60 seconds.
+3. Outdoor temperature is from a non-stale weather report no more than one hour
+   old.
 
-Condition 3 uses `pv_voltage` as the real-time irradiance proxy during
-charge-disabled periods because it tracks irradiance moment-to-moment; `last_voc`
-is updated every ~60 seconds and is also suitable. The EPEver cannot serve as a
-corroborating signal because EPEver charging is disabled (coil open) at sub-zero
-pack temperatures.
-
-**This heuristic is not yet implemented.** The heater is currently operated
-manually. Automating it requires a relay or smart-plug control surface and a
-supervisor process that monitors pack temperature and PV voltage together.
+The relay remains on until minimum pack temperature exceeds 5 °C or normalized
+VOC falls below 160 V. Missing battery, Classic, or usable outdoor-temperature
+telemetry fails reactive heating off. The EPEver cannot serve as a corroborating
+signal because it is disabled during the sub-zero charge-inhibit state.
 
 ### Note on the Classic 0 A floor during charge-disabled periods
 

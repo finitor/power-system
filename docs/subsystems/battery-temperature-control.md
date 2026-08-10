@@ -114,15 +114,40 @@ The Pi supervisor (`RelaySupervisor` in `relay_control.py`) evaluates relay stat
 
 ### Heater + Fan (relay CH1 — heat_fan)
 
-Hysteresis control on pack temperature and Classic VOC (as irradiance proxy):
+Hysteresis control on pack temperature and temperature-normalized Classic VOC
+(as an irradiance proxy):
 
 | Condition | Action |
 |---|---|
-| Pack temp < 2 °C **and** Classic VOC > 134 V | Activate relay (heater + fan on) |
-| Pack temp > 5 °C **or** Classic VOC < 130 V | Deactivate relay (heater + fan off) |
-| No battery or Classic telemetry | No change (hold current state) |
+| Pack temp < 2 °C **and** normalized Classic VOC ≥ 164 V continuously for 60 s | Activate relay (heater + fan on) |
+| Pack temp > 5 °C **or** normalized Classic VOC < 160 V | Deactivate relay (heater + fan off) |
+| Battery, Classic, or fresh outdoor-temperature telemetry unavailable | Reactive heat fails off |
 
-The VOC gate ensures the heater only runs when there is enough irradiance to sustain the load without draining the battery. The 4 V hysteresis on VOC and 3 °C hysteresis on temperature prevent chatter. Cut-in at 2 °C rather than 0 °C provides headroom above the BMS low-temperature charge cutout.
+Normalize measured VOC to a 25 °C outdoor reference using the modules'
+−0.34%/°C VOC coefficient:
+
+```text
+normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − outdoor_temperature_C))
+```
+
+The correction matters because cold modules raise VOC even in weak winter
+light. Without it, a fixed threshold calibrated in summer can falsely indicate
+strong solar input. The 164/160 V normalized hysteresis and 60-second
+qualification period prevent chatter. At 18 °C outdoors the equivalent raw
+thresholds are about 168/164 V; at 0 °C they are about 178/174 V; at −20 °C
+they are about 189/184 V.
+
+The cut-in was derived from post-2026-07-18 telemetry after array 0 was
+corrected from the faulted 4s∥3s wiring to 4s2p. In that data, normalized VOC
+≥ 164 V coincided with at least 200 W of Classic output in 99.7% of Bulk
+samples and at least 400 W in 95.3%. The older 132/130 V gate was established
+while the array was miswired and is not valid for the corrected topology.
+
+Cut-in at 2 °C rather than 0 °C provides headroom above the BMS
+low-temperature charge cutout. Outdoor temperature comes from the cached
+Open-Meteo report and must be non-stale and no more than one hour old. The
+weather lookup does not block the control loop; missing or stale weather simply
+prevents reactive heater operation.
 
 The fan runs in tandem with the heater to circulate warm air through the battery compartment. Both are on the same relay contact.
 
