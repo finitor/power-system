@@ -22,15 +22,15 @@ def heat_fan_transition_event(
     temp_c: float,
     voc_v: float,
     max_temp_c: float | None = None,
-    outdoor_temp_c: float | None = None,
+    ambient_temp_c: float | None = None,
     normalized_voc_v: float | None = None,
     captured_at: datetime | None = None,
 ) -> TelemetryEvent:
     detail: dict = {"active": active, "temp_c": temp_c, "voc_v": voc_v}
     if max_temp_c is not None:
         detail["max_temp_c"] = max_temp_c
-    if outdoor_temp_c is not None:
-        detail["outdoor_temp_c"] = outdoor_temp_c
+    if ambient_temp_c is not None:
+        detail["ambient_temp_c"] = ambient_temp_c
     if normalized_voc_v is not None:
         detail["normalized_voc_v"] = normalized_voc_v
     return TelemetryEvent(
@@ -44,11 +44,12 @@ def heat_fan_transition_event(
 _HEAT_ON_TEMP_C = 2.0      # activate below this minimum cell temperature
 _HEAT_OFF_TEMP_C = 5.0     # deactivate above this minimum cell temperature
 
-# Classic VOC is normalized to a 25 °C outdoor reference before comparison.
-# The Canadian Solar modules' VOC temperature coefficient is -0.34%/°C.
+# Normalize Classic VOC using the local ambient probe. This keeps cold-lock
+# recovery independent of both charger output (which is 0 A by design) and the
+# external weather service.
 _PV_VOC_TEMP_COEFF_PER_C = 0.0034
-_HEAT_ON_NORMALIZED_VOC_V = 164.0
-_HEAT_OFF_NORMALIZED_VOC_V = 160.0
+_HEAT_ON_NORMALIZED_VOC_V = 162.0
+_HEAT_OFF_NORMALIZED_VOC_V = 158.0
 _HEAT_SOLAR_QUALIFY = timedelta(seconds=60)
 
 # Relay 1 (heat_fan) — preventive pre-warm mode thresholds
@@ -66,10 +67,10 @@ class RelaySupervisor:
     Relay 1 (heat_fan): two independent control modes, OR'd together.
 
       Reactive mode — protects pack from charge-inhibit due to cold:
-        On  when min cell temp < 2 °C AND temperature-normalized Classic
-            VOC is at least 164 V continuously for 60 seconds
-        Off when min cell temp > 5 °C OR normalized VOC < 160 V, or when
-            Classic/outdoor-temperature telemetry is unavailable
+        On  when min cell temp < 2 °C AND Classic VOC, normalized using the
+            local ambient probe, is at least 162 V continuously for 60 seconds
+        Off when min cell temp > 5 °C OR normalized VOC < 158 V, or when
+            Classic/local-ambient telemetry is unavailable
 
       Preventive mode — pre-warms pack using surplus solar energy:
         On  when ambient < 5 °C AND pack < 25 °C AND SOC > 95 %
@@ -84,16 +85,14 @@ class RelaySupervisor:
         self,
         relay_controller: RelayController,
         ambient_temp_fn: Callable[[SupervisorSnapshot], float | None] | None = None,
-        outdoor_temp_fn: Callable[[SupervisorSnapshot], float | None] | None = None,
     ) -> None:
         self._relay = relay_controller
         self._ambient_temp = ambient_temp_fn or _snapshot_ambient_temp
-        self._outdoor_temp = outdoor_temp_fn or (lambda _snapshot: None)
         self._heat_fan_on: bool = False
         self._reactive_on: bool = False    # reactive-mode hysteresis state
         self._preventive_on: bool = False  # preventive-mode hysteresis state
         self._solar_qualify_since: datetime | None = None
-        self._last_outdoor_temp_c: float | None = None
+        self._last_ambient_temp_c: float | None = None
         self._last_normalized_voc_v: float | None = None
 
     @property
@@ -105,8 +104,8 @@ class RelaySupervisor:
         return self._relay.state()["charge_disable"]
 
     @property
-    def outdoor_temp_c(self) -> float | None:
-        return self._last_outdoor_temp_c
+    def ambient_temp_c(self) -> float | None:
+        return self._last_ambient_temp_c
 
     @property
     def normalized_voc_v(self) -> float | None:
@@ -149,7 +148,7 @@ class RelaySupervisor:
             max_temp_c = _pack_max_temp(snapshot)
             voc_v = snapshot.classic.last_voc_v if snapshot.classic is not None else None
             log.info(
-                "relay heat_fan %s -> %s (mode=%s min=%s max=%s voc=%s normalized_voc=%s outdoor=%s)",
+                "relay heat_fan %s -> %s (mode=%s min=%s max=%s voc=%s normalized_voc=%s ambient=%s)",
                 "on" if self._heat_fan_on else "off",
                 "on" if want else "off",
                 mode_str,
@@ -157,7 +156,7 @@ class RelaySupervisor:
                 f"{max_temp_c:.1f}°C" if max_temp_c is not None else "?",
                 f"{voc_v:.1f}V" if voc_v is not None else "?",
                 f"{self._last_normalized_voc_v:.1f}V" if self._last_normalized_voc_v is not None else "?",
-                f"{self._last_outdoor_temp_c:.1f}°C" if self._last_outdoor_temp_c is not None else "?",
+                f"{self._last_ambient_temp_c:.1f}°C" if self._last_ambient_temp_c is not None else "?",
             )
             try:
                 self._relay.set("heat_fan", want)
@@ -168,14 +167,11 @@ class RelaySupervisor:
     def _reactive_heat_want(self, snapshot: SupervisorSnapshot) -> bool:
         temp_c = _pack_temp(snapshot)
         voc_v = snapshot.classic.last_voc_v if snapshot.classic is not None else None
-        outdoor_temp_c = self._outdoor_temp(snapshot)
-        normalized_voc_v = normalize_pv_voc(voc_v, outdoor_temp_c)
-        self._last_outdoor_temp_c = outdoor_temp_c
+        ambient_temp_c = self._ambient_temp(snapshot)
+        normalized_voc_v = normalize_pv_voc(voc_v, ambient_temp_c)
+        self._last_ambient_temp_c = ambient_temp_c
         self._last_normalized_voc_v = normalized_voc_v
 
-        # Heating is fail-off when any required input is unavailable. In
-        # particular, a stale outdoor temperature must not let cold-weather VOC
-        # look like strong irradiance.
         if temp_c is None or normalized_voc_v is None:
             self._solar_qualify_since = None
             return False
@@ -262,16 +258,11 @@ def _pack_max_temp(snapshot: SupervisorSnapshot) -> float | None:
     return snapshot.battery.max_cell_temperature_c
 
 
-def normalize_pv_voc(voc_v: float | None, outdoor_temp_c: float | None) -> float | None:
-    """Return Classic VOC normalized to a 25 °C outdoor reference.
-
-    At weak light — the dangerous false-positive case for the heater gate —
-    module temperature is close to outdoor air temperature. Under strong sun,
-    warmer modules make this approximation conservative.
-    """
-    if voc_v is None or outdoor_temp_c is None:
+def normalize_pv_voc(voc_v: float | None, ambient_temp_c: float | None) -> float | None:
+    """Return Classic VOC normalized to a 25 °C local-ambient reference."""
+    if voc_v is None or ambient_temp_c is None:
         return None
-    temperature_factor = 1.0 + _PV_VOC_TEMP_COEFF_PER_C * (25.0 - outdoor_temp_c)
+    temperature_factor = 1.0 + _PV_VOC_TEMP_COEFF_PER_C * (25.0 - ambient_temp_c)
     if temperature_factor <= 0.0:
         return None
     return voc_v / temperature_factor

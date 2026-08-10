@@ -243,31 +243,33 @@ results:
 A fixed threshold is still unsafe as a year-round irradiance proxy because the
 modules' −0.34%/°C VOC coefficient lets weak cold-weather light reach voltages
 that would imply much stronger light in summer. The production loop therefore
-normalizes VOC to 25 °C using fresh outdoor temperature:
+normalizes VOC to 25 °C using the existing local ambient-temperature probe:
 
 ```text
-normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − outdoor_temperature_C))
+normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − local_ambient_temperature_C))
 ```
 
-Normalized VOC ≥ 164 V corresponded to ≥ 200 W in 99.7% and ≥ 400 W in
-95.3% of the post-correction Bulk samples. Reactive heating turns on after this
-condition holds continuously for 60 seconds and turns off below 160 V
-normalized VOC.
+Normalized VOC ≥ 162 V corresponded to ≥ 200 W in 96.6% and ≥ 400 W in
+72.5% of post-correction Bulk samples, with 791 W average output. This lower
+threshold also admits the verified 2026-08-10 condition: 166.8 V VOC at 19.3 °C
+ambient normalized to 163.6 V while the array produced about 1.6 kW. Reactive
+heating turns on after the condition holds continuously for 60 seconds and
+turns off below 158 V normalized VOC.
 
 ### Implemented heater heuristic
 
 Run the 200 W ceramic heater when **all** of the following hold:
 
 1. Minimum pack temperature is below 2 °C.
-2. Temperature-normalized Classic `last_voc` is at least 164 V continuously
+2. Locally temperature-normalized Classic `last_voc` is at least 162 V continuously
    for 60 seconds.
-3. Outdoor temperature is from a non-stale weather report no more than one hour
-   old.
+3. The local ambient-temperature probe is available.
 
 The relay remains on until minimum pack temperature exceeds 5 °C or normalized
-VOC falls below 160 V. Missing battery, Classic, or usable outdoor-temperature
-telemetry fails reactive heating off. The EPEver cannot serve as a corroborating
-signal because it is disabled during the sub-zero charge-inhibit state.
+VOC falls below 158 V. Missing battery, Classic, or local ambient-temperature
+telemetry fails reactive heating off. There is no internet/weather-service
+dependency. The EPEver cannot serve as a corroborating signal because it is
+disabled during the sub-zero charge-inhibit state.
 
 ### Note on the Classic 0 A floor during charge-disabled periods
 

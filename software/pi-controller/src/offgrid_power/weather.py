@@ -23,7 +23,6 @@ REQUIRED_CURRENT_FIELDS = {
     "diffuse_radiation",
     "direct_normal_irradiance",
 }
-CONTROL_WEATHER_MAX_AGE = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -83,30 +82,6 @@ class WeatherService:
             stale=True,
             error="weather refresh in progress" if refreshing else "weather unavailable",
         )
-
-    def current_temperature_for_control(
-        self,
-        now: datetime | None = None,
-        *,
-        max_age: timedelta = CONTROL_WEATHER_MAX_AGE,
-    ) -> float | None:
-        """Return fresh outdoor temperature for a fail-off control consumer.
-
-        Display weather may degrade gracefully to a stale disk cache. Heater
-        control may not: cold modules raise VOC, so stale/missing temperature
-        could make weak winter light look like strong solar input.
-        """
-        reference = (now or datetime.now().astimezone()).astimezone()
-        report = self.get_cached(reference)
-        if report.stale or report.error:
-            return None
-        age = reference.astimezone(timezone.utc) - report.fetched_at.astimezone(timezone.utc)
-        if age < timedelta(0) or age > max_age:
-            return None
-        current = weather_api_payload(report).get("current")
-        if not current:
-            return None
-        return _wx_number(current.get("temperature_c"))
 
     def request_refresh_if_needed(self, now: datetime | None = None) -> None:
         """Start a background refresh only when cached weather is missing or stale."""

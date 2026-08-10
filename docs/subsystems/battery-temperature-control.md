@@ -119,35 +119,36 @@ Hysteresis control on pack temperature and temperature-normalized Classic VOC
 
 | Condition | Action |
 |---|---|
-| Pack temp < 2 °C **and** normalized Classic VOC ≥ 164 V continuously for 60 s | Activate relay (heater + fan on) |
-| Pack temp > 5 °C **or** normalized Classic VOC < 160 V | Deactivate relay (heater + fan off) |
-| Battery, Classic, or fresh outdoor-temperature telemetry unavailable | Reactive heat fails off |
+| Pack temp < 2 °C **and** normalized Classic VOC ≥ 162 V continuously for 60 s | Activate relay (heater + fan on) |
+| Pack temp > 5 °C **or** normalized Classic VOC < 158 V | Deactivate relay (heater + fan off) |
+| Battery, Classic, or local ambient-temperature telemetry unavailable | Reactive heat fails off |
 
-Normalize measured VOC to a 25 °C outdoor reference using the modules'
+Normalize measured VOC to a 25 °C reference using the modules'
 −0.34%/°C VOC coefficient:
 
 ```text
-normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − outdoor_temperature_C))
+normalized_VOC = measured_VOC / (1 + 0.0034 × (25 − local_ambient_temperature_C))
 ```
 
 The correction matters because cold modules raise VOC even in weak winter
 light. Without it, a fixed threshold calibrated in summer can falsely indicate
-strong solar input. The 164/160 V normalized hysteresis and 60-second
-qualification period prevent chatter. At 18 °C outdoors the equivalent raw
-thresholds are about 168/164 V; at 0 °C they are about 178/174 V; at −20 °C
-they are about 189/184 V.
+strong solar input. The 162/158 V normalized hysteresis and 60-second
+qualification period prevent chatter. At 19.3 °C ambient the equivalent raw
+thresholds are about 165.1/161.1 V; at 0 °C they are about 175.8/171.4 V; at
+−20 °C they are about 186.8/182.2 V.
 
 The cut-in was derived from post-2026-07-18 telemetry after array 0 was
-corrected from the faulted 4s∥3s wiring to 4s2p. In that data, normalized VOC
-≥ 164 V coincided with at least 200 W of Classic output in 99.7% of Bulk
-samples and at least 400 W in 95.3%. The older 132/130 V gate was established
-while the array was miswired and is not valid for the corrected topology.
+corrected from the faulted 4s∥3s wiring to 4s2p. Using the local ambient probe
+for normalization, ≥ 162 V coincided with at least 200 W of Classic output in
+96.6% of Bulk samples and at least 400 W in 72.5%; average output was 791 W.
+The 2026-08-10 live condition (166.8 V VOC, 19.3 °C ambient, about 1.6 kW
+output) normalizes to 163.6 V and therefore qualifies. The older 132/130 V gate
+was established while the array was miswired and is not valid for the corrected
+topology.
 
 Cut-in at 2 °C rather than 0 °C provides headroom above the BMS
-low-temperature charge cutout. Outdoor temperature comes from the cached
-Open-Meteo report and must be non-stale and no more than one hour old. The
-weather lookup does not block the control loop; missing or stale weather simply
-prevents reactive heater operation.
+low-temperature charge cutout. Compensation uses the existing local ambient
+probe, so cold-lock recovery has no internet or external-weather dependency.
 
 The fan runs in tandem with the heater to circulate warm air through the battery compartment. Both are on the same relay contact.
 

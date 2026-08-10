@@ -4,7 +4,7 @@ import json
 import sys
 import threading
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 
@@ -186,32 +186,6 @@ class WeatherApiPayloadTest(unittest.TestCase):
 
 
 class WeatherServiceRefreshTest(unittest.TestCase):
-    def test_control_temperature_requires_fresh_non_stale_weather(self) -> None:
-        service = WeatherService(WeatherConfig(latitude=1.0, longitude=2.0, label="X"))
-        fetched_at = datetime.fromisoformat("2026-06-13T08:30:00-04:00")
-        service._report = WeatherReport(
-            label="X",
-            fetched_at=fetched_at,
-            data={"current": {"temperature_2m": -12.5}},
-        )
-
-        self.assertEqual(
-            service.current_temperature_for_control(fetched_at + timedelta(minutes=30)),
-            -12.5,
-        )
-        self.assertIsNone(
-            service.current_temperature_for_control(fetched_at + timedelta(hours=2)),
-        )
-
-        service._report = WeatherReport(
-            label="X",
-            fetched_at=fetched_at,
-            data={"current": {"temperature_2m": -12.5}},
-            stale=True,
-            error="network unavailable",
-        )
-        self.assertIsNone(service.current_temperature_for_control(fetched_at))
-
     def test_get_cached_returns_refreshing_placeholder_without_fetching(self) -> None:
         service = WeatherService(WeatherConfig(latitude=1.0, longitude=2.0, label="X"))
         calls = []
