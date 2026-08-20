@@ -216,3 +216,49 @@ conn.execute("""
 ```
 
 (`MAX` because the counter peaks at end-of-day. The `-4 hours` is the summer offset; for a DST-correct, offset-free version use `scripts/query_metrics.py daily-summary --date …` per day, which derives the local-day bounds from the system zone.)
+
+## Reusable cloud performance report
+
+`scripts/cloud_telemetry_report.py` builds a read-only Markdown report over an
+inclusive, site-local time window. It downloads the selected B2 objects once to
+a deterministic Parquet cache under `/private/tmp`, then runs every aggregation
+locally. Repeating the same command reuses that cache and consumes no additional
+object-store transactions; add `--refresh` only when the cloud window may have
+filled in since the first run.
+
+Install the Mac analysis dependency once if needed:
+
+```sh
+.venv/bin/pip install -e ".[analysis]"
+```
+
+Run with normal `B2_*`/`S3_*` environment variables, or explicitly name a Pi
+migration backup containing `etc/offgrid-power.env`:
+
+```sh
+.venv/bin/python scripts/cloud_telemetry_report.py \
+  --start 2026-08-13 \
+  --end 2026-08-18T06:10:31 \
+  --credentials-backup \
+    backups/pi-migration/offgrid-blueberry-20260613T154102Z.tar.gz \
+  --output /private/tmp/power-report.md
+```
+
+`--start` and `--end` are inclusive. Offset-free values use
+`America/Toronto`, including DST; values with an explicit offset keep it. A date
+without a time means local midnight. The credential is loaded directly from the
+tar member into memory: it is not extracted, printed, or written to the cache.
+
+To reuse a specific local cache path:
+
+```sh
+.venv/bin/python scripts/cloud_telemetry_report.py \
+  --start 2026-08-13 --end 2026-08-17T23:59:59 \
+  --cache /private/tmp/offgrid-cloud-report-cache/samples-window.parquet
+```
+
+The report marks incomplete local days as partial. Full days use the Classic's
+daily energy counter; partial days integrate its sampled battery power. System
+demand, refrigeration, and battery throughput are integrated from their power
+series, excluding gaps longer than three minutes. Array 0 output remains
+delivered energy, not uncurtailed PV potential.
