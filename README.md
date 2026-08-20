@@ -50,6 +50,7 @@ is a read-only telemetry tap. See
 - [docs/maintenance.md](docs/maintenance.md): backup, restore, inspection, and recovery routines.
 - [docs/troubleshooting.md](docs/troubleshooting.md): symptoms, likely causes, and checks.
 - [docs/safety.md](docs/safety.md): electrical and operational safety notes.
+- [docs/trailer-power-system.md](docs/trailer-power-system.md): the separate 12 V solar system in the utility trailer, running the lead-acid bank retired from the cabin — hardware, design checks, and operator runbook ([print-ready PDF](output/pdf/trailer-power-runbook.pdf)).
 - [docs/engineering-plan.md](docs/engineering-plan.md): living backlog of hardening and architecture work.
 - [docs/decisions/](docs/decisions/): architecture decision records (append-only judgments with context and consequences).
 - [docs/journal/](docs/journal/): append-only engineering journal — dated session narratives of what was tried, measured, and learned.
