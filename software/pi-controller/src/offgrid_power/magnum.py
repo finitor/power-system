@@ -22,6 +22,12 @@ VOLTAGE_MULTIPLIER = 4
 _INVERTER_MODEL_BYTE = 0x73
 # Packet header bytes belonging to non-remote, non-inverter accessories.
 _ACCESSORY_HEADERS = {0x81, 0x91, 0xA1, 0xA2}
+# Unlike the other remote voltage fields, a 48V inverter's LBCO byte uses
+# the 24V numeric encoding and the remote doubles it for display.
+_REMOTE_LBCO_BYTE = 9
+_LBCO_WIRE_MULTIPLIER = 2
+_LBCO_MIN_V = 36.0
+_LBCO_MAX_V = 51.0
 
 
 @dataclass(frozen=True)
@@ -106,6 +112,22 @@ def _find_packets(raw_packets: list) -> tuple[bytes | None, bytes | None]:
         elif remote is None:
             remote = data
     return inverter, remote
+
+
+def decode_remote_lbco_v(remote_data: bytes) -> float:
+    """Decode MS4448PAE LBCO from a raw remote packet.
+
+    Magnum's protocol is unusual here: remote byte 9 on a 48V inverter uses
+    the same numeric representation as a 24V inverter, and the ME-RC doubles
+    that value for display.  It therefore must not use the normal 4x remote
+    voltage multiplier.  For example, the live value 0xF0 is 48.0V, not 96V.
+    """
+    if len(remote_data) <= _REMOTE_LBCO_BYTE:
+        raise ValueError(f"Remote packet too short for LBCO: {len(remote_data)} bytes")
+    lbco_v = remote_data[_REMOTE_LBCO_BYTE] * _LBCO_WIRE_MULTIPLIER / 10.0
+    if not _LBCO_MIN_V <= lbco_v <= _LBCO_MAX_V:
+        raise ValueError(f"Implausible MS4448PAE LBCO decode: {lbco_v:.1f}V")
+    return lbco_v
 
 
 def _snapshot_from_cycle(raw_packets: list) -> MagnumSnapshot | None:
@@ -205,6 +227,21 @@ class MagnumClient:
             return None
         return self._merge_last_settings(snapshot) if snapshot is not None else None
 
+    def read_lbco_v(self) -> float | None:
+        """Read the configured LBCO directly from repeated remote packets.
+
+        This is an explicit one-off query, not part of the regular telemetry
+        snapshot.  Requiring the same value twice protects the result from the
+        framing glitches occasionally seen on this passive bus tap.
+        """
+        if self._device and not os.path.exists(self._device):
+            raise ConnectionError(f"Could not open {self._device}")
+        try:
+            return asyncio.run(self._read_lbco_async())
+        except Exception as exc:
+            log.warning("Magnum LBCO read failed: %s", exc)
+            return None
+
     def _merge_last_settings(self, snapshot: MagnumSnapshot) -> MagnumSnapshot:
         """Fill settings from a confirmed cache, ignoring one-off remote decodes.
 
@@ -245,6 +282,28 @@ class MagnumClient:
                 if snapshot is not None:
                     return snapshot
         log.warning("Magnum: no valid inverter packet seen in %d cycles", self._max_cycles)
+        return None
+
+    async def _read_lbco_async(self) -> float | None:
+        candidate: float | None = None
+        async with MagnumBus(self._device) as bus:
+            for _ in range(self._max_cycles):
+                try:
+                    cycle = await asyncio.wait_for(bus.read_cycle(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
+                _, remote_data = _find_packets(cycle.raw_packets)
+                if remote_data is None:
+                    continue
+                try:
+                    lbco_v = decode_remote_lbco_v(remote_data)
+                except ValueError as exc:
+                    log.debug("Failed to decode remote LBCO: %s", exc)
+                    continue
+                if lbco_v == candidate:
+                    return lbco_v
+                candidate = lbco_v
+        log.warning("Magnum: no repeated valid LBCO seen in %d cycles", self._max_cycles)
         return None
 
 

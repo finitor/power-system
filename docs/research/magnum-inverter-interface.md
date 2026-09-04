@@ -135,13 +135,24 @@ item 12 for the RS485 ground-reference experiment.
 
 ## Voltage Encoding
 
-The Magnum bus stores voltages as 12V-nominal × 10, single byte. For a 48V system (multiplier = 4):
+Most Magnum remote voltage fields use 12V-nominal × 10 in a single byte. For
+a 48V system (multiplier = 4):
 
 - Decode: `actual_v = wire_byte × 4 / 10`
 - Encode: `wire_byte = int(actual_v × 10 / 4)`
 - Resolution: 0.4 V per wire count at 48V (0.1 V at 12V-nominal)
 
 The ME-RC50 display steps voltages in 0.4V increments on a 48V system, which is one wire count. This was confirmed by observation: incrementing float on the remote changed the wire byte from 0x89 (54.8V) to 0x88 (54.4V).
+
+**LBCO is the exception.** Magnum's protocol says byte 9 on a 48V inverter
+uses the same value sent for a 24V inverter and the display doubles it. Thus
+the live `0xF0` value decodes as `240 × 2 / 10 = 48.0V`, not 96.0V. The
+`magnum-pi` 2026.3.1.1 generic decoder incorrectly applies the normal 4x
+multiplier to this field. Use the project's guarded one-off reader instead:
+
+```sh
+.venv/bin/python scripts/magnum-lbco.py
+```
 
 The `magnum-pi` `voltage_multiplier` is not reliably auto-detected due to a race between `_identify_as_inverter_or_remote` (which sets `_inverter_model_id` from the raw byte) and `_parse_into_cycle` (which gates the multiplier update on `_inverter_model_id is None`). By the time parsing runs, the ID is already set, so the multiplier stays 1. Force multiplier = 4 in `MagnumClient` after confirming the model byte.
 
@@ -152,6 +163,7 @@ Remote packet field positions confirmed by live observation (2026-06-09):
 | 0 | Control flags (inverter/charger/eq toggle) | 0x00 (none active) |
 | 3 | Custom absorb voltage (wire) | 0x89 = 54.8V |
 | 5 | Shore/AC input current limit (A) | 0x1E = 30A |
+| 9 | LBCO (special 24V encoding on 48V inverter) | 0xF0 = 48.0V |
 | 11 | Float voltage (wire) | 0x89 = 54.8V |
 | 13 | Absorb time (× 0.1 hr) | 0x1E = 3.0hr |
 

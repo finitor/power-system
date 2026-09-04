@@ -17,6 +17,7 @@ from offgrid_power.magnum import (
     MagnumSnapshot,
     _find_packets,
     _snapshot_from_cycle,
+    decode_remote_lbco_v,
 )
 
 
@@ -109,6 +110,23 @@ class SnapshotFromCycleTest(unittest.TestCase):
         self.assertAlmostEqual(snapshot.dc_volts, 53.2)
         self.assertIsNone(snapshot.absorb_v)
         self.assertIsNone(snapshot.float_v)
+
+
+class LbcoDecodeTest(unittest.TestCase):
+    def test_decodes_live_48v_wire_value_without_normal_4x_multiplier(self) -> None:
+        # Remote byte 9 is 0xF0. Magnum's 48V LBCO field uses the 24V wire
+        # encoding, so this is 48.0V; the generic 4x decoder would say 96.0V.
+        self.assertEqual(decode_remote_lbco_v(REMOTE), 48.0)
+
+    def test_rejects_short_packet(self) -> None:
+        with self.assertRaisesRegex(ValueError, "too short"):
+            decode_remote_lbco_v(bytes(9))
+
+    def test_rejects_implausible_value(self) -> None:
+        packet = bytearray(REMOTE)
+        packet[9] = 100
+        with self.assertRaisesRegex(ValueError, "Implausible"):
+            decode_remote_lbco_v(bytes(packet))
 
 
 def _magnum(inverter_on: bool, fault: str = "NONE", dc_volts: float = 53.0) -> MagnumSnapshot:
