@@ -11,7 +11,10 @@ import unittest
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
-import duckdb
+try:
+    import duckdb
+except ModuleNotFoundError as exc:
+    raise unittest.SkipTest("optional analysis dependency duckdb is not installed") from exc
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
